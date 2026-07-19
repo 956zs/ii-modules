@@ -155,8 +155,9 @@ const BUILTIN_TYPES: &[&str] = &[
     "FontMetrics", "Flickable", "ScrollView", "Shortcut", "QtObject", "Binding",
     "Process", "FileView", "JsonObject", "JsonAdapter", "Singleton", "Scope",
     "PanelWindow", "LazyLoader", "IpcHandler", "StdioCollector", "SplitParser",
-    "Variants", "ShellRoot", "PersistentProperties", "ScriptModel",
+    "Variants", "ShellRoot", "PersistentProperties", "ScriptModel", "FileViewError",
     "Qt", "JSON", "Math", "Date", "Object", "Array", "String", "Number", "Boolean",
+    "RegExp", "Component", "Screen", "Window",
     "Config", "Appearance", "Directories", "Translation", // guaranteed baseline
 ];
 
@@ -170,6 +171,8 @@ pub struct Suggestions {
 /// non-baseline type to its stock file in the live tree for a file-exists probe.
 pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
     let type_use = Regex::new(r"\b([A-Z][A-Za-z0-9]+)\s*[.{]").unwrap();
+    let own_id = payload.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let own_config_marker = format!("modules/{own_id}.json");
     let mut candidates: BTreeSet<String> = BTreeSet::new();
     let mut detected: BTreeSet<Capability> = BTreeSet::new();
 
@@ -183,14 +186,24 @@ pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
         }
         let Ok(text) = std::fs::read_to_string(entry.path()) else { continue };
         let code = strip_comments(&text);
-        for cap in type_use.captures_iter(&code) {
+        // Import lines carry module URIs (QtQuick.Layouts, qs.services…), not type usage.
+        let code_no_imports: String = code
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("import "))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for cap in type_use.captures_iter(&code_no_imports) {
             let name = cap[1].to_string();
             if !BUILTIN_TYPES.contains(&name.as_str()) {
                 candidates.insert(name);
             }
         }
         for (capability, re) in detectors() {
-            if re.is_match(&code) {
+            if re.is_match(&code_no_imports) {
+                // Same blessed exemption as lint(): the module's own ConfigLoader.
+                if capability == Capability::FilesystemWrite && code.contains(&own_config_marker) {
+                    continue;
+                }
                 detected.insert(capability);
             }
         }
@@ -212,7 +225,8 @@ pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
             continue;
         }
         let mut found = None;
-        for sub in ["services", "modules"] {
+        let mut baseline = false;
+        'search: for sub in ["services", "modules"] {
             let base = ii_root.join(sub);
             if !base.is_dir() {
                 continue;
@@ -221,17 +235,18 @@ pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
                 if entry.file_type().is_file()
                     && entry.file_name().to_string_lossy() == format!("{name}.qml")
                 {
-                    // Baseline (modules/common/**) needs no probe.
                     let rel = entry.path().strip_prefix(ii_root).unwrap().to_string_lossy().into_owned();
-                    if !rel.starts_with("modules/common/") {
+                    if rel.starts_with("modules/common/") {
+                        baseline = true; // guaranteed baseline: silently exempt
+                    } else {
                         found = Some(rel);
                     }
-                    break;
+                    break 'search;
                 }
             }
-            if found.is_some() {
-                break;
-            }
+        }
+        if baseline {
+            continue;
         }
         match found {
             Some(rel) => probes.push((rel, format!("uses stock type {name}"))),

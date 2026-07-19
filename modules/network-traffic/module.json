@@ -1,0 +1,33 @@
+{
+  "protocolVersion": 1,
+  "id": "network-traffic",
+  "name": {
+    "en_US": "Network Traffic",
+    "zh_TW": "網路流量",
+    "zh_CN": "网络流量"
+  },
+  "description": {
+    "en_US": "Up/down bandwidth meter for the bar: live rates, boot totals, and 60-sample trend graphs in the hover popup. Reads /proc/net/dev; tunnel and container interfaces are excluded by default so VPN traffic is not double-counted.",
+    "zh_TW": "Bar 上下行流量計：即時速率、開機累計、hover 彈窗含 60 樣本趨勢曲線。預設排除隧道/容器介面，VPN 不重複計算。"
+  },
+  "version": "1.0.0",
+  "authors": ["nlcat"],
+  "license": "MIT",
+  "slots": ["bar"],
+  "entries": {
+    "bar": "bar.qml",
+    "settings": "settings.qml"
+  },
+  "compat": {
+    "probes": [
+      {"type": "file-exists", "path": "modules/ii/bar/BarGroup.qml", "reason": "bar group container for the pill look"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopup.qml", "reason": "hover popup component"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopupHeaderRow.qml", "reason": "popup header row"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopupValueRow.qml", "reason": "popup value rows"},
+      {"type": "file-exists", "path": "modules/common/widgets/Graph.qml", "reason": "trend graphs in the popup"},
+      {"type": "file-contains", "path": "services/Network.qml", "pattern": "property string materialSymbol", "reason": "connection-type icon in the popup header"}
+    ],
+    "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
+  },
+  "capabilities": []
+}
