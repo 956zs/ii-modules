@@ -9,6 +9,7 @@ license = "MIT"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 flate2 = "1"
+libc = "0.2.186"
 regex = "1"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

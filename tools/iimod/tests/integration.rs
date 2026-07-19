@@ -313,9 +313,18 @@ fn wipe_and_reapply_restores_byte_identical() {
     w.expect(&["verify"], 7);
     w.expect(&["install", w.root.join("src/survivor").to_str().unwrap()], 7);
 
-    // Reapply → byte-identical to pre-wipe.
+    // Reapply → byte-identical to pre-wipe (modulo the host sentinel, whose
+    // installedAtEpoch timestamp legitimately changes).
     w.expect(&["reapply"], 0);
-    assert_eq!(w.hash_ii(), installed_state, "reapply must restore byte-identical tree");
+    let strip_sentinel = |mut h: BTreeMap<String, String>| {
+        h.remove("mod/iimp/.iimp-host");
+        h
+    };
+    assert_eq!(
+        strip_sentinel(w.hash_ii()),
+        strip_sentinel(installed_state),
+        "reapply must restore a byte-identical tree"
+    );
     w.expect(&["verify"], 0);
 }
 

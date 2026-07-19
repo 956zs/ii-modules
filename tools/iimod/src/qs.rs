@@ -5,7 +5,7 @@ use std::process::Command;
 
 /// Test/CI escape hatch: IIMOD_NO_QS=1 turns every qs interaction into a no-op
 /// (integration tests must never IPC into the developer's live session).
-fn disabled() -> bool {
+pub fn disabled() -> bool {
     std::env::var_os("IIMOD_NO_QS").is_some_and(|v| v == "1")
 }
 

@@ -131,6 +131,10 @@ fn run() -> anyhow::Result<()> {
 }
 
 fn main() {
+    // Die quietly on SIGPIPE (e.g. `iimod list | head`) like a well-behaved CLI.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     match run() {
         Ok(()) => std::process::exit(exit::OK),
         Err(e) => {

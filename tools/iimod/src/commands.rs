@@ -508,6 +508,14 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
 
     if !qs::trigger_reload() {
         eprintln!("note: could not trigger a shell reload (shell not running?) — changes apply on next start");
+    } else if !qs::disabled() {
+        // First-install race guard: a pre-reload shell instance (whose adapter
+        // did not declare `iimp` yet) can erase the direct config.json write.
+        // After the reload, reconcile once more through the host IPC.
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        if qs::ping() {
+            project_enabled(&next)?;
+        }
     }
     if let Some(old) = upgrading {
         println!("✓ upgraded {} {} → {}", m.id, old, m.version);

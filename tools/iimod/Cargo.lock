@@ -243,6 +243,7 @@ dependencies = [
  "anyhow",
  "clap",
  "flate2",
+ "libc",
  "regex",
  "semver",
  "serde",
