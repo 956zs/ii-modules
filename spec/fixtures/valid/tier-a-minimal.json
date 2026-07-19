@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 1,
+  "id": "hello-bar",
+  "name": {"en_US": "Hello Bar"},
+  "description": {"en_US": "Minimal Tier A bar module."},
+  "version": "0.1.0",
+  "authors": ["nlcat"],
+  "license": "MIT",
+  "slots": ["bar"],
+  "compat": {"probes": []},
+  "capabilities": []
+}
