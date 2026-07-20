@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import qs.modules.common
 import qs.modules.common.widgets
 import qs.modules.ii.bar
+import qs.mod.network_traffic
 
 /*
  * Bar slot entry (Item root). Self-contained: own BarGroup pill, own logic

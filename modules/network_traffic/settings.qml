@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import qs.modules.common
 import qs.modules.common.widgets
 import qs.services
+import qs.mod.network_traffic
 
 /*
  * Settings fragment rendered inside the Modules page (Item root, minimal API

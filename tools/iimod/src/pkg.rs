@@ -193,7 +193,7 @@ mod tests {
     }
 
     fn make_payload(dir: &Path) -> PathBuf {
-        let payload = dir.join("hello-bar");
+        let payload = dir.join("hello_bar");
         std::fs::create_dir_all(payload.join("translations")).unwrap();
         std::fs::write(
             payload.join("module.json"),
@@ -209,12 +209,12 @@ mod tests {
     fn pack_unpack_roundtrip() {
         let dir = base("roundtrip");
         let payload = make_payload(&dir);
-        let archive = dir.join("hello-bar.iimod");
-        pack(&payload, "hello-bar", &archive).unwrap();
+        let archive = dir.join("hello_bar.iimod");
+        pack(&payload, "hello_bar", &archive).unwrap();
 
         let out = dir.join("extract");
         let unpacked = unpack(&archive, &out, DEFAULT_MAX_UNPACKED).unwrap();
-        assert_eq!(unpacked.id, "hello-bar");
+        assert_eq!(unpacked.id, "hello_bar");
         assert_eq!(
             store::hash_tree(&payload).unwrap(),
             store::hash_tree(&unpacked.payload).unwrap()
@@ -226,7 +226,7 @@ mod tests {
         let dir = base("tamper");
         let payload = make_payload(&dir);
         let archive = dir.join("x.iimod");
-        pack(&payload, "hello-bar", &archive).unwrap();
+        pack(&payload, "hello_bar", &archive).unwrap();
 
         // Repack with mutated file but original integrity.json.
         let out = dir.join("mutate");
@@ -237,7 +237,7 @@ mod tests {
             let f = std::fs::File::create(&evil).unwrap();
             let enc = GzEncoder::new(f, Compression::default());
             let mut tar = tar::Builder::new(enc);
-            tar.append_dir_all("hello-bar", &unpacked.payload).unwrap();
+            tar.append_dir_all("hello_bar", &unpacked.payload).unwrap();
             let ij = serde_json::to_vec(&unpacked.integrity).unwrap();
             let mut header = tar::Header::new_gnu();
             header.set_size(ij.len() as u64);
@@ -294,7 +294,7 @@ mod tests {
             header.set_entry_type(tar::EntryType::Symlink);
             header.set_size(0);
             header.set_cksum();
-            tar.append_link(&mut header, "hello-bar/evil", "/etc/passwd").unwrap();
+            tar.append_link(&mut header, "hello_bar/evil", "/etc/passwd").unwrap();
             tar.into_inner().unwrap().finish().unwrap();
         }
         let err = unpack(&archive, &dir.join("out"), DEFAULT_MAX_UNPACKED).unwrap_err();
@@ -305,7 +305,7 @@ mod tests {
     fn oversize_rejected() {
         let dir = base("oversize");
         let big = vec![0u8; 4096];
-        let archive = raw_archive(&dir, &[("hello-bar/big.bin", big.as_slice())]);
+        let archive = raw_archive(&dir, &[("hello_bar/big.bin", big.as_slice())]);
         let err = unpack(&archive, &dir.join("out"), 1024).unwrap_err();
         assert_eq!(crate::exit::code_of(&err), crate::exit::VALIDATION);
     }

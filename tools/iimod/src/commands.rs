@@ -237,6 +237,23 @@ fn project_enabled(registry: &Registry) -> Result<()> {
                 ok &= qs::set_enabled(&m.manifest.id, "window", enabled);
             }
         }
+        // Ghost cleanup: ids still enabled in config.json but no longer in the
+        // registry (uninstalled) must be switched off explicitly.
+        let config_path = paths::shell_config_root().join("config.json");
+        if let Some(cfg) = std::fs::read(&config_path)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        {
+            for (key, slot) in [("enabledBar", "bar"), ("enabledWindow", "window")] {
+                for ghost in cfg["iimp"][key].as_array().into_iter().flatten() {
+                    if let Some(id) = ghost.as_str() {
+                        if registry.get(id).is_none() {
+                            ok &= qs::set_enabled(id, slot, false);
+                        }
+                    }
+                }
+            }
+        }
         if ok {
             return Ok(());
         }
@@ -256,6 +273,19 @@ fn project_enabled(registry: &Registry) -> Result<()> {
     std::fs::write(&tmp, serde_json::to_string_pretty(&root)? + "\n")?;
     std::fs::rename(&tmp, &config_path)?;
     Ok(())
+}
+
+/// Ids to statically register via ModuleImports.qml: every installed module
+/// whose payload dir is on disk (incompatible modules may lack one).
+fn module_import_ids(registry: &Registry) -> Vec<String> {
+    let mut ids: Vec<String> = registry
+        .modules
+        .iter()
+        .filter(|m| paths::mod_root().join(&m.manifest.id).is_dir())
+        .map(|m| m.manifest.id.clone())
+        .collect();
+    ids.sort();
+    ids
 }
 
 fn wipe_banner(registry: &Registry) -> bool {
@@ -453,6 +483,7 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
         recompose_all(&next, true)?;
         std::fs::write(paths::host_dir().join("ModuleHost.qml"), include_str!("../assets/ModuleHost.qml"))?;
         std::fs::write(paths::host_dir().join("ModulesConfig.qml"), include_str!("../assets/ModulesConfig.qml"))?;
+        hostpatch::write_module_imports(&module_import_ids(&next))?;
         let sentinel = hostpatch::HostSentinel {
             host_version: hostpatch::HOST_VERSION.to_string(),
             protocol_version: manifest::SUPPORTED_PROTOCOL_MAX,
@@ -561,6 +592,9 @@ pub fn cmd_uninstall(id: &str, cascade: bool) -> Result<()> {
         store::remove_from_store(victim)?;
     }
     recompose_all(&registry, true)?;
+    if paths::host_dir().exists() {
+        hostpatch::write_module_imports(&module_import_ids(&registry))?;
+    }
     registry::save(&registry)?;
     write_index_projection(&registry)?;
     project_enabled(&registry)?;
@@ -692,11 +726,9 @@ pub fn cmd_init(id: &str, dir: &Path) -> Result<()> {
     std::fs::write(payload.join("module.json"), serde_json::to_string_pretty(&manifest)? + "\n")?;
     std::fs::write(
         payload.join("bar.qml"),
-        concat!(
-            "import QtQuick\n",
-            "import QtQuick.Layouts\n",
-            "import qs.modules.common\n",
-            "import qs.modules.common.widgets\n\n",
+        format!(
+            "import QtQuick\nimport QtQuick.Layouts\nimport qs.modules.common\nimport qs.modules.common.widgets\n// import qs.mod.{id}   // ← uncomment when you add sibling .qml components\n\n"
+        ) + concat!(
             "// Bar slot entry: MUST root a visual Item.\n",
             "MouseArea {\n",
             "    id: root\n",
@@ -854,6 +886,7 @@ pub fn cmd_repair(id: Option<&str>) -> Result<()> {
         store::copy_tree(&src, &dest)?;
     }
     hostpatch::ensure_host(&|rel| registry.patches_for_file(rel))?;
+    hostpatch::write_module_imports(&module_import_ids(&registry))?;
     recompose_all(&registry, true)?;
     write_index_projection(&registry)?;
     let _ = qs::trigger_reload();
@@ -975,6 +1008,7 @@ pub fn cmd_reapply() -> Result<()> {
         registry.get_mut(id).unwrap().translation_keys = owned;
     }
 
+    hostpatch::write_module_imports(&module_import_ids(&registry))?;
     registry.host_version = Some(hostpatch::HOST_VERSION.to_string());
     registry::save(&registry)?;
     write_index_projection(&registry)?;

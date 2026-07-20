@@ -1,6 +1,6 @@
 {
   "protocolVersion": 1,
-  "id": "network-traffic",
+  "id": "network_traffic",
   "name": {
     "en_US": "Network Traffic",
     "zh_TW": "網路流量",
@@ -10,7 +10,7 @@
     "en_US": "Up/down bandwidth meter for the bar: live rates, boot totals, and 60-sample trend graphs in the hover popup. Reads /proc/net/dev; tunnel and container interfaces are excluded by default so VPN traffic is not double-counted.",
     "zh_TW": "Bar 上下行流量計：即時速率、開機累計、hover 彈窗含 60 樣本趨勢曲線。預設排除隧道/容器介面，VPN 不重複計算。"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["bar"],

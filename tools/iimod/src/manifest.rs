@@ -180,6 +180,10 @@ pub fn is_valid_locale(key: &str) -> bool {
         && region.iter().all(u8::is_ascii_uppercase)
 }
 
+/// Ids are QML-URI segments: the module dir must be importable as
+/// `qs.mod.<id>` for sibling type resolution (path-loaded files get no
+/// implicit same-directory types under Quickshell's URL interceptor), and QML
+/// URIs forbid hyphens — hence underscores.
 pub fn is_valid_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     if !(2..=31).contains(&bytes.len()) {
@@ -188,10 +192,10 @@ pub fn is_valid_id(id: &str) -> bool {
     if !bytes[0].is_ascii_lowercase() {
         return false;
     }
-    if !bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-') {
+    if !bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_') {
         return false;
     }
-    !id.ends_with('-') && !id.contains("--")
+    !id.ends_with('_') && !id.contains("__")
 }
 
 /// A path relative to a root: no `..`, not absolute, no `~`, non-empty, UTF-8 clean.
@@ -479,8 +483,8 @@ mod tests {
 
     #[test]
     fn id_rules() {
-        for bad in ["A-upper", "-lead", "trail-", "dou--ble", "x", "iimp", "settings",
-                    "waaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay-too-long-for-the-spec"] {
+        for bad in ["A-upper", "has-hyphen", "_lead", "trail_", "dou__ble", "x", "iimp", "settings",
+                    "waaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay_too_long_for_the_spec"] {
             expect_code(mutate("valid/tier-a-minimal.json", |v| {
                 v["id"] = bad.into();
             }), crate::exit::VALIDATION);

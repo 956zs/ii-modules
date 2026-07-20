@@ -150,7 +150,7 @@ fn hash_tree(root: &Path) -> BTreeMap<String, String> {
 fn tier_a_install_uninstall_byte_clean() {
     let w = World::new("tier-a-clean");
     let pristine = w.hash_ii();
-    let payload = w.make_module("hello-widget", serde_json::json!({}));
+    let payload = w.make_module("hello_widget", serde_json::json!({}));
 
     w.expect(&["validate", payload.to_str().unwrap()], 0);
     w.expect(&["check", payload.to_str().unwrap()], 0);
@@ -159,18 +159,18 @@ fn tier_a_install_uninstall_byte_clean() {
     // Host patches landed; module dir exists; projections written.
     let shell = std::fs::read_to_string(w.ii().join("shell.qml")).unwrap();
     assert!(shell.contains("import qs.mod.iimp") && shell.contains("ModuleHost {}"));
-    assert!(w.ii().join("mod/hello-widget/bar.qml").exists());
+    assert!(w.ii().join("mod/hello_widget/bar.qml").exists());
     assert!(w.ii().join("mod/iimp/ModuleHost.qml").exists());
     let config = std::fs::read_to_string(w.root.join("shellconfig/config.json")).unwrap();
-    assert!(config.contains("hello-widget"));
+    assert!(config.contains("hello_widget"));
     let translations =
         std::fs::read_to_string(w.root.join("shellconfig/translations/zh_TW.json")).unwrap();
     assert!(translations.contains("你好"));
     w.expect(&["verify"], 0);
 
     // Uninstall → host stays (harmless), module gone, translations unmerged.
-    w.expect(&["uninstall", "hello-widget"], 0);
-    assert!(!w.ii().join("mod/hello-widget").exists());
+    w.expect(&["uninstall", "hello_widget"], 0);
+    assert!(!w.ii().join("mod/hello_widget").exists());
     let translations =
         std::fs::read_to_string(w.root.join("shellconfig/translations/zh_TW.json")).unwrap();
     assert!(!translations.contains("你好"));
@@ -212,7 +212,7 @@ fn tier_b_gate_and_anchor_determinism() {
             "content": "            BbbThing {}\n"
         }],
     });
-    let payload_b = w.make_module("bbb-patcher", tier_b);
+    let payload_b = w.make_module("bbb_patcher", tier_b);
 
     // Hard gate: exit 9 without --allow-patches.
     let out = w.expect(&["install", payload_b.to_str().unwrap()], 9);
@@ -227,7 +227,7 @@ fn tier_b_gate_and_anchor_determinism() {
             "content": "            AaaThing {}\n"
         }],
     });
-    let payload_a = w.make_module("aaa-patcher", tier_a2);
+    let payload_a = w.make_module("aaa_patcher", tier_a2);
 
     // Install order B then A.
     w.expect(&["install", payload_b.to_str().unwrap(), "--allow-patches"], 0);
@@ -236,7 +236,7 @@ fn tier_b_gate_and_anchor_determinism() {
 
     // Fresh world, install order A then B → identical bytes (determinism law).
     let w2 = World::new("tier-b-order2");
-    let payload_b2 = w2.make_module("bbb-patcher", serde_json::json!({
+    let payload_b2 = w2.make_module("bbb_patcher", serde_json::json!({
         "patches": [{
             "file": "modules/ii/bar/BarContent.qml",
             "op": "insert-before",
@@ -244,7 +244,7 @@ fn tier_b_gate_and_anchor_determinism() {
             "content": "            BbbThing {}\n"
         }],
     }));
-    let payload_a2 = w2.make_module("aaa-patcher", serde_json::json!({
+    let payload_a2 = w2.make_module("aaa_patcher", serde_json::json!({
         "patches": [{
             "file": "modules/ii/bar/BarContent.qml",
             "op": "insert-before",
@@ -259,7 +259,7 @@ fn tier_b_gate_and_anchor_determinism() {
     assert!(bytes_ab.find("AaaThing").unwrap() < bytes_ab.find("BbbThing").unwrap());
 
     // Bad anchor → exit 8 at check time.
-    let bad = w.make_module("bad-anchor", serde_json::json!({
+    let bad = w.make_module("bad_anchor", serde_json::json!({
         "patches": [{
             "file": "modules/ii/bar/BarContent.qml",
             "op": "insert-after",
@@ -273,21 +273,21 @@ fn tier_b_gate_and_anchor_determinism() {
 #[test]
 fn dependency_enforcement() {
     let w = World::new("deps");
-    let dependent = w.make_module("needs-core", serde_json::json!({
-        "requires": {"modules": [{"id": "core-lib", "versionReq": ">=1.0, <2"}]}
+    let dependent = w.make_module("needs_core", serde_json::json!({
+        "requires": {"modules": [{"id": "core_lib", "versionReq": ">=1.0, <2"}]}
     }));
     // Missing dep → exit 5.
     w.expect(&["install", dependent.to_str().unwrap()], 5);
 
-    let core = w.make_module("core-lib", serde_json::json!({}));
+    let core = w.make_module("core_lib", serde_json::json!({}));
     w.expect(&["install", core.to_str().unwrap()], 0);
     w.expect(&["install", dependent.to_str().unwrap()], 0);
 
     // Uninstalling the dependency without cascade → exit 5; with cascade → both gone.
-    w.expect(&["uninstall", "core-lib"], 5);
-    w.expect(&["uninstall", "core-lib", "--cascade"], 0);
-    assert!(!w.ii().join("mod/needs-core").exists());
-    assert!(!w.ii().join("mod/core-lib").exists());
+    w.expect(&["uninstall", "core_lib"], 5);
+    w.expect(&["uninstall", "core_lib", "--cascade"], 0);
+    assert!(!w.ii().join("mod/needs_core").exists());
+    assert!(!w.ii().join("mod/core_lib").exists());
 }
 
 #[test]
@@ -331,11 +331,11 @@ fn wipe_and_reapply_restores_byte_identical() {
 #[test]
 fn pack_install_roundtrip_and_tamper() {
     let w = World::new("pack");
-    let payload = w.make_module("packed-mod", serde_json::json!({}));
-    let out_pkg = w.root.join("packed-mod-1.0.0.iimod");
+    let payload = w.make_module("packed_mod", serde_json::json!({}));
+    let out_pkg = w.root.join("packed_mod-1.0.0.iimod");
     w.expect(&["pack", payload.to_str().unwrap(), "--out", out_pkg.to_str().unwrap()], 0);
     w.expect(&["install", out_pkg.to_str().unwrap()], 0);
-    w.expect(&["uninstall", "packed-mod"], 0);
+    w.expect(&["uninstall", "packed_mod"], 0);
 
     // Tamper one byte inside the gzip → integrity/validation failure, not success.
     let mut bytes = std::fs::read(&out_pkg).unwrap();
@@ -350,19 +350,19 @@ fn pack_install_roundtrip_and_tamper() {
 #[test]
 fn enable_disable_projection() {
     let w = World::new("toggle");
-    let payload = w.make_module("toggle-me", serde_json::json!({}));
+    let payload = w.make_module("toggle_me", serde_json::json!({}));
     w.expect(&["install", payload.to_str().unwrap()], 0);
 
     let config = || std::fs::read_to_string(w.root.join("shellconfig/config.json")).unwrap();
-    assert!(config().contains("toggle-me"));
-    w.expect(&["disable", "toggle-me"], 0);
-    assert!(!config().replace("\"enabledWindow\": []", "").contains("toggle-me") || {
+    assert!(config().contains("toggle_me"));
+    w.expect(&["disable", "toggle_me"], 0);
+    assert!(!config().replace("\"enabledWindow\": []", "").contains("toggle_me") || {
         let v: serde_json::Value = serde_json::from_str(&config()).unwrap();
         v["iimp"]["enabledBar"].as_array().unwrap().is_empty()
     });
-    w.expect(&["enable", "toggle-me"], 0);
+    w.expect(&["enable", "toggle_me"], 0);
     let v: serde_json::Value = serde_json::from_str(&config()).unwrap();
-    assert_eq!(v["iimp"]["enabledBar"][0], "toggle-me");
+    assert_eq!(v["iimp"]["enabledBar"][0], "toggle_me");
 }
 
 #[test]

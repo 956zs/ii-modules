@@ -1,6 +1,6 @@
 {
   "protocolVersion": 1,
-  "id": "hello-bar",
+  "id": "hello_bar",
   "name": {"en_US": "Hello Bar"},
   "description": {"en_US": "Minimal Tier A bar module."},
   "version": "0.1.0",

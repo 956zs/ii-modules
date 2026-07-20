@@ -70,7 +70,9 @@ pub fn lint(manifest: &Manifest, payload: &Path, ii_root: &Path) -> Result<LintR
 
     let own_config_marker = format!("modules/{}.json", manifest.id);
     let singleton_re = Regex::new(r"^\s*pragma\s+Singleton").unwrap();
-    let qs_mod_import_re = Regex::new(r"^\s*import\s+qs\.mod\b").unwrap();
+    // Importing the module's OWN dir is REQUIRED for sibling types (path-loaded
+    // files get no implicit same-dir resolution); other modules stay off-limits.
+    let qs_mod_import_re = Regex::new(r"^\s*import\s+qs\.mod\.([a-z0-9_]+)").unwrap();
 
     for entry in WalkDir::new(payload).into_iter().flatten() {
         if !entry.file_type().is_file() {
@@ -99,8 +101,13 @@ pub fn lint(manifest: &Manifest, payload: &Path, ii_root: &Path) -> Result<LintR
                 if singleton_re.is_match(line) {
                     errors.push(format!("{rel}: pragma Singleton is forbidden in modules (unregistrable under mod/)"));
                 }
-                if qs_mod_import_re.is_match(line) {
-                    errors.push(format!("{rel}: importing qs.mod.* is forbidden"));
+                if let Some(caps) = qs_mod_import_re.captures(line) {
+                    if &caps[1] != manifest.id.as_str() {
+                        errors.push(format!(
+                            "{rel}: importing qs.mod.{} is forbidden (only your own qs.mod.{} is allowed)",
+                            &caps[1], manifest.id
+                        ));
+                    }
                 }
             }
             for (cap, re) in detectors() {
@@ -304,7 +311,7 @@ mod tests {
     fn blessed_config_loader_is_exempt() {
         let payload = payload_with(&[(
             "ConfigLoader.qml",
-            "FileView { path: root.base + \"/modules/hello-bar.json\"\n onAdapterUpdated: writeAdapter() }",
+            "FileView { path: root.base + \"/modules/hello_bar.json\"\n onAdapterUpdated: writeAdapter() }",
         )]);
         let report = lint(&minimal_manifest(&[]), &payload, std::path::Path::new("/nonexistent")).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);

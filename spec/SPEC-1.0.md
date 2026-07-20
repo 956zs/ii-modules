@@ -46,7 +46,9 @@ any operation.
 
 ### 2.1 id
 
-- Regex: `^[a-z][a-z0-9-]{1,30}$`; additionally MUST NOT end with `-` or contain `--`.
+- Regex: `^[a-z][a-z0-9_]{1,30}$`; additionally MUST NOT end with `_` or contain `__`.
+- Rationale: the id doubles as a QML module URI segment (`import qs.mod.<id>`,
+  §2.2), and QML URIs forbid hyphens. Underscores are the separator.
 - Reserved ids (installation MUST be refused): `iimp`, `host`, `all`, `none`,
   `common`, `stock`, `settings`.
 - The payload directory name and (for packages) the archive's single top-level
@@ -75,14 +77,18 @@ Rules:
 - `.qml` file basenames MUST NOT equal the basename of any file under
   `$II/services/` or `$II/modules/common/**` (QML same-directory type resolution
   would shadow or collide with stock singletons/types; see §12 lesson 1).
-- `pragma Singleton` MUST NOT be used anywhere in a module. `$II/mod/` is
-  unreachable as a QML module URI (directory naming), so singletons cannot
-  register; modules instantiate a plain logic object in their entry component and
-  pass the instance down.
-- Modules MUST NOT import `qs.mod.*` (their own or other modules' dirs). Sibling
-  files in the module's own directory resolve implicitly without imports.
-  Cross-module QML sharing is not supported in protocolVersion 1; `requires.modules`
-  expresses lifecycle dependency (install/enable ordering), not QML imports.
+- `pragma Singleton` MUST NOT be used anywhere in a module; modules instantiate
+  a plain logic object in their entry component and pass the instance down.
+- **Sibling types require an explicit self-import.** Files loaded by path
+  (every slot entry) get NO implicit same-directory type resolution under
+  Quickshell's URL interceptor (verified empirically; stock path-loaded pages
+  also use only URI imports). A file that references sibling components MUST
+  declare `import qs.mod.<own-id>`. (Resolution works because the host keeps a
+  generated, statically-compiled `ModuleImports.qml` registering every installed
+  module directory — QML only generates directory-modules during static
+  compilation. iimod maintains it; authors just write the import.) Importing ANY
+  OTHER module's directory is forbidden. Cross-module QML sharing is not supported in protocolVersion 1;
+  `requires.modules` expresses lifecycle dependency, not QML imports.
 
 ### 2.3 Guaranteed baseline (no probe required)
 
@@ -230,7 +236,7 @@ Every applied patch is wrapped in fences:
 // <<< iimp <id>/<n> <<<
 ```
 
-`<id>` = module id (`host` for host-owned fences); `<n>` = 0-based patch index
+`<id>` = module id, charset `[a-z0-9_-]+` (`host` for host-owned fences); `<n>` = 0-based patch index
 within that module; `<version>` = module version at application time
 (informational). Blocks are contiguous, non-nested, and properly paired.
 `strip(text)` removes all well-formed blocks. Any pairing/grammar violation puts

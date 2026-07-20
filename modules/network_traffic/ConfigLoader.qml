@@ -3,12 +3,12 @@ import qs.modules.common
 
 /*
  * Per-module persisted options (IIMP convention): FileView + JsonAdapter on
- * ~/.config/illogical-impulse/modules/network-traffic.json. Never touches the
+ * ~/.config/illogical-impulse/modules/network_traffic.json. Never touches the
  * shell's config.json.
  */
 FileView {
     id: root
-    path: Directories.shellConfig + "/modules/network-traffic.json"
+    path: Directories.shellConfig + "/modules/network_traffic.json"
     watchChanges: true
     onFileChanged: reload()
     onAdapterUpdated: writeAdapter()

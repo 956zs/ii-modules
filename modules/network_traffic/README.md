@@ -1,18 +1,18 @@
-# network-traffic — IIMP 參考模塊
+# network_traffic — IIMP 參考模塊
 
 Bar 上下行流量計（Tier A，零 stock 補丁）。即時速率、開機累計、hover 彈窗含 60 樣本趨勢曲線。
 
 ## 安裝
 
 ```bash
-iimod validate network-traffic/
-iimod check network-traffic/
-iimod install network-traffic/     # 或先 iimod pack 再裝 .iimod
+iimod validate network_traffic/
+iimod check network_traffic/
+iimod install network_traffic/     # 或先 iimod pack 再裝 .iimod
 ```
 
 ## 設定
 
-`~/.config/illogical-impulse/modules/network-traffic.json`：
+`~/.config/illogical-impulse/modules/network_traffic.json`：
 
 | Key | 預設 | 說明 |
 |---|---|---|

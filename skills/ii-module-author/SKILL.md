@@ -13,8 +13,8 @@ that violates them, explain the rule and offer the compliant alternative.
 ## Hard rules (MUST)
 
 1. **Scaffold with the tool**: start every new module with `iimod init <id>`.
-   Ids match `^[a-z][a-z0-9-]{1,30}$`; `iimp/host/all/none/common/stock/settings`
-   are reserved.
+   Ids match `^[a-z][a-z0-9_]{1,30}$` (underscores, NEVER hyphens — the id is a
+   QML URI segment); `iimp/host/all/none/common/stock/settings` are reserved.
 2. **Stay inside your payload**: every file of the module lives in the payload
    dir (installed as `$II/mod/<id>/`). Never hand-edit anything else under
    `~/.config/quickshell/ii/`.
@@ -23,9 +23,11 @@ that violates them, explain the rule and offer the compliant alternative.
    `Scope`, `PanelWindow`, or `LazyLoader`.
 4. **No singletons**: `pragma Singleton` is forbidden (unregistrable under
    `mod/`). Instantiate a logic object in the entry component and pass the
-   instance down (see `modules/network-traffic/TrafficLogic.qml`).
-5. **No `import qs.mod.*`**: your own siblings resolve implicitly; other
-   modules' QML is not importable in protocolVersion 1.
+   instance down (see `modules/network_traffic/TrafficLogic.qml`).
+5. **Sibling types need `import qs.mod.<your-own-id>`**: path-loaded files get
+   NO implicit same-directory resolution — every file referencing a sibling
+   component declares the self-import. Importing OTHER modules' dirs is
+   forbidden (lint enforces both).
 6. **Own config file only**: persist options via the ConfigLoader pattern to
    `~/.config/illogical-impulse/modules/<id>.json`. NEVER write to the shell's
    `config.json` (its adapter erases undeclared keys).

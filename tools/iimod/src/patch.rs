@@ -29,8 +29,10 @@ impl PatchInstance {
 }
 
 fn fence_regexes() -> (Regex, Regex) {
-    let open = Regex::new(r"^\s*// >>> iimp ([a-z0-9-]+)/(\d+) v(\S+) >>>\s*$").unwrap();
-    let close = Regex::new(r"^\s*// <<< iimp ([a-z0-9-]+)/(\d+) <<<\s*$").unwrap();
+    // Owner charset covers module ids (lowercase + digits + underscore) plus
+    // "host"; hyphen kept for grammar robustness against older fences.
+    let open = Regex::new(r"^\s*// >>> iimp ([a-z0-9_-]+)/(\d+) v(\S+) >>>\s*$").unwrap();
+    let close = Regex::new(r"^\s*// <<< iimp ([a-z0-9_-]+)/(\d+) <<<\s*$").unwrap();
     (open, close)
 }
 
@@ -218,7 +220,9 @@ mod tests {
 
     #[test]
     fn recompose_is_stable() {
-        let set = vec![patch("mod-x", 0, PatchOp::InsertAfter, "import QtQuick", "import extra\n")];
+        // Underscore owner: the id grammar uses underscores — the fence regex
+        // MUST recognize them or recomposition duplicates blocks.
+        let set = vec![patch("mod_x", 0, PatchOp::InsertAfter, "import QtQuick", "import extra\n")];
         let once = compose(STOCK, &set).unwrap();
         let twice = recompose(&once, &set).unwrap();
         assert_eq!(once, twice);

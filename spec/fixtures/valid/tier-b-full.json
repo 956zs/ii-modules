@@ -1,12 +1,12 @@
 {
   "protocolVersion": 1,
-  "id": "traffic-deluxe",
+  "id": "traffic_deluxe",
   "name": {"en_US": "Traffic Deluxe", "zh_TW": "豪華流量計"},
   "description": {"en_US": "Bar + window traffic suite with a stock patch."},
   "version": "1.2.3",
   "authors": ["nlcat", "friend"],
   "license": "MIT",
-  "homepage": "https://example.com/traffic-deluxe",
+  "homepage": "https://example.com/traffic_deluxe",
   "slots": ["bar", "window"],
   "entries": {"bar": "bar.qml", "window": "main.qml", "settings": "settings.qml"},
   "compat": {
@@ -17,10 +17,10 @@
     "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
   },
   "requires": {
-    "modules": [{"id": "traffic-core", "versionReq": ">=1.0, <2"}],
+    "modules": [{"id": "traffic_core", "versionReq": ">=1.0, <2"}],
     "system": [{"bin": "jq", "hint": "sudo pacman -S jq"}]
   },
-  "conflicts": ["old-traffic"],
+  "conflicts": ["old_traffic"],
   "capabilities": ["exec"],
   "patches": [
     {

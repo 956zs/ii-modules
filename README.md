@@ -20,9 +20,9 @@ cargo build --release --manifest-path tools/iimod/Cargo.toml
 install -Dm755 tools/iimod/target/release/iimod ~/.local/bin/iimod
 
 # 裝一個模塊
-iimod validate  modules/network-traffic/   # 驗證 manifest/佈局/權限 lint
-iimod check     modules/network-traffic/   # 相容性探針＋依賴＋錨點乾跑
-iimod install   modules/network-traffic/   # 交易性安裝（失敗自動回滾）
+iimod validate  modules/network_traffic/   # 驗證 manifest/佈局/權限 lint
+iimod check     modules/network_traffic/   # 相容性探針＋依賴＋錨點乾跑
+iimod install   modules/network_traffic/   # 交易性安裝（失敗自動回滾）
 
 # 日常
 iimod list / info / enable / disable / verify
@@ -34,15 +34,15 @@ iimod reapply    # ★ dots-hyprland 更新後必跑：一鍵全部重套
 ## 快速開始（模塊作者）
 
 ```bash
-iimod init my-widget          # 腳手架
+iimod init my_widget          # 腳手架
 # …寫 QML（bar.qml 根必須是視覺 Item；main.qml 根必須是 Scope/PanelWindow）
-iimod suggest my-widget/      # 自動推導 probes 與 capabilities 建議
-iimod validate my-widget/ && iimod check my-widget/ && iimod install my-widget/
-iimod pack my-widget/         # 產出 my-widget-0.1.0.iimod 分享給朋友
+iimod suggest my_widget/      # 自動推導 probes 與 capabilities 建議
+iimod validate my_widget/ && iimod check my_widget/ && iimod install my_widget/
+iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 ```
 
-參考實作：[`modules/network-traffic/`](modules/network-traffic/)（含逐檔說明）、
-最小視窗範例 [`examples/hello-window/`](examples/hello-window/)。
+參考實作：[`modules/network_traffic/`](modules/network_traffic/)（含逐檔說明）、
+最小視窗範例 [`examples/hello_window/`](examples/hello_window/)。
 
 ## 核心概念
 

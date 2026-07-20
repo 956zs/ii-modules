@@ -1,6 +1,6 @@
 {
   "protocolVersion": 1,
-  "id": "hello-window",
+  "id": "hello_window",
   "name": {"en_US": "Hello Window", "zh_TW": "你好視窗"},
   "description": {"en_US": "Minimal window-slot example: a tiny greeting panel. Copy this as a starting point for overlay/panel modules."},
   "version": "0.1.0",
