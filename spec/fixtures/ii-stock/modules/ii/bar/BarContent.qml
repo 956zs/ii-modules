@@ -1,0 +1,6 @@
+Item {
+    RowLayout {
+            // Weather
+            Loader {}
+    }
+}

@@ -66,6 +66,27 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 
 若要帶到別的模塊專案，複製到該專案的 `.claude/skills/`，不要裝進全域 `~/.claude/skills/`。
 
+## Release workflow（多人協作）
+
+正式 release 只從 git tag 產生。maintainer 合併版本 bump PR 後，建立並推送 tag：
+
+```bash
+git tag v1.0.2
+git push origin v1.0.2
+```
+
+GitHub Actions 會自動跑 `tools/release/build.sh` 和 `tools/release/verify.sh`，
+產出 Linux binary、`.iimod`、starter zip、`SHA256SUMS`，再發布 GitHub Release。
+
+本機 dry-run：
+
+```bash
+tools/release/build.sh --allow-dirty v1.0.2
+tools/release/verify.sh dist/release/v1.0.2
+```
+
+`build.sh` 預設要求 git tree 乾淨；`--allow-dirty` 只給本機試包用，正式 CI 不使用。
+
 ## Exit codes（穩定契約）
 
 `0` ok · `3` 驗證失敗 · `4` 探針失敗（絕對擋）· `5` 依賴/衝突 · `6` 完整性
@@ -76,6 +97,8 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 ```
 spec/            SPEC-1.0.md＋fixtures（規範與測試語料）
 tools/iimod/     Rust CLI（50 tests：單元＋對迷你 stock 樹的整合矩陣）
+tools/release/   release build/verify 腳本
+.github/         tag-triggered release workflow
 .claude/skills/  Claude Code project skills ×2
 skills/          portable skill copies ×2
 modules/         參考模塊（network_traffic）

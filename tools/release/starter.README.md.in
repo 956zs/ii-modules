@@ -1,0 +1,53 @@
+# IIMP 模塊入門包
+
+這包給你：`iimod` 模塊管理器、一個現成模塊（bar 網路流量計）、以及給 AI agent 的 project skills。前提：你在跑 **end-4/dots-hyprland 的 illogical-impulse**（Quickshell `qs -c ii`）。
+
+## 1. 校驗與安裝工具
+
+```bash
+sha256sum -c SHA256SUMS
+install -Dm755 bin/iimod ~/.local/bin/iimod
+iimod doctor
+```
+
+不信任 binary 的話，`src/ii-modules-source.tar.gz` 是完整原始碼，可以自行 `cargo build --release --manifest-path tools/iimod/Cargo.toml`。
+
+## 2. 裝流量計模塊
+
+```bash
+iimod validate modules/@MODULE_FILE@
+iimod check    modules/@MODULE_FILE@
+iimod install  modules/@MODULE_FILE@
+```
+
+裝完 bar 右側會出現 `↓ 值 ↑ 值`，hover 有詳細彈窗。模塊選項在 `~/.config/illogical-impulse/modules/network_traffic.json`。
+
+## 3. AI agent project skills
+
+這個 starter 已內建 `.claude/skills/ii-module-author` 和 `.claude/skills/ii-module-manage`，在這個專案目錄裡開 Claude Code 時會使用 project skills。
+
+若要帶到別的模塊專案，複製到那個專案的 `.claude/skills/`：
+
+```bash
+mkdir -p /path/to/project/.claude/skills
+cp -r skills/ii-module-author skills/ii-module-manage /path/to/project/.claude/skills/
+```
+
+不要裝進全域 `~/.claude/skills/`，避免污染其他專案。
+
+## 4. 兩件必知
+
+- dots-hyprland 更新後，跑 `iimod reapply`。更新會清掉 shell 樹，這指令會從母本庫重建模塊。
+- 出狀況先跑 `iimod verify` / `iimod doctor`，不要手改 `~/.config/quickshell/ii/`。
+
+## 5. 自己做模塊
+
+```bash
+iimod init my_widget
+iimod suggest my_widget/
+iimod validate my_widget/ && iimod check my_widget/
+```
+
+開發規範看 `.claude/skills/ii-module-author/SKILL.md`；完整規格看 `spec/SPEC-1.0.md`。
+
+exit code 速查：`0` ok · `3` 驗證失敗 · `4` 不相容 · `5` 缺依賴 · `6` 封包損毀 · `7` 狀態錯誤 · `8` 錨點失敗 · `9` 需 `--allow-patches` · `10` 版本不支援
