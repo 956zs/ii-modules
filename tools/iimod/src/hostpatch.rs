@@ -235,4 +235,10 @@ mod tests {
         let (stripped, _) = crate::patch::strip(&composed).unwrap();
         assert_eq!(stripped, shell);
     }
+
+    #[test]
+    fn module_host_asset_uses_underscore_id_grammar() {
+        assert!(MODULE_HOST_QML.contains(r"/^[a-z][a-z0-9_]{1,30}$/"));
+        assert!(!MODULE_HOST_QML.contains(r"/^[a-z][a-z0-9-]{1,30}$/"));
+    }
 }

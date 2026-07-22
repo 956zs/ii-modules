@@ -1,7 +1,7 @@
 //! Capability cross-check + payload hygiene lints (SPEC 1.0 §6, §2.2).
 //! Grep-class heuristics, documented as such: they raise the honesty bar.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use anyhow::Result;
@@ -9,7 +9,7 @@ use regex::Regex;
 use walkdir::WalkDir;
 
 use crate::exit::{self, bail};
-use crate::manifest::{Capability, Manifest, BASENAME_DENYLIST_BASELINE};
+use crate::manifest::{Capability, Manifest, Slot, BASENAME_DENYLIST_BASELINE};
 
 pub struct LintReport {
     pub errors: Vec<String>,
@@ -18,10 +18,19 @@ pub struct LintReport {
 
 fn detectors() -> Vec<(Capability, Regex)> {
     vec![
-        (Capability::Exec, Regex::new(r"\bProcess\s*\{|execDetached\s*\(|Hyprland\.dispatch\s*\(").unwrap()),
-        (Capability::Network, Regex::new(r"\bXMLHttpRequest\b|\bWebSocket\b|\bSocket\b").unwrap()),
+        (
+            Capability::Exec,
+            Regex::new(r"\bProcess\s*\{|execDetached\s*\(|Hyprland\.dispatch\s*\(").unwrap(),
+        ),
+        (
+            Capability::Network,
+            Regex::new(r"\bXMLHttpRequest\b|\bWebSocket\b|\bSocket\b").unwrap(),
+        ),
         (Capability::Dbus, Regex::new(r"\bDBus").unwrap()),
-        (Capability::FilesystemWrite, Regex::new(r"\.setText\s*\(|writeAdapter\s*\(").unwrap()),
+        (
+            Capability::FilesystemWrite,
+            Regex::new(r"\.setText\s*\(|writeAdapter\s*\(").unwrap(),
+        ),
     ]
 }
 
@@ -34,6 +43,100 @@ fn strip_comments(qml: &str) -> String {
         .map(|l| l.split("//").next().unwrap_or(""))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+const NON_VISUAL_QML_TYPES: &[&str] = &[
+    "Binding",
+    "Component",
+    "Connections",
+    "FileView",
+    "IpcHandler",
+    "JsonAdapter",
+    "JsonObject",
+    "PersistentProperties",
+    "Process",
+    "QtObject",
+    "ScriptModel",
+    "Shortcut",
+    "SplitParser",
+    "StdioCollector",
+    "Timer",
+];
+
+fn qml_root_type(code: &str) -> Option<String> {
+    let root_re = Regex::new(r"^\s*([A-Z][A-Za-z0-9_]*)\s*\{").unwrap();
+    code.lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.is_empty()
+                && !trimmed.starts_with("import ")
+                && !trimmed.starts_with("pragma ")
+        })
+        .find_map(|line| root_re.captures(line).map(|caps| caps[1].to_string()))
+}
+
+fn local_qml_roots(payload: &Path) -> BTreeMap<String, String> {
+    let mut roots = BTreeMap::new();
+    for entry in WalkDir::new(payload).into_iter().flatten() {
+        if !entry.file_type().is_file() || !entry.path().extension().is_some_and(|e| e == "qml") {
+            continue;
+        }
+        let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        if let Some(root) = qml_root_type(&strip_comments(&text)) {
+            roots.insert(stem.to_string(), root);
+        }
+    }
+    roots
+}
+
+fn bar_group_direct_child_types(code: &str) -> Vec<String> {
+    let child_re = Regex::new(r"^\s*([A-Z][A-Za-z0-9_]*)\s*\{").unwrap();
+    let mut in_bar_group = false;
+    let mut depth = 0_i32;
+    let mut children = Vec::new();
+    for line in code.lines() {
+        if !in_bar_group && line.trim_start().starts_with("BarGroup") && line.contains('{') {
+            in_bar_group = true;
+            depth = 1;
+            continue;
+        }
+        if in_bar_group && depth == 1 {
+            if let Some(caps) = child_re.captures(line) {
+                children.push(caps[1].to_string());
+            }
+        }
+        if in_bar_group {
+            depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
+            if depth <= 0 {
+                break;
+            }
+        }
+    }
+    children
+}
+
+fn lint_bar_group_children(
+    rel: &str,
+    code: &str,
+    roots: &BTreeMap<String, String>,
+    errors: &mut Vec<String>,
+) {
+    for child in bar_group_direct_child_types(code) {
+        let root = roots
+            .get(&child)
+            .map(String::as_str)
+            .unwrap_or(child.as_str());
+        if NON_VISUAL_QML_TYPES.contains(&root) {
+            errors.push(format!(
+                "{rel}: BarGroup direct child {child} is not a visual Item (root is {root}); move it inside an Item/MouseArea or expose it as a property"
+            ));
+        }
+    }
 }
 
 /// Basenames of stock QML types the module must not shadow. Walks the live tree
@@ -67,6 +170,7 @@ pub fn lint(manifest: &Manifest, payload: &Path, ii_root: &Path) -> Result<LintR
     let denylist = stock_basename_denylist(ii_root);
     let declared: BTreeSet<Capability> = manifest.capabilities.iter().copied().collect();
     let mut detected: BTreeSet<Capability> = BTreeSet::new();
+    let qml_roots = local_qml_roots(payload);
 
     let own_config_marker = format!("modules/{}.json", manifest.id);
     let singleton_re = Regex::new(r"^\s*pragma\s+Singleton").unwrap();
@@ -78,12 +182,24 @@ pub fn lint(manifest: &Manifest, payload: &Path, ii_root: &Path) -> Result<LintR
         if !entry.file_type().is_file() {
             // Reject symlinks outright (payloads must be plain trees).
             if entry.file_type().is_symlink() {
-                errors.push(format!("{}: symlinks are not allowed in payloads", entry.path().display()));
+                errors.push(format!(
+                    "{}: symlinks are not allowed in payloads",
+                    entry.path().display()
+                ));
             }
             continue;
         }
-        let rel = entry.path().strip_prefix(payload).unwrap().to_string_lossy().into_owned();
-        let ext = entry.path().extension().and_then(|e| e.to_str()).unwrap_or_default();
+        let rel = entry
+            .path()
+            .strip_prefix(payload)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let ext = entry
+            .path()
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default();
 
         if ext == "qml" {
             let basename = entry.file_name().to_string_lossy().into_owned();
@@ -95,8 +211,13 @@ pub fn lint(manifest: &Manifest, payload: &Path, ii_root: &Path) -> Result<LintR
         }
 
         if matches!(ext, "qml" | "js") {
-            let Ok(text) = std::fs::read_to_string(entry.path()) else { continue };
+            let Ok(text) = std::fs::read_to_string(entry.path()) else {
+                continue;
+            };
             let code = strip_comments(&text);
+            if manifest.slots.contains(&Slot::Bar) && rel == manifest.entry_for(Slot::Bar) {
+                lint_bar_group_children(&rel, &code, &qml_roots, &mut errors);
+            }
             for line in code.lines() {
                 if singleton_re.is_match(line) {
                     errors.push(format!("{rel}: pragma Singleton is forbidden in modules (unregistrable under mod/)"));
@@ -133,7 +254,10 @@ pub fn lint(manifest: &Manifest, payload: &Path, ii_root: &Path) -> Result<LintR
     }
     for cap in &declared {
         if !detected.contains(cap) {
-            warnings.push(format!("capability {:?} declared but not detected (over-declaration is allowed)", cap));
+            warnings.push(format!(
+                "capability {:?} declared but not detected (over-declaration is allowed)",
+                cap
+            ));
         }
     }
 
@@ -145,7 +269,10 @@ pub fn require_clean(report: &LintReport) -> Result<()> {
     if report.errors.is_empty() {
         return Ok(());
     }
-    Err(bail(exit::VALIDATION, format!("lint failed:\n  ✗ {}", report.errors.join("\n  ✗ "))))
+    Err(bail(
+        exit::VALIDATION,
+        format!("lint failed:\n  ✗ {}", report.errors.join("\n  ✗ ")),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -154,18 +281,77 @@ pub fn require_clean(report: &LintReport) -> Result<()> {
 
 /// QML/Qt/Quickshell types that never need probes.
 const BUILTIN_TYPES: &[&str] = &[
-    "Item", "Rectangle", "Text", "Image", "MouseArea", "Timer", "Loader", "Component",
-    "Connections", "Repeater", "ListView", "GridView", "Column", "Row", "Grid", "Flow",
-    "ColumnLayout", "RowLayout", "GridLayout", "Layout", "StackLayout", "Behavior",
-    "NumberAnimation", "ColorAnimation", "PropertyAnimation", "SequentialAnimation",
-    "ParallelAnimation", "PropertyAction", "State", "Transition", "Canvas", "TextMetrics",
-    "FontMetrics", "Flickable", "ScrollView", "Shortcut", "QtObject", "Binding",
-    "Process", "FileView", "JsonObject", "JsonAdapter", "Singleton", "Scope",
-    "PanelWindow", "LazyLoader", "IpcHandler", "StdioCollector", "SplitParser",
-    "Variants", "ShellRoot", "PersistentProperties", "ScriptModel", "FileViewError",
-    "Qt", "JSON", "Math", "Date", "Object", "Array", "String", "Number", "Boolean",
-    "RegExp", "Component", "Screen", "Window",
-    "Config", "Appearance", "Directories", "Translation", // guaranteed baseline
+    "Item",
+    "Rectangle",
+    "Text",
+    "Image",
+    "MouseArea",
+    "Timer",
+    "Loader",
+    "Component",
+    "Connections",
+    "Repeater",
+    "ListView",
+    "GridView",
+    "Column",
+    "Row",
+    "Grid",
+    "Flow",
+    "ColumnLayout",
+    "RowLayout",
+    "GridLayout",
+    "Layout",
+    "StackLayout",
+    "Behavior",
+    "NumberAnimation",
+    "ColorAnimation",
+    "PropertyAnimation",
+    "SequentialAnimation",
+    "ParallelAnimation",
+    "PropertyAction",
+    "State",
+    "Transition",
+    "Canvas",
+    "TextMetrics",
+    "FontMetrics",
+    "Flickable",
+    "ScrollView",
+    "Shortcut",
+    "QtObject",
+    "Binding",
+    "Process",
+    "FileView",
+    "JsonObject",
+    "JsonAdapter",
+    "Singleton",
+    "Scope",
+    "PanelWindow",
+    "LazyLoader",
+    "IpcHandler",
+    "StdioCollector",
+    "SplitParser",
+    "Variants",
+    "ShellRoot",
+    "PersistentProperties",
+    "ScriptModel",
+    "FileViewError",
+    "Qt",
+    "JSON",
+    "Math",
+    "Date",
+    "Object",
+    "Array",
+    "String",
+    "Number",
+    "Boolean",
+    "RegExp",
+    "Component",
+    "Screen",
+    "Window",
+    "Config",
+    "Appearance",
+    "Directories",
+    "Translation", // guaranteed baseline
 ];
 
 pub struct Suggestions {
@@ -178,7 +364,10 @@ pub struct Suggestions {
 /// non-baseline type to its stock file in the live tree for a file-exists probe.
 pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
     let type_use = Regex::new(r"\b([A-Z][A-Za-z0-9]+)\s*[.{]").unwrap();
-    let own_id = payload.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let own_id = payload
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let own_config_marker = format!("modules/{own_id}.json");
     let mut candidates: BTreeSet<String> = BTreeSet::new();
     let mut detected: BTreeSet<Capability> = BTreeSet::new();
@@ -187,11 +376,17 @@ pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
         if !entry.file_type().is_file() {
             continue;
         }
-        let ext = entry.path().extension().and_then(|e| e.to_str()).unwrap_or_default();
+        let ext = entry
+            .path()
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default();
         if !matches!(ext, "qml" | "js") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(entry.path()) else { continue };
+        let Ok(text) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
         let code = strip_comments(&text);
         // Import lines carry module URIs (QtQuick.Layouts, qs.services…), not type usage.
         let code_no_imports: String = code
@@ -222,7 +417,12 @@ pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
         .into_iter()
         .flatten()
         .filter(|e| e.file_type().is_file())
-        .map(|e| e.file_name().to_string_lossy().trim_end_matches(".qml").to_string())
+        .map(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .trim_end_matches(".qml")
+                .to_string()
+        })
         .collect();
 
     let mut probes = Vec::new();
@@ -242,7 +442,12 @@ pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
                 if entry.file_type().is_file()
                     && entry.file_name().to_string_lossy() == format!("{name}.qml")
                 {
-                    let rel = entry.path().strip_prefix(ii_root).unwrap().to_string_lossy().into_owned();
+                    let rel = entry
+                        .path()
+                        .strip_prefix(ii_root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned();
                     if rel.starts_with("modules/common/") {
                         baseline = true; // guaranteed baseline: silently exempt
                     } else {
@@ -262,13 +467,16 @@ pub fn suggest(payload: &Path, ii_root: &Path) -> Result<Suggestions> {
     }
     probes.sort();
     probes.dedup();
-    Ok(Suggestions { probes, capabilities: detected.into_iter().collect(), notes })
+    Ok(Suggestions {
+        probes,
+        capabilities: detected.into_iter().collect(),
+        notes,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest;
 
     static DIR_SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -286,8 +494,10 @@ mod tests {
     }
 
     fn minimal_manifest(caps: &[Capability]) -> Manifest {
-        let mut m: Manifest =
-            serde_json::from_str(include_str!("../../../spec/fixtures/valid/tier-a-minimal.json")).unwrap();
+        let mut m: Manifest = serde_json::from_str(include_str!(
+            "../../../spec/fixtures/valid/tier-a-minimal.json"
+        ))
+        .unwrap();
         m.capabilities = caps.to_vec();
         m
     }
@@ -295,15 +505,28 @@ mod tests {
     #[test]
     fn undeclared_exec_is_error() {
         let payload = payload_with(&[("bar.qml", "Item { Process { command: [\"rm\"] } }")]);
-        let report = lint(&minimal_manifest(&[]), &payload, std::path::Path::new("/nonexistent")).unwrap();
+        let report = lint(
+            &minimal_manifest(&[]),
+            &payload,
+            std::path::Path::new("/nonexistent"),
+        )
+        .unwrap();
         assert!(report.errors.iter().any(|e| e.contains("Exec")));
         assert!(require_clean(&report).is_err());
     }
 
     #[test]
     fn declared_exec_is_clean_and_comments_ignored() {
-        let payload = payload_with(&[("bar.qml", "Item { Process {} } // XMLHttpRequest in comment only")]);
-        let report = lint(&minimal_manifest(&[Capability::Exec]), &payload, std::path::Path::new("/nonexistent")).unwrap();
+        let payload = payload_with(&[(
+            "bar.qml",
+            "Item { Process {} } // XMLHttpRequest in comment only",
+        )]);
+        let report = lint(
+            &minimal_manifest(&[Capability::Exec]),
+            &payload,
+            std::path::Path::new("/nonexistent"),
+        )
+        .unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
     }
 
@@ -313,7 +536,12 @@ mod tests {
             "ConfigLoader.qml",
             "FileView { path: root.base + \"/modules/hello_bar.json\"\n onAdapterUpdated: writeAdapter() }",
         )]);
-        let report = lint(&minimal_manifest(&[]), &payload, std::path::Path::new("/nonexistent")).unwrap();
+        let report = lint(
+            &minimal_manifest(&[]),
+            &payload,
+            std::path::Path::new("/nonexistent"),
+        )
+        .unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
     }
 
@@ -324,9 +552,35 @@ mod tests {
             ("logic.qml", "pragma Singleton\nItem {}"),
             ("other.qml", "import qs.mod.friend\nItem {}"),
         ]);
-        let report = lint(&minimal_manifest(&[]), &payload, std::path::Path::new("/nonexistent")).unwrap();
-        assert!(report.errors.iter().any(|e| e.contains("collides with stock type")));
+        let report = lint(
+            &minimal_manifest(&[]),
+            &payload,
+            std::path::Path::new("/nonexistent"),
+        )
+        .unwrap();
+        assert!(report
+            .errors
+            .iter()
+            .any(|e| e.contains("collides with stock type")));
         assert!(report.errors.iter().any(|e| e.contains("pragma Singleton")));
         assert!(report.errors.iter().any(|e| e.contains("qs.mod")));
+    }
+
+    #[test]
+    fn bar_group_direct_children_must_be_visual_items() {
+        let payload = payload_with(&[
+            ("bar.qml", "import qs.modules.ii.bar\nimport qs.mod.hello_bar\nBarGroup {\n    ConfigLoader {}\n    MouseArea {}\n}\n"),
+            ("ConfigLoader.qml", "import Quickshell.Io\nFileView {}\n"),
+        ]);
+        let report = lint(
+            &minimal_manifest(&[]),
+            &payload,
+            std::path::Path::new("/nonexistent"),
+        )
+        .unwrap();
+        assert!(report
+            .errors
+            .iter()
+            .any(|e| e.contains("ConfigLoader is not a visual Item")));
     }
 }

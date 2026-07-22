@@ -165,7 +165,7 @@ next to the manifest inside the package: `{"specVersion": 1, "manifestSha256":
 
 ```json
 "requires": {
-  "modules": [{"id": "traffic-core", "versionReq": ">=1.2, <2"}],
+  "modules": [{"id": "traffic_core", "versionReq": ">=1.2, <2"}],
   "system":  [{"bin": "jq", "hint": "sudo pacman -S jq"}]
 }
 ```

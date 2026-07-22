@@ -248,7 +248,7 @@ pub fn validate(manifest: &Manifest) -> Result<Vec<String>> {
     }
 
     if !is_valid_id(&manifest.id) {
-        return Err(bail(exit::VALIDATION, format!("id {:?}: must match ^[a-z][a-z0-9-]{{1,30}}$ with no trailing '-' or '--'", manifest.id)));
+        return Err(bail(exit::VALIDATION, format!("id {:?}: must match ^[a-z][a-z0-9_]{{1,30}}$ with no trailing '_' or '__'", manifest.id)));
     }
     if RESERVED_IDS.contains(&manifest.id.as_str()) {
         return Err(bail(exit::VALIDATION, format!("id {:?} is reserved", manifest.id)));

@@ -27,7 +27,7 @@ struct Cli {
 enum Command {
     /// Scaffold a new module payload directory
     Init {
-        /// Module id (^[a-z][a-z0-9-]{1,30}$)
+        /// Module id (^[a-z][a-z0-9_]{1,30}$, no trailing _ or __)
         id: String,
         /// Parent directory to create the payload in
         #[arg(long, default_value = ".")]

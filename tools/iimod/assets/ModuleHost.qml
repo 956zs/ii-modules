@@ -23,7 +23,7 @@ Scope {
             }
         }
         for (const id of want) {
-            if (id in instances || !/^[a-z][a-z0-9-]{1,30}$/.test(id))
+            if (id in instances || !root.isValidModuleId(id))
                 continue;
             instances[id] = null; // in-flight marker
             const comp = Qt.createComponent(Quickshell.shellPath(`mod/${id}/main.qml`), Component.Asynchronous);
@@ -46,6 +46,10 @@ Scope {
             else
                 finish();
         }
+    }
+
+    function isValidModuleId(id) {
+        return /^[a-z][a-z0-9_]{1,30}$/.test(id) && !id.endsWith("_") && !id.includes("__");
     }
 
     Connections {

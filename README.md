@@ -59,12 +59,12 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 
 ## AI Agent Skills
 
-`skills/` 內含兩個 Claude Code skills，讓你的 agent 受協議約束：
+`.claude/skills/` 內含兩個 Claude Code project skills，讓這個專案裡的 agent 受協議約束：
 
 - **ii-module-author** — 開發紀律：命名規則、自包含、探針宣告、semver、發佈清單
 - **ii-module-manage** — 安裝紀律：必跑 validate+check、Tier B 同意流程、exit code 對照、更新後 reapply
 
-安裝：`cp -r skills/ii-module-* ~/.claude/skills/`（朋友的機器同樣照做）。
+若要帶到別的模塊專案，複製到該專案的 `.claude/skills/`，不要裝進全域 `~/.claude/skills/`。
 
 ## Exit codes（穩定契約）
 
@@ -75,9 +75,10 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 
 ```
 spec/            SPEC-1.0.md＋fixtures（規範與測試語料）
-tools/iimod/     Rust CLI（48 tests：單元＋對迷你 stock 樹的整合矩陣）
-skills/          agent 約束 skills ×2
-modules/         參考模塊（network-traffic）
+tools/iimod/     Rust CLI（50 tests：單元＋對迷你 stock 樹的整合矩陣）
+.claude/skills/  Claude Code project skills ×2
+skills/          portable skill copies ×2
+modules/         參考模塊（network_traffic）
 examples/        最小範例（hello-window）
 ```
 

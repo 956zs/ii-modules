@@ -12,13 +12,13 @@ import qs.mod.network_traffic
 BarGroup {
     id: barGroup
 
-    ConfigLoader { id: cfg }
-
     MouseArea {
         id: root
         implicitWidth: rowLayout.implicitWidth + 10 * 2
         implicitHeight: Appearance.sizes.barHeight
         hoverEnabled: !Config.options.bar.tooltips.clickToShow
+
+        ConfigLoader { id: cfg }
 
         TrafficLogic {
             id: logic

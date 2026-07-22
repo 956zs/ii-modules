@@ -7,7 +7,7 @@ import qs.mod.network_traffic
 
 /*
  * Settings fragment rendered inside the Modules page (Item root, minimal API
- * surface). Options live in ~/.config/illogical-impulse/modules/network-traffic.json.
+ * surface). Options live in ~/.config/illogical-impulse/modules/network_traffic.json.
  */
 ColumnLayout {
     spacing: 4
@@ -20,6 +20,6 @@ ColumnLayout {
         font.pixelSize: Appearance.font.pixelSize.smaller
         wrapMode: Text.WordWrap
         text: Translation.tr("Update interval (ms):") + " " + cfg.options.updateInterval
-              + "\n" + Translation.tr("Config file:") + " ~/.config/illogical-impulse/modules/network-traffic.json"
+              + "\n" + Translation.tr("Config file:") + " ~/.config/illogical-impulse/modules/network_traffic.json"
     }
 }
