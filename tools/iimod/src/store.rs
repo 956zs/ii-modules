@@ -26,7 +26,12 @@ pub fn hash_tree(root: &Path) -> Result<BTreeMap<String, String>> {
     for entry in WalkDir::new(root).sort_by_file_name() {
         let entry = entry?;
         if entry.file_type().is_file() {
-            let rel = entry.path().strip_prefix(root).unwrap().to_string_lossy().into_owned();
+            let rel = entry
+                .path()
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
             map.insert(rel, sha256_file(entry.path())?);
         }
     }
@@ -45,8 +50,9 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::copy(entry.path(), &target)
-                .with_context(|| format!("copy {} -> {}", entry.path().display(), target.display()))?;
+            std::fs::copy(entry.path(), &target).with_context(|| {
+                format!("copy {} -> {}", entry.path().display(), target.display())
+            })?;
         }
     }
     Ok(())
@@ -203,6 +209,9 @@ mod tests {
         set.restore("exists.qml", &existing).unwrap();
         set.restore("ghost.qml", &ghost).unwrap();
         assert_eq!(std::fs::read_to_string(&existing).unwrap(), "original");
-        assert!(!ghost.exists(), "restore of a pre-nonexistent file must delete it");
+        assert!(
+            !ghost.exists(),
+            "restore of a pre-nonexistent file must delete it"
+        );
     }
 }

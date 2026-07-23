@@ -134,13 +134,19 @@ pub fn ensure_host(extra_patches_for: &dyn Fn(&str) -> Vec<PatchInstance>) -> Re
     if !ii.join("shell.qml").exists() {
         return Err(bail(
             exit::STATE,
-            format!("shell tree not found at {} (is illogical-impulse installed?)", ii.display()),
+            format!(
+                "shell tree not found at {} (is illogical-impulse installed?)",
+                ii.display()
+            ),
         ));
     }
 
     std::fs::create_dir_all(paths::host_dir())?;
     std::fs::write(paths::host_dir().join("ModuleHost.qml"), MODULE_HOST_QML)?;
-    std::fs::write(paths::host_dir().join("ModulesConfig.qml"), MODULES_CONFIG_QML)?;
+    std::fs::write(
+        paths::host_dir().join("ModulesConfig.qml"),
+        MODULES_CONFIG_QML,
+    )?;
     // Callers regenerate with real ids afterwards; an empty manifest keeps the
     // host compilable when none exist yet.
     if !paths::host_dir().join("ModuleImports.qml").exists() {
@@ -150,7 +156,12 @@ pub fn ensure_host(extra_patches_for: &dyn Fn(&str) -> Vec<PatchInstance>) -> Re
     // Safe live-reload order: shell.qml LAST (its import + instantiation must
     // find everything else already on disk).
     let mut touched = Vec::new();
-    for rel in ["modules/common/Config.qml", "modules/ii/bar/BarContent.qml", "settings.qml", "shell.qml"] {
+    for rel in [
+        "modules/common/Config.qml",
+        "modules/ii/bar/BarContent.qml",
+        "settings.qml",
+        "shell.qml",
+    ] {
         let target = ii.join(rel);
         let current = std::fs::read_to_string(&target)
             .map_err(|e| bail(exit::STATE, format!("cannot read stock file {rel}: {e}")))?;
@@ -174,7 +185,10 @@ pub fn ensure_host(extra_patches_for: &dyn Fn(&str) -> Vec<PatchInstance>) -> Re
         installed_at_epoch: crate::registry::now_epoch(),
         qs_version_hint: crate::qs::qs_version(),
     };
-    std::fs::write(paths::host_sentinel(), serde_json::to_string_pretty(&sentinel)? + "\n")?;
+    std::fs::write(
+        paths::host_sentinel(),
+        serde_json::to_string_pretty(&sentinel)? + "\n",
+    )?;
     // Make sure per-module config dir exists for ConfigLoader-pattern writers.
     std::fs::create_dir_all(paths::modules_config_dir())?;
     Ok(touched)
@@ -186,7 +200,12 @@ pub fn ensure_host(extra_patches_for: &dyn Fn(&str) -> Vec<PatchInstance>) -> Re
 pub fn remove_host(extra_patches_for: &dyn Fn(&str) -> Vec<PatchInstance>) -> Result<()> {
     let ii = paths::ii_root();
     // Removal order: shell.qml FIRST (stop referencing before files vanish).
-    for rel in ["shell.qml", "modules/common/Config.qml", "modules/ii/bar/BarContent.qml", "settings.qml"] {
+    for rel in [
+        "shell.qml",
+        "modules/common/Config.qml",
+        "modules/ii/bar/BarContent.qml",
+        "settings.qml",
+    ] {
         let target = ii.join(rel);
         if !target.exists() {
             continue;
@@ -213,9 +232,15 @@ mod tests {
         // Single-line anchors; content fence-injection-free. (Host anchors are
         // exempt from the ≥10-char manifest heuristic — see P4 note.)
         for (file, p) in host_patches() {
-            assert!(!p.anchor.is_empty() && !p.anchor.contains('\n'), "{file}: bad anchor");
+            assert!(
+                !p.anchor.is_empty() && !p.anchor.contains('\n'),
+                "{file}: bad anchor"
+            );
             for line in p.content.lines() {
-                assert!(!line.contains(">>> iimp ") && !line.contains("<<< iimp "), "{file}: fence injection");
+                assert!(
+                    !line.contains(">>> iimp ") && !line.contains("<<< iimp "),
+                    "{file}: fence injection"
+                );
             }
         }
     }

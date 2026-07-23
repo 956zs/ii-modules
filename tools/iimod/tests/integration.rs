@@ -107,7 +107,11 @@ impl World {
             "capabilities": []
         });
         merge_json(&mut manifest, manifest_extra);
-        std::fs::write(payload.join("module.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            payload.join("module.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
         std::fs::write(payload.join("bar.qml"), "Item { }\n").unwrap();
         std::fs::write(
             payload.join("translations/zh_TW.json"),
@@ -135,7 +139,11 @@ fn hash_tree(root: &Path) -> BTreeMap<String, String> {
             if path.is_dir() {
                 walk(&path, root, map);
             } else {
-                let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+                let rel = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
                 let mut hasher = Sha256::new();
                 hasher.update(std::fs::read(&path).unwrap());
                 map.insert(rel, format!("{:x}", hasher.finalize()));
@@ -176,7 +184,12 @@ fn tier_a_install_uninstall_byte_clean() {
     assert!(!translations.contains("你好"));
 
     // Byte-clean modulo the host (strip host = pristine): compare stripped stock files.
-    for rel in ["shell.qml", "modules/common/Config.qml", "modules/ii/bar/BarContent.qml", "settings.qml"] {
+    for rel in [
+        "shell.qml",
+        "modules/common/Config.qml",
+        "modules/ii/bar/BarContent.qml",
+        "settings.qml",
+    ] {
         let current = std::fs::read_to_string(w.ii().join(rel)).unwrap();
         let mut stripped = String::new();
         let mut in_fence = false;
@@ -197,7 +210,11 @@ fn tier_a_install_uninstall_byte_clean() {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(stripped.as_bytes());
-        assert_eq!(&format!("{:x}", hasher.finalize()), pristine_content_hash, "{rel} not byte-clean after strip");
+        assert_eq!(
+            &format!("{:x}", hasher.finalize()),
+            pristine_content_hash,
+            "{rel} not byte-clean after strip"
+        );
     }
 }
 
@@ -230,52 +247,76 @@ fn tier_b_gate_and_anchor_determinism() {
     let payload_a = w.make_module("aaa_patcher", tier_a2);
 
     // Install order B then A.
-    w.expect(&["install", payload_b.to_str().unwrap(), "--allow-patches"], 0);
-    w.expect(&["install", payload_a.to_str().unwrap(), "--allow-patches"], 0);
+    w.expect(
+        &["install", payload_b.to_str().unwrap(), "--allow-patches"],
+        0,
+    );
+    w.expect(
+        &["install", payload_a.to_str().unwrap(), "--allow-patches"],
+        0,
+    );
     let bytes_ba = std::fs::read_to_string(w.ii().join("modules/ii/bar/BarContent.qml")).unwrap();
 
     // Fresh world, install order A then B → identical bytes (determinism law).
     let w2 = World::new("tier-b-order2");
-    let payload_b2 = w2.make_module("bbb_patcher", serde_json::json!({
-        "patches": [{
-            "file": "modules/ii/bar/BarContent.qml",
-            "op": "insert-before",
-            "anchor": "            // Weather",
-            "content": "            BbbThing {}\n"
-        }],
-    }));
-    let payload_a2 = w2.make_module("aaa_patcher", serde_json::json!({
-        "patches": [{
-            "file": "modules/ii/bar/BarContent.qml",
-            "op": "insert-before",
-            "anchor": "            // Weather",
-            "content": "            AaaThing {}\n"
-        }],
-    }));
-    w2.expect(&["install", payload_a2.to_str().unwrap(), "--allow-patches"], 0);
-    w2.expect(&["install", payload_b2.to_str().unwrap(), "--allow-patches"], 0);
+    let payload_b2 = w2.make_module(
+        "bbb_patcher",
+        serde_json::json!({
+            "patches": [{
+                "file": "modules/ii/bar/BarContent.qml",
+                "op": "insert-before",
+                "anchor": "            // Weather",
+                "content": "            BbbThing {}\n"
+            }],
+        }),
+    );
+    let payload_a2 = w2.make_module(
+        "aaa_patcher",
+        serde_json::json!({
+            "patches": [{
+                "file": "modules/ii/bar/BarContent.qml",
+                "op": "insert-before",
+                "anchor": "            // Weather",
+                "content": "            AaaThing {}\n"
+            }],
+        }),
+    );
+    w2.expect(
+        &["install", payload_a2.to_str().unwrap(), "--allow-patches"],
+        0,
+    );
+    w2.expect(
+        &["install", payload_b2.to_str().unwrap(), "--allow-patches"],
+        0,
+    );
     let bytes_ab = std::fs::read_to_string(w2.ii().join("modules/ii/bar/BarContent.qml")).unwrap();
     assert_eq!(bytes_ba, bytes_ab, "install order must not affect bytes");
     assert!(bytes_ab.find("AaaThing").unwrap() < bytes_ab.find("BbbThing").unwrap());
 
     // Bad anchor → exit 8 at check time.
-    let bad = w.make_module("bad_anchor", serde_json::json!({
-        "patches": [{
-            "file": "modules/ii/bar/BarContent.qml",
-            "op": "insert-after",
-            "anchor": "THIS ANCHOR EXISTS NOWHERE",
-            "content": "            Nope {}\n"
-        }],
-    }));
+    let bad = w.make_module(
+        "bad_anchor",
+        serde_json::json!({
+            "patches": [{
+                "file": "modules/ii/bar/BarContent.qml",
+                "op": "insert-after",
+                "anchor": "THIS ANCHOR EXISTS NOWHERE",
+                "content": "            Nope {}\n"
+            }],
+        }),
+    );
     w.expect(&["check", bad.to_str().unwrap()], 8);
 }
 
 #[test]
 fn dependency_enforcement() {
     let w = World::new("deps");
-    let dependent = w.make_module("needs_core", serde_json::json!({
-        "requires": {"modules": [{"id": "core_lib", "versionReq": ">=1.0, <2"}]}
-    }));
+    let dependent = w.make_module(
+        "needs_core",
+        serde_json::json!({
+            "requires": {"modules": [{"id": "core_lib", "versionReq": ">=1.0, <2"}]}
+        }),
+    );
     // Missing dep → exit 5.
     w.expect(&["install", dependent.to_str().unwrap()], 5);
 
@@ -293,15 +334,21 @@ fn dependency_enforcement() {
 #[test]
 fn wipe_and_reapply_restores_byte_identical() {
     let w = World::new("wipe");
-    let payload = w.make_module("survivor", serde_json::json!({
-        "patches": [{
-            "file": "modules/ii/bar/BarContent.qml",
-            "op": "insert-before",
-            "anchor": "            // Weather",
-            "content": "            Survivor {}\n"
-        }],
-    }));
-    w.expect(&["install", payload.to_str().unwrap(), "--allow-patches"], 0);
+    let payload = w.make_module(
+        "survivor",
+        serde_json::json!({
+            "patches": [{
+                "file": "modules/ii/bar/BarContent.qml",
+                "op": "insert-before",
+                "anchor": "            // Weather",
+                "content": "            Survivor {}\n"
+            }],
+        }),
+    );
+    w.expect(
+        &["install", payload.to_str().unwrap(), "--allow-patches"],
+        0,
+    );
     let installed_state = w.hash_ii();
 
     // Simulate a dots update: reset ONLY the ii tree to stock (state survives).
@@ -311,7 +358,10 @@ fn wipe_and_reapply_restores_byte_identical() {
 
     // Detection + block.
     w.expect(&["verify"], 7);
-    w.expect(&["install", w.root.join("src/survivor").to_str().unwrap()], 7);
+    w.expect(
+        &["install", w.root.join("src/survivor").to_str().unwrap()],
+        7,
+    );
 
     // Reapply → byte-identical to pre-wipe (modulo the host sentinel, whose
     // installedAtEpoch timestamp legitimately changes).
@@ -333,7 +383,15 @@ fn pack_install_roundtrip_and_tamper() {
     let w = World::new("pack");
     let payload = w.make_module("packed_mod", serde_json::json!({}));
     let out_pkg = w.root.join("packed_mod-1.0.0.iimod");
-    w.expect(&["pack", payload.to_str().unwrap(), "--out", out_pkg.to_str().unwrap()], 0);
+    w.expect(
+        &[
+            "pack",
+            payload.to_str().unwrap(),
+            "--out",
+            out_pkg.to_str().unwrap(),
+        ],
+        0,
+    );
     w.expect(&["install", out_pkg.to_str().unwrap()], 0);
     w.expect(&["uninstall", "packed_mod"], 0);
 
@@ -344,7 +402,11 @@ fn pack_install_roundtrip_and_tamper() {
     let bad_pkg = w.root.join("tampered.iimod");
     std::fs::write(&bad_pkg, bytes).unwrap();
     let out = w.run(&["install", bad_pkg.to_str().unwrap()]);
-    assert_ne!(out.status.code(), Some(0), "tampered package must not install");
+    assert_ne!(
+        out.status.code(),
+        Some(0),
+        "tampered package must not install"
+    );
 }
 
 #[test]
@@ -356,10 +418,15 @@ fn enable_disable_projection() {
     let config = || std::fs::read_to_string(w.root.join("shellconfig/config.json")).unwrap();
     assert!(config().contains("toggle_me"));
     w.expect(&["disable", "toggle_me"], 0);
-    assert!(!config().replace("\"enabledWindow\": []", "").contains("toggle_me") || {
-        let v: serde_json::Value = serde_json::from_str(&config()).unwrap();
-        v["iimp"]["enabledBar"].as_array().unwrap().is_empty()
-    });
+    assert!(
+        !config()
+            .replace("\"enabledWindow\": []", "")
+            .contains("toggle_me")
+            || {
+                let v: serde_json::Value = serde_json::from_str(&config()).unwrap();
+                v["iimp"]["enabledBar"].as_array().unwrap().is_empty()
+            }
+    );
     w.expect(&["enable", "toggle_me"], 0);
     let v: serde_json::Value = serde_json::from_str(&config()).unwrap();
     assert_eq!(v["iimp"]["enabledBar"][0], "toggle_me");

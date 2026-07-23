@@ -61,7 +61,9 @@ pub fn strip(text: &str) -> Result<(String, Vec<FoundBlock>)> {
             }
             current = Some((
                 caps[1].to_string(),
-                caps[2].parse().map_err(|_| bail(exit::STATE, "fence-broken: bad index"))?,
+                caps[2]
+                    .parse()
+                    .map_err(|_| bail(exit::STATE, "fence-broken: bad index"))?,
                 caps[3].to_string(),
                 String::new(),
             ));
@@ -72,7 +74,12 @@ pub fn strip(text: &str) -> Result<(String, Vec<FoundBlock>)> {
             if caps[1] != owner || caps[2].parse::<u32>().ok() != Some(index) {
                 return Err(bail(exit::STATE, "fence-broken: close identity mismatch"));
             }
-            blocks.push(FoundBlock { owner, index, version, content });
+            blocks.push(FoundBlock {
+                owner,
+                index,
+                version,
+                content,
+            });
         } else if let Some((.., content)) = current.as_mut() {
             content.push_str(line);
         } else {
@@ -91,12 +98,18 @@ fn leading_whitespace(line: &str) -> &str {
 
 fn render_block(patch: &PatchInstance, indent: &str) -> String {
     let mut block = String::new();
-    block.push_str(&format!("{indent}// >>> iimp {}/{} v{} >>>\n", patch.owner, patch.index, patch.version));
+    block.push_str(&format!(
+        "{indent}// >>> iimp {}/{} v{} >>>\n",
+        patch.owner, patch.index, patch.version
+    ));
     block.push_str(&patch.content);
     if !patch.content.ends_with('\n') {
         block.push('\n');
     }
-    block.push_str(&format!("{indent}// <<< iimp {}/{} <<<\n", patch.owner, patch.index));
+    block.push_str(&format!(
+        "{indent}// <<< iimp {}/{} <<<\n",
+        patch.owner, patch.index
+    ));
     block
 }
 
@@ -119,13 +132,19 @@ pub fn compose(stripped: &str, patches: &[PatchInstance]) -> Result<String> {
             0 => {
                 return Err(bail(
                     exit::ANCHOR,
-                    format!("anchor not found for {}/{}: {:?}", patch.owner, patch.index, patch.anchor),
+                    format!(
+                        "anchor not found for {}/{}: {:?}",
+                        patch.owner, patch.index, patch.anchor
+                    ),
                 ))
             }
             n => {
                 return Err(bail(
                     exit::ANCHOR,
-                    format!("anchor ambiguous ({n} matches) for {}/{}: {:?}", patch.owner, patch.index, patch.anchor),
+                    format!(
+                        "anchor ambiguous ({n} matches) for {}/{}: {:?}",
+                        patch.owner, patch.index, patch.anchor
+                    ),
                 ))
             }
         }
@@ -192,11 +211,35 @@ mod tests {
     fn strip_compose_identity() {
         let sets = vec![
             vec![],
-            vec![patch("aaa", 0, PatchOp::InsertBefore, "// Weather", "    AaaThing {}\n")],
+            vec![patch(
+                "aaa",
+                0,
+                PatchOp::InsertBefore,
+                "// Weather",
+                "    AaaThing {}\n",
+            )],
             vec![
-                patch("aaa", 0, PatchOp::InsertBefore, "// Weather", "    AaaThing {}\n"),
-                patch("bbb", 0, PatchOp::InsertAfter, "panelFamily", "    property bool b: true\n"),
-                patch("bbb", 1, PatchOp::InsertBefore, "// Weather", "    BbbThing {}\n"),
+                patch(
+                    "aaa",
+                    0,
+                    PatchOp::InsertBefore,
+                    "// Weather",
+                    "    AaaThing {}\n",
+                ),
+                patch(
+                    "bbb",
+                    0,
+                    PatchOp::InsertAfter,
+                    "panelFamily",
+                    "    property bool b: true\n",
+                ),
+                patch(
+                    "bbb",
+                    1,
+                    PatchOp::InsertBefore,
+                    "// Weather",
+                    "    BbbThing {}\n",
+                ),
             ],
         ];
         for set in sets {
@@ -209,8 +252,20 @@ mod tests {
 
     #[test]
     fn order_independence() {
-        let a = patch("aaa", 0, PatchOp::InsertBefore, "// Weather", "    AaaThing {}\n");
-        let b = patch("bbb", 0, PatchOp::InsertBefore, "// Weather", "    BbbThing {}\n");
+        let a = patch(
+            "aaa",
+            0,
+            PatchOp::InsertBefore,
+            "// Weather",
+            "    AaaThing {}\n",
+        );
+        let b = patch(
+            "bbb",
+            0,
+            PatchOp::InsertBefore,
+            "// Weather",
+            "    BbbThing {}\n",
+        );
         let ab = compose(STOCK, &[a.clone(), b.clone()]).unwrap();
         let ba = compose(STOCK, &[b, a]).unwrap();
         assert_eq!(ab, ba, "compose must be order-independent");
@@ -222,7 +277,13 @@ mod tests {
     fn recompose_is_stable() {
         // Underscore owner: the id grammar uses underscores — the fence regex
         // MUST recognize them or recomposition duplicates blocks.
-        let set = vec![patch("mod_x", 0, PatchOp::InsertAfter, "import QtQuick", "import extra\n")];
+        let set = vec![patch(
+            "mod_x",
+            0,
+            PatchOp::InsertAfter,
+            "import QtQuick",
+            "import extra\n",
+        )];
         let once = compose(STOCK, &set).unwrap();
         let twice = recompose(&once, &set).unwrap();
         assert_eq!(once, twice);
@@ -232,7 +293,13 @@ mod tests {
 
     #[test]
     fn anchor_failures() {
-        let missing = patch("m", 0, PatchOp::InsertAfter, "does not exist anywhere", "x\n");
+        let missing = patch(
+            "m",
+            0,
+            PatchOp::InsertAfter,
+            "does not exist anywhere",
+            "x\n",
+        );
         let err = compose(STOCK, &[missing]).unwrap_err();
         assert_eq!(crate::exit::code_of(&err), crate::exit::ANCHOR);
 
@@ -245,11 +312,27 @@ mod tests {
     #[test]
     fn anchor_never_matches_fenced_content() {
         // Module A inserts text containing what module B uses as an anchor.
-        let a = patch("aaa", 0, PatchOp::InsertBefore, "// Weather", "    // SECRET UNIQUE MARKER LINE\n");
-        let composed = compose(STOCK, &[a.clone()]).unwrap();
-        let b = patch("bbb", 0, PatchOp::InsertAfter, "SECRET UNIQUE MARKER", "    Evil {}\n");
+        let a = patch(
+            "aaa",
+            0,
+            PatchOp::InsertBefore,
+            "// Weather",
+            "    // SECRET UNIQUE MARKER LINE\n",
+        );
+        let composed = compose(STOCK, std::slice::from_ref(&a)).unwrap();
+        let b = patch(
+            "bbb",
+            0,
+            PatchOp::InsertAfter,
+            "SECRET UNIQUE MARKER",
+            "    Evil {}\n",
+        );
         let err = recompose(&composed, &[a, b]).unwrap_err();
-        assert_eq!(crate::exit::code_of(&err), crate::exit::ANCHOR, "anchor must only see stripped text");
+        assert_eq!(
+            crate::exit::code_of(&err),
+            crate::exit::ANCHOR,
+            "anchor must only see stripped text"
+        );
     }
 
     #[test]
@@ -266,9 +349,18 @@ mod tests {
 
     #[test]
     fn indentation_follows_anchor() {
-        let set = vec![patch("m", 0, PatchOp::InsertAfter, "panelFamily", "    property bool x: true\n")];
+        let set = vec![patch(
+            "m",
+            0,
+            PatchOp::InsertAfter,
+            "panelFamily",
+            "    property bool x: true\n",
+        )];
         let composed = compose(STOCK, &set).unwrap();
-        assert!(composed.contains("    // >>> iimp m/0 v1.0.0 >>>\n"), "fence must adopt anchor indentation");
+        assert!(
+            composed.contains("    // >>> iimp m/0 v1.0.0 >>>\n"),
+            "fence must adopt anchor indentation"
+        );
     }
 
     #[test]

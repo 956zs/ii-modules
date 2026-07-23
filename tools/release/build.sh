@@ -143,6 +143,8 @@ run_with_fixture() {
 }
 
 build_iimod() {
+    cargo fmt --manifest-path "$IIMOD_MANIFEST" -- --check
+    cargo clippy --manifest-path "$IIMOD_MANIFEST" --all-targets -- -D warnings
     cargo test --manifest-path "$IIMOD_MANIFEST" --no-run
     timeout "$TEST_TIMEOUT_SECONDS" cargo test --manifest-path "$IIMOD_MANIFEST"
     cargo build --release --manifest-path "$IIMOD_MANIFEST"

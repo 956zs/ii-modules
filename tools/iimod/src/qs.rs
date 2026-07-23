@@ -51,7 +51,14 @@ pub fn shell_running() -> bool {
 }
 
 pub fn set_enabled(id: &str, slot: &str, on: bool) -> bool {
-    ipc_call(&["iimp", "setEnabled", id, slot, if on { "true" } else { "false" }]).is_some()
+    ipc_call(&[
+        "iimp",
+        "setEnabled",
+        id,
+        slot,
+        if on { "true" } else { "false" },
+    ])
+    .is_some()
 }
 
 /// Best-effort reload. Order: host IPC reload → byte-identical shell.qml rewrite

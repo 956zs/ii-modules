@@ -28,10 +28,15 @@ impl std::fmt::Display for ExitError {
 impl std::error::Error for ExitError {}
 
 pub fn bail(code: i32, message: impl Into<String>) -> anyhow::Error {
-    anyhow::Error::new(ExitError { code, message: message.into() })
+    anyhow::Error::new(ExitError {
+        code,
+        message: message.into(),
+    })
 }
 
 /// Map an anyhow error to its exit code (INTERNAL if untagged).
 pub fn code_of(err: &anyhow::Error) -> i32 {
-    err.downcast_ref::<ExitError>().map(|e| e.code).unwrap_or(INTERNAL)
+    err.downcast_ref::<ExitError>()
+        .map(|e| e.code)
+        .unwrap_or(INTERNAL)
 }

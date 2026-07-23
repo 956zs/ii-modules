@@ -78,7 +78,7 @@ fn qml_root_type(code: &str) -> Option<String> {
 fn local_qml_roots(payload: &Path) -> BTreeMap<String, String> {
     let mut roots = BTreeMap::new();
     for entry in WalkDir::new(payload).into_iter().flatten() {
-        if !entry.file_type().is_file() || !entry.path().extension().is_some_and(|e| e == "qml") {
+        if !entry.file_type().is_file() || entry.path().extension().is_none_or(|e| e != "qml") {
             continue;
         }
         let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str()) else {

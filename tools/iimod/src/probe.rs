@@ -71,7 +71,9 @@ pub fn require(ii_root: &Path, probes: &[Probe]) -> Result<()> {
             f.probe.reason
         ));
     }
-    msg.push_str("this module is not compatible with the installed shell revision (no bypass exists)");
+    msg.push_str(
+        "this module is not compatible with the installed shell revision (no bypass exists)",
+    );
     Err(bail(exit::PROBE, msg))
 }
 
@@ -107,17 +109,35 @@ mod tests {
     #[test]
     fn exists_and_contains() {
         let root = tmp_tree();
-        assert!(require(&root, &[
-            probe(ProbeType::FileExists, "services/Network.qml", None),
-            probe(ProbeType::FileContains, "services/Network.qml", Some("materialSymbol")),
-        ]).is_ok());
+        assert!(require(
+            &root,
+            &[
+                probe(ProbeType::FileExists, "services/Network.qml", None),
+                probe(
+                    ProbeType::FileContains,
+                    "services/Network.qml",
+                    Some("materialSymbol")
+                ),
+            ]
+        )
+        .is_ok());
 
-        let err = require(&root, &[probe(ProbeType::FileExists, "services/Nope.qml", None)]).unwrap_err();
+        let err = require(
+            &root,
+            &[probe(ProbeType::FileExists, "services/Nope.qml", None)],
+        )
+        .unwrap_err();
         assert_eq!(crate::exit::code_of(&err), crate::exit::PROBE);
 
-        let err = require(&root, &[
-            probe(ProbeType::FileContains, "services/Network.qml", Some("does-not-appear")),
-        ]).unwrap_err();
+        let err = require(
+            &root,
+            &[probe(
+                ProbeType::FileContains,
+                "services/Network.qml",
+                Some("does-not-appear"),
+            )],
+        )
+        .unwrap_err();
         assert_eq!(crate::exit::code_of(&err), crate::exit::PROBE);
     }
 
@@ -129,9 +149,19 @@ mod tests {
             "Singleton {\n// >>> iimp other/0 v1.0.0 >>>\n    property string sneaky: \"planted\"\n// <<< iimp other/0 <<<\n}\n",
         )
         .unwrap();
-        let err = require(&root, &[
-            probe(ProbeType::FileContains, "services/Network.qml", Some("sneaky")),
-        ]).unwrap_err();
-        assert_eq!(crate::exit::code_of(&err), crate::exit::PROBE, "fenced text must not satisfy probes");
+        let err = require(
+            &root,
+            &[probe(
+                ProbeType::FileContains,
+                "services/Network.qml",
+                Some("sneaky"),
+            )],
+        )
+        .unwrap_err();
+        assert_eq!(
+            crate::exit::code_of(&err),
+            crate::exit::PROBE,
+            "fenced text must not satisfy probes"
+        );
     }
 }

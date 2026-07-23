@@ -29,7 +29,9 @@ fn write_dict(path: &Path, dict: &BTreeMap<String, String>) -> Result<()> {
 fn owned_by_other(registry: &Registry, module_id: &str, locale: &str, key: &str) -> bool {
     registry.modules.iter().any(|m| {
         m.manifest.id != module_id
-            && m.translation_keys.get(locale).is_some_and(|keys| keys.iter().any(|k| k == key))
+            && m.translation_keys
+                .get(locale)
+                .is_some_and(|keys| keys.iter().any(|k| k == key))
     })
 }
 

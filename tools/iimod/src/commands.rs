@@ -31,38 +31,69 @@ struct Payload {
 
 fn load_payload(source: &Path, max_size: u64) -> Result<Payload> {
     if source.is_dir() {
-        return Ok(Payload { dir: source.to_path_buf(), from_package: false, _tmp: None });
+        return Ok(Payload {
+            dir: source.to_path_buf(),
+            from_package: false,
+            _tmp: None,
+        });
     }
     if source.is_file() {
-        let tmp = paths::tmp_dir().join(format!("unpack-{}-{}", registry::now_epoch(), std::process::id()));
+        let tmp = paths::tmp_dir().join(format!(
+            "unpack-{}-{}",
+            registry::now_epoch(),
+            std::process::id()
+        ));
         let unpacked = pkg::unpack(source, &tmp, max_size)?;
-        return Ok(Payload { dir: unpacked.payload, from_package: true, _tmp: Some(tmp) });
+        return Ok(Payload {
+            dir: unpacked.payload,
+            from_package: true,
+            _tmp: Some(tmp),
+        });
     }
-    Err(bail(exit::USAGE, format!("no such file or directory: {}", source.display())))
+    Err(bail(
+        exit::USAGE,
+        format!("no such file or directory: {}", source.display()),
+    ))
 }
 
 /// Parse + validate manifest, payload layout, lint, translations. Returns
 /// (manifest, warnings).
 fn validate_payload(payload: &Path) -> Result<(Manifest, Vec<String>)> {
     let manifest_path = payload.join("module.json");
-    let bytes = std::fs::read(&manifest_path)
-        .map_err(|_| bail(exit::VALIDATION, format!("{}: module.json missing", payload.display())))?;
+    let bytes = std::fs::read(&manifest_path).map_err(|_| {
+        bail(
+            exit::VALIDATION,
+            format!("{}: module.json missing", payload.display()),
+        )
+    })?;
     let m = manifest::parse(&bytes)?;
     let mut warnings = manifest::validate(&m)?;
 
-    let dir_name = payload.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let dir_name = payload
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
     if dir_name != m.id {
-        return Err(bail(exit::VALIDATION, format!("payload dir {dir_name:?} != manifest id {:?}", m.id)));
+        return Err(bail(
+            exit::VALIDATION,
+            format!("payload dir {dir_name:?} != manifest id {:?}", m.id),
+        ));
     }
     for slot in &m.slots {
         let entry = m.entry_for(*slot);
         if !payload.join(entry).is_file() {
-            return Err(bail(exit::VALIDATION, format!("declared slot entry missing: {entry}")));
+            return Err(bail(
+                exit::VALIDATION,
+                format!("declared slot entry missing: {entry}"),
+            ));
         }
     }
     if let Some(settings) = &m.entries.settings {
         if !payload.join(settings).is_file() {
-            return Err(bail(exit::VALIDATION, format!("entries.settings missing: {settings}")));
+            return Err(bail(
+                exit::VALIDATION,
+                format!("entries.settings missing: {settings}"),
+            ));
         }
     }
 
@@ -79,7 +110,10 @@ fn check_deps_conflicts(m: &Manifest, registry: &Registry) -> Result<()> {
     let mut problems = Vec::new();
     for dep in &m.requires.modules {
         match registry.get(&dep.id) {
-            None => problems.push(format!("missing required module {:?} ({})", dep.id, dep.version_req)),
+            None => problems.push(format!(
+                "missing required module {:?} ({})",
+                dep.id, dep.version_req
+            )),
             Some(installed) => {
                 let version = installed.manifest.semver()?;
                 let req = semver::VersionReq::parse(&dep.version_req).expect("validated");
@@ -93,11 +127,13 @@ fn check_deps_conflicts(m: &Manifest, registry: &Registry) -> Result<()> {
         }
     }
     for sys in &m.requires.system {
-        let found = std::env::var_os("PATH").is_some_and(|path| {
-            std::env::split_paths(&path).any(|d| d.join(&sys.bin).is_file())
-        });
+        let found = std::env::var_os("PATH")
+            .is_some_and(|path| std::env::split_paths(&path).any(|d| d.join(&sys.bin).is_file()));
         if !found {
-            problems.push(format!("missing system binary {:?} (hint: {})", sys.bin, sys.hint));
+            problems.push(format!(
+                "missing system binary {:?} (hint: {})",
+                sys.bin, sys.hint
+            ));
         }
     }
     for c in &m.conflicts {
@@ -107,13 +143,19 @@ fn check_deps_conflicts(m: &Manifest, registry: &Registry) -> Result<()> {
     }
     for installed in &registry.modules {
         if installed.manifest.conflicts.contains(&m.id) {
-            problems.push(format!("installed module {:?} declares a conflict with this module", installed.manifest.id));
+            problems.push(format!(
+                "installed module {:?} declares a conflict with this module",
+                installed.manifest.id
+            ));
         }
     }
     if problems.is_empty() {
         Ok(())
     } else {
-        Err(bail(exit::DEPENDENCY, format!("dependency check failed:\n  ✗ {}", problems.join("\n  ✗ "))))
+        Err(bail(
+            exit::DEPENDENCY,
+            format!("dependency check failed:\n  ✗ {}", problems.join("\n  ✗ ")),
+        ))
     }
 }
 
@@ -134,8 +176,12 @@ fn full_patch_set(registry: &Registry, rel: &str, exclude: Option<&str>) -> Vec<
     set
 }
 
-const HOST_FILES: [&str; 4] =
-    ["modules/common/Config.qml", "modules/ii/bar/BarContent.qml", "settings.qml", "shell.qml"];
+const HOST_FILES: [&str; 4] = [
+    "modules/common/Config.qml",
+    "modules/ii/bar/BarContent.qml",
+    "settings.qml",
+    "shell.qml",
+];
 
 /// Every stock file needing recomposition: the four host files + all patch targets.
 fn all_stock_targets(registry: &Registry, extra: &[String]) -> Vec<String> {
@@ -313,8 +359,16 @@ pub fn cmd_validate(source: &Path, max_size: u64) -> Result<()> {
     for w in &warnings {
         println!("warning: {w}");
     }
-    println!("✓ {} v{} — manifest, layout, and lint OK ({})",
-        m.id, m.version, if m.is_tier_b() { "Tier B: patches stock files" } else { "Tier A: slot-only" });
+    println!(
+        "✓ {} v{} — manifest, layout, and lint OK ({})",
+        m.id,
+        m.version,
+        if m.is_tier_b() {
+            "Tier B: patches stock files"
+        } else {
+            "Tier A: slot-only"
+        }
+    );
     Ok(())
 }
 
@@ -329,8 +383,12 @@ pub fn cmd_check(source: &Path, max_size: u64) -> Result<()> {
     let ii = paths::ii_root();
     for (i, p) in m.patches.iter().enumerate() {
         let target = ii.join(&p.file);
-        let current = std::fs::read_to_string(&target)
-            .map_err(|_| bail(exit::ANCHOR, format!("patches[{i}]: target {} unreadable", p.file)))?;
+        let current = std::fs::read_to_string(&target).map_err(|_| {
+            bail(
+                exit::ANCHOR,
+                format!("patches[{i}]: target {} unreadable", p.file),
+            )
+        })?;
         let mut set = full_patch_set(&registry, &p.file, Some(&m.id));
         set.push(PatchInstance {
             owner: m.id.clone(),
@@ -342,7 +400,10 @@ pub fn cmd_check(source: &Path, max_size: u64) -> Result<()> {
         });
         patch::recompose(&current, &set)?;
     }
-    println!("✓ {} v{} is compatible with this shell (probes, deps, anchors all pass)", m.id, m.version);
+    println!(
+        "✓ {} v{} is compatible with this shell (probes, deps, anchors all pass)",
+        m.id, m.version
+    );
     Ok(())
 }
 
@@ -361,7 +422,10 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
     let _lock = Lock::acquire()?;
     let registry = registry::load()?;
     if wipe_banner(&registry) {
-        return Err(bail(exit::STATE, "shell tree is wiped; run `iimod reapply` before installing"));
+        return Err(bail(
+            exit::STATE,
+            "shell tree is wiped; run `iimod reapply` before installing",
+        ));
     }
 
     let payload = load_payload(source, opts.max_size)?;
@@ -370,12 +434,17 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
         eprintln!("warning: {w}");
     }
     if !payload.from_package {
-        eprintln!("note: installing from a directory (developer mode) — no package integrity check");
+        eprintln!(
+            "note: installing from a directory (developer mode) — no package integrity check"
+        );
     }
 
     let upgrading = match registry.get(&m.id) {
         Some(existing) if existing.manifest.version == m.version && !opts.reinstall => {
-            println!("{} v{} already installed (use --reinstall to force)", m.id, m.version);
+            println!(
+                "{} v{} already installed (use --reinstall to force)",
+                m.id, m.version
+            );
             return Ok(());
         }
         Some(existing) => Some(existing.manifest.version.clone()),
@@ -399,14 +468,17 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
     // Build this module's patch records.
     let mut patch_records: BTreeMap<String, Vec<PatchInstance>> = BTreeMap::new();
     for (i, p) in m.patches.iter().enumerate() {
-        patch_records.entry(p.file.clone()).or_default().push(PatchInstance {
-            owner: m.id.clone(),
-            index: i as u32,
-            version: m.version.clone(),
-            op: p.op,
-            anchor: p.anchor.clone(),
-            content: p.content.clone(),
-        });
+        patch_records
+            .entry(p.file.clone())
+            .or_default()
+            .push(PatchInstance {
+                owner: m.id.clone(),
+                index: i as u32,
+                version: m.version.clone(),
+                op: p.op,
+                anchor: p.anchor.clone(),
+                content: p.content.clone(),
+            });
     }
 
     // Dry-run: registry WITH the new module, compose in memory only.
@@ -439,7 +511,10 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
     for rel in &stock_targets {
         backups.add(&format!("stock/{rel}"), &ii.join(rel))?;
     }
-    backups.add("config.json", &paths::shell_config_root().join("config.json"))?;
+    backups.add(
+        "config.json",
+        &paths::shell_config_root().join("config.json"),
+    )?;
     let module_dicts = translations::load_module_dicts(&payload.dir)?;
     for locale in module_dicts.keys() {
         backups.add(
@@ -481,8 +556,14 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
         }
         std::fs::create_dir_all(paths::host_dir())?;
         recompose_all(&next, true)?;
-        std::fs::write(paths::host_dir().join("ModuleHost.qml"), include_str!("../assets/ModuleHost.qml"))?;
-        std::fs::write(paths::host_dir().join("ModulesConfig.qml"), include_str!("../assets/ModulesConfig.qml"))?;
+        std::fs::write(
+            paths::host_dir().join("ModuleHost.qml"),
+            include_str!("../assets/ModuleHost.qml"),
+        )?;
+        std::fs::write(
+            paths::host_dir().join("ModulesConfig.qml"),
+            include_str!("../assets/ModulesConfig.qml"),
+        )?;
         hostpatch::write_module_imports(&module_import_ids(&next))?;
         let sentinel = hostpatch::HostSentinel {
             host_version: hostpatch::HOST_VERSION.to_string(),
@@ -490,7 +571,10 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
             installed_at_epoch: registry::now_epoch(),
             qs_version_hint: qs::qs_version(),
         };
-        std::fs::write(paths::host_sentinel(), serde_json::to_string_pretty(&sentinel)? + "\n")?;
+        std::fs::write(
+            paths::host_sentinel(),
+            serde_json::to_string_pretty(&sentinel)? + "\n",
+        )?;
         std::fs::create_dir_all(paths::modules_config_dir())?;
 
         // Translations.
@@ -512,7 +596,10 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
                 let _ = backups.restore(&format!("stock/{rel}"), &ii.join(rel));
             }
         }
-        let _ = backups.restore("config.json", &paths::shell_config_root().join("config.json"));
+        let _ = backups.restore(
+            "config.json",
+            &paths::shell_config_root().join("config.json"),
+        );
         for locale in module_dicts.keys() {
             let _ = backups.restore(
                 &format!("translations/{locale}.json"),
@@ -551,7 +638,12 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
     if let Some(old) = upgrading {
         println!("✓ upgraded {} {} → {}", m.id, old, m.version);
     } else {
-        println!("✓ installed {} v{}{}", m.id, m.version, if opts.no_enable { " (disabled)" } else { "" });
+        println!(
+            "✓ installed {} v{}{}",
+            m.id,
+            m.version,
+            if opts.no_enable { " (disabled)" } else { "" }
+        );
     }
     Ok(())
 }
@@ -582,7 +674,9 @@ pub fn cmd_uninstall(id: &str, cascade: bool) -> Result<()> {
     let ii = paths::ii_root();
     for victim in &victims {
         let module = registry.remove(victim).expect("present");
-        let dicts_dir = paths::store_dir().join(victim).join(&module.manifest.version);
+        let dicts_dir = paths::store_dir()
+            .join(victim)
+            .join(&module.manifest.version);
         let dicts = translations::load_module_dicts(&dicts_dir).unwrap_or_default();
         translations::unmerge(&dicts, &module.translation_keys)?;
         let dir = paths::mod_root().join(victim);
@@ -611,7 +705,10 @@ pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
         return Err(bail(exit::USAGE, format!("module {id:?} is not installed")));
     };
     if matches!(module.state, ModuleState::Incompatible) {
-        return Err(bail(exit::STATE, format!("{id:?} is marked incompatible (reapply reported failing probes)")));
+        return Err(bail(
+            exit::STATE,
+            format!("{id:?} is marked incompatible (reapply reported failing probes)"),
+        ));
     }
 
     let mut to_flip = vec![id.to_string()];
@@ -621,11 +718,21 @@ pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
         while let Some(current) = frontier.pop() {
             let deps: Vec<String> = registry
                 .get(&current)
-                .map(|m| m.manifest.requires.modules.iter().map(|d| d.id.clone()).collect())
+                .map(|m| {
+                    m.manifest
+                        .requires
+                        .modules
+                        .iter()
+                        .map(|d| d.id.clone())
+                        .collect()
+                })
                 .unwrap_or_default();
             for dep in deps {
                 if registry.get(&dep).is_none() {
-                    return Err(bail(exit::DEPENDENCY, format!("dependency {dep:?} is not installed (wiped? run reapply)")));
+                    return Err(bail(
+                        exit::DEPENDENCY,
+                        format!("dependency {dep:?} is not installed (wiped? run reapply)"),
+                    ));
                 }
                 if !to_flip.contains(&dep) {
                     to_flip.push(dep.clone());
@@ -638,15 +745,26 @@ pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
     }
     for target in &to_flip {
         if let Some(m) = registry.get_mut(target) {
-            if !matches!(m.state, ModuleState::Incompatible | ModuleState::BlockedByDep) {
-                m.state = if enable { ModuleState::Enabled } else { ModuleState::Disabled };
+            if !matches!(
+                m.state,
+                ModuleState::Incompatible | ModuleState::BlockedByDep
+            ) {
+                m.state = if enable {
+                    ModuleState::Enabled
+                } else {
+                    ModuleState::Disabled
+                };
             }
         }
     }
     registry::save(&registry)?;
     write_index_projection(&registry)?;
     project_enabled(&registry)?;
-    println!("✓ {} {:?}", if enable { "enabled" } else { "disabled" }, to_flip);
+    println!(
+        "✓ {} {:?}",
+        if enable { "enabled" } else { "disabled" },
+        to_flip
+    );
     Ok(())
 }
 
@@ -668,7 +786,11 @@ pub fn cmd_list() -> Result<()> {
             m.manifest.version,
             m.state,
             m.manifest.slots,
-            if m.manifest.is_tier_b() { "  [Tier B]" } else { "" }
+            if m.manifest.is_tier_b() {
+                "  [Tier B]"
+            } else {
+                ""
+            }
         );
     }
     Ok(())
@@ -704,7 +826,10 @@ pub fn cmd_init(id: &str, dir: &Path) -> Result<()> {
     }
     let payload = dir.join(id);
     if payload.exists() {
-        return Err(bail(exit::USAGE, format!("{} already exists", payload.display())));
+        return Err(bail(
+            exit::USAGE,
+            format!("{} already exists", payload.display()),
+        ));
     }
     std::fs::create_dir_all(payload.join("translations"))?;
     let manifest = serde_json::json!({
@@ -723,7 +848,10 @@ pub fn cmd_init(id: &str, dir: &Path) -> Result<()> {
         },
         "capabilities": []
     });
-    std::fs::write(payload.join("module.json"), serde_json::to_string_pretty(&manifest)? + "\n")?;
+    std::fs::write(
+        payload.join("module.json"),
+        serde_json::to_string_pretty(&manifest)? + "\n",
+    )?;
     std::fs::write(
         payload.join("bar.qml"),
         format!(
@@ -785,7 +913,9 @@ pub fn cmd_suggest(source: &Path, max_size: u64) -> Result<()> {
         println!("  []");
     }
     for cap in &suggestions.capabilities {
-        let already = manifest.as_ref().is_some_and(|m| m.capabilities.contains(cap));
+        let already = manifest
+            .as_ref()
+            .is_some_and(|m| m.capabilities.contains(cap));
         println!("  {} {:?}", if already { "✓(declared)" } else { "+" }, cap);
     }
 
@@ -840,7 +970,8 @@ pub fn cmd_verify() -> Result<()> {
                                 state = "stock-drifted".into();
                             }
                         }
-                        let expected = patch::compose(&stripped, &full_patch_set(&registry, rel, None))?;
+                        let expected =
+                            patch::compose(&stripped, &full_patch_set(&registry, rel, None))?;
                         if expected != current {
                             state = "fence-broken".into();
                             break;
@@ -865,7 +996,10 @@ pub fn cmd_verify() -> Result<()> {
     };
     println!("{:<24} {}", "(host)", host_state);
     if bad > 0 || host_state != "intact" {
-        return Err(bail(exit::STATE, "verify found problems — see states above (repair/reapply)"));
+        return Err(bail(
+            exit::STATE,
+            "verify found problems — see states above (repair/reapply)",
+        ));
     }
     println!("✓ all intact");
     Ok(())
@@ -934,7 +1068,10 @@ pub fn cmd_reapply() -> Result<()> {
         } else if blocked_dep {
             incompatible.push((id.clone(), "blocked by incompatible dependency".into()));
             registry.get_mut(id).unwrap().state = ModuleState::BlockedByDep;
-        } else if matches!(registry.get(id).unwrap().state, ModuleState::Incompatible | ModuleState::BlockedByDep) {
+        } else if matches!(
+            registry.get(id).unwrap().state,
+            ModuleState::Incompatible | ModuleState::BlockedByDep
+        ) {
             // Previously incompatible, now probing clean → re-enable as disabled
             // (user opts back in explicitly).
             registry.get_mut(id).unwrap().state = ModuleState::Disabled;
@@ -955,7 +1092,10 @@ pub fn cmd_reapply() -> Result<()> {
     // 3. Mirror store payloads back into $II/mod/.
     for id in &order {
         let m = registry.get(id).unwrap();
-        if matches!(m.state, ModuleState::Incompatible | ModuleState::BlockedByDep) {
+        if matches!(
+            m.state,
+            ModuleState::Incompatible | ModuleState::BlockedByDep
+        ) {
             continue;
         }
         let src = store::store_path(id, &m.manifest.version);
@@ -998,7 +1138,10 @@ pub fn cmd_reapply() -> Result<()> {
     // 5. Translations re-merge for surviving modules.
     for id in &order {
         let m = registry.get(id).unwrap().clone();
-        if matches!(m.state, ModuleState::Incompatible | ModuleState::BlockedByDep) {
+        if matches!(
+            m.state,
+            ModuleState::Incompatible | ModuleState::BlockedByDep
+        ) {
             continue;
         }
         let store_payload = store::store_path(id, &m.manifest.version);
@@ -1018,7 +1161,10 @@ pub fn cmd_reapply() -> Result<()> {
     if incompatible.is_empty() {
         println!("✓ reapplied all modules");
     } else {
-        println!("reapplied with {} module(s) disabled as incompatible:", incompatible.len());
+        println!(
+            "reapplied with {} module(s) disabled as incompatible:",
+            incompatible.len()
+        );
         for (id, reason) in &incompatible {
             println!("  ✗ {id}: {reason}");
         }
@@ -1034,18 +1180,38 @@ pub fn cmd_reapply() -> Result<()> {
 pub fn cmd_doctor(rebuild_registry: bool) -> Result<()> {
     let ii = paths::ii_root();
     println!("iimod {}", hostpatch::HOST_VERSION);
-    println!("ii root: {} ({})", ii.display(), if ii.join("shell.qml").exists() { "present" } else { "MISSING" });
+    println!(
+        "ii root: {} ({})",
+        ii.display(),
+        if ii.join("shell.qml").exists() {
+            "present"
+        } else {
+            "MISSING"
+        }
+    );
     println!("state root: {}", paths::state_root().display());
-    println!("qs: {}", qs::qs_version().unwrap_or_else(|| "not found".into()));
+    println!(
+        "qs: {}",
+        qs::qs_version().unwrap_or_else(|| "not found".into())
+    );
     println!("shell running: {}", qs::shell_running());
-    println!("host ipc: {}", if qs::ping() { "reachable" } else { "unreachable" });
+    println!(
+        "host ipc: {}",
+        if qs::ping() {
+            "reachable"
+        } else {
+            "unreachable"
+        }
+    );
 
     if rebuild_registry {
         let mut rebuilt = Registry::default();
         if let Ok(entries) = std::fs::read_dir(paths::store_dir()) {
             for entry in entries.flatten() {
                 let id = entry.file_name().to_string_lossy().into_owned();
-                let Ok(versions) = std::fs::read_dir(entry.path()) else { continue };
+                let Ok(versions) = std::fs::read_dir(entry.path()) else {
+                    continue;
+                };
                 let mut best: Option<(semver::Version, PathBuf)> = None;
                 for v in versions.flatten() {
                     if let Ok(parsed) = semver::Version::parse(&v.file_name().to_string_lossy()) {
@@ -1056,16 +1222,20 @@ pub fn cmd_doctor(rebuild_registry: bool) -> Result<()> {
                 }
                 if let Some((_, payload)) = best {
                     if let Ok((m, _)) = validate_payload(&payload) {
-                        let mut patch_records: BTreeMap<String, Vec<PatchInstance>> = BTreeMap::new();
+                        let mut patch_records: BTreeMap<String, Vec<PatchInstance>> =
+                            BTreeMap::new();
                         for (i, p) in m.patches.iter().enumerate() {
-                            patch_records.entry(p.file.clone()).or_default().push(PatchInstance {
-                                owner: m.id.clone(),
-                                index: i as u32,
-                                version: m.version.clone(),
-                                op: p.op,
-                                anchor: p.anchor.clone(),
-                                content: p.content.clone(),
-                            });
+                            patch_records
+                                .entry(p.file.clone())
+                                .or_default()
+                                .push(PatchInstance {
+                                    owner: m.id.clone(),
+                                    index: i as u32,
+                                    version: m.version.clone(),
+                                    op: p.op,
+                                    anchor: p.anchor.clone(),
+                                    content: p.content.clone(),
+                                });
                         }
                         rebuilt.modules.push(InstalledModule {
                             files: store::hash_tree(&payload)?,
@@ -1081,7 +1251,10 @@ pub fn cmd_doctor(rebuild_registry: bool) -> Result<()> {
             }
         }
         registry::save(&rebuilt)?;
-        println!("✓ registry rebuilt ({} modules, all disabled — enable + reapply as needed)", rebuilt.modules.len());
+        println!(
+            "✓ registry rebuilt ({} modules, all disabled — enable + reapply as needed)",
+            rebuilt.modules.len()
+        );
         return Ok(());
     }
 
@@ -1091,7 +1264,10 @@ pub fn cmd_doctor(rebuild_registry: bool) -> Result<()> {
             wipe_banner(&registry);
             let sentinel = hostpatch::read_sentinel();
             match sentinel {
-                Some(s) => println!("host: v{} (installed {})", s.host_version, s.installed_at_epoch),
+                Some(s) => println!(
+                    "host: v{} (installed {})",
+                    s.host_version, s.installed_at_epoch
+                ),
                 None => println!("host: not installed"),
             }
         }

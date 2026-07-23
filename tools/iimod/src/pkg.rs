@@ -69,7 +69,12 @@ fn sanitized_rel(path: &Path) -> Result<PathBuf> {
                 out.push(s);
             }
             Component::CurDir => {}
-            _ => return Err(bail(exit::VALIDATION, format!("package: unsafe path {:?}", path))),
+            _ => {
+                return Err(bail(
+                    exit::VALIDATION,
+                    format!("package: unsafe path {:?}", path),
+                ))
+            }
         }
     }
     if out.as_os_str().is_empty() {
@@ -90,7 +95,8 @@ pub struct Unpacked {
 /// Extract and fully verify a .iimod archive into `dest_parent` (a fresh temp dir).
 pub fn unpack(archive: &Path, dest_parent: &Path, max_unpacked: u64) -> Result<Unpacked> {
     std::fs::create_dir_all(dest_parent)?;
-    let file = std::fs::File::open(archive).with_context(|| format!("opening {}", archive.display()))?;
+    let file =
+        std::fs::File::open(archive).with_context(|| format!("opening {}", archive.display()))?;
     let mut tar = tar::Archive::new(GzDecoder::new(file));
 
     let mut total: u64 = 0;
@@ -106,7 +112,10 @@ pub fn unpack(archive: &Path, dest_parent: &Path, max_unpacked: u64) -> Result<U
             other => {
                 return Err(bail(
                     exit::VALIDATION,
-                    format!("package: entry type {:?} not allowed (symlinks/special files rejected)", other),
+                    format!(
+                        "package: entry type {:?} not allowed (symlinks/special files rejected)",
+                        other
+                    ),
                 ))
             }
         }
@@ -160,7 +169,8 @@ pub fn unpack(archive: &Path, dest_parent: &Path, max_unpacked: u64) -> Result<U
     }
 
     let id = top.ok_or_else(|| bail(exit::VALIDATION, "package: no payload entries"))?;
-    let integrity = integrity.ok_or_else(|| bail(exit::INTEGRITY, "package: integrity.json missing"))?;
+    let integrity =
+        integrity.ok_or_else(|| bail(exit::INTEGRITY, "package: integrity.json missing"))?;
     let payload = dest_parent.join(&id);
 
     // Full integrity verification: exact file set + hashes.
@@ -178,7 +188,11 @@ pub fn unpack(archive: &Path, dest_parent: &Path, max_unpacked: u64) -> Result<U
         _ => return Err(bail(exit::INTEGRITY, "package: manifest hash mismatch")),
     }
 
-    Ok(Unpacked { payload, id, integrity })
+    Ok(Unpacked {
+        payload,
+        id,
+        integrity,
+    })
 }
 
 #[cfg(test)]
@@ -243,7 +257,8 @@ mod tests {
             header.set_size(ij.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            tar.append_data(&mut header, "integrity.json", ij.as_slice()).unwrap();
+            tar.append_data(&mut header, "integrity.json", ij.as_slice())
+                .unwrap();
             tar.into_inner().unwrap().finish().unwrap();
         }
         let err = unpack(&evil, &dir.join("evil-out"), DEFAULT_MAX_UNPACKED).unwrap_err();
@@ -294,7 +309,8 @@ mod tests {
             header.set_entry_type(tar::EntryType::Symlink);
             header.set_size(0);
             header.set_cksum();
-            tar.append_link(&mut header, "hello_bar/evil", "/etc/passwd").unwrap();
+            tar.append_link(&mut header, "hello_bar/evil", "/etc/passwd")
+                .unwrap();
             tar.into_inner().unwrap().finish().unwrap();
         }
         let err = unpack(&archive, &dir.join("out"), DEFAULT_MAX_UNPACKED).unwrap_err();

@@ -3,8 +3,8 @@ mod exit;
 mod hostpatch;
 mod lint;
 mod manifest;
-mod paths;
 mod patch;
+mod paths;
 mod pkg;
 mod probe;
 mod qs;
@@ -17,7 +17,11 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "iimod", version, about = "IIMP module manager for the illogical-impulse Quickshell config")]
+#[command(
+    name = "iimod",
+    version,
+    about = "IIMP module manager for the illogical-impulse Quickshell config"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -110,12 +114,21 @@ fn run() -> anyhow::Result<()> {
         Command::Init { id, dir } => commands::cmd_init(&id, &dir),
         Command::Validate { source, max_size } => commands::cmd_validate(&source, max_size),
         Command::Check { source, max_size } => commands::cmd_check(&source, max_size),
-        Command::Install { source, allow_patches, reinstall, no_enable, max_size } => {
-            commands::cmd_install(
-                &source,
-                &commands::InstallOpts { allow_patches, reinstall, no_enable, max_size },
-            )
-        }
+        Command::Install {
+            source,
+            allow_patches,
+            reinstall,
+            no_enable,
+            max_size,
+        } => commands::cmd_install(
+            &source,
+            &commands::InstallOpts {
+                allow_patches,
+                reinstall,
+                no_enable,
+                max_size,
+            },
+        ),
         Command::Uninstall { id, cascade } => commands::cmd_uninstall(&id, cascade),
         Command::Enable { id } => commands::cmd_set_state(&id, true),
         Command::Disable { id } => commands::cmd_set_state(&id, false),

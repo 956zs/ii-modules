@@ -50,7 +50,11 @@ pub struct Registry {
 
 impl Default for Registry {
     fn default() -> Self {
-        Registry { schema_version: REGISTRY_SCHEMA_VERSION, host_version: None, modules: Vec::new() }
+        Registry {
+            schema_version: REGISTRY_SCHEMA_VERSION,
+            host_version: None,
+            modules: Vec::new(),
+        }
     }
 }
 
@@ -117,7 +121,13 @@ impl Registry {
             };
             *in_deg.get_mut(&next).unwrap() = usize::MAX; // consumed
             for module in &self.modules {
-                if module.manifest.requires.modules.iter().any(|d| d.id == next) {
+                if module
+                    .manifest
+                    .requires
+                    .modules
+                    .iter()
+                    .any(|d| d.id == next)
+                {
                     let d = in_deg.get_mut(&module.manifest.id).unwrap();
                     if *d != usize::MAX {
                         *d -= 1;
@@ -134,7 +144,12 @@ impl Registry {
         let mut set: Vec<PatchInstance> = self
             .modules
             .iter()
-            .filter(|m| !matches!(m.state, ModuleState::Incompatible | ModuleState::BlockedByDep))
+            .filter(|m| {
+                !matches!(
+                    m.state,
+                    ModuleState::Incompatible | ModuleState::BlockedByDep
+                )
+            })
             .flat_map(|m| m.patch_records.get(rel).cloned().unwrap_or_default())
             .collect();
         set.sort_by_key(|p| (p.owner.clone(), p.index));
@@ -163,8 +178,12 @@ pub fn load_from(path: &Path) -> Result<Registry> {
         return Ok(Registry::default());
     }
     let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let registry: Registry = serde_json::from_slice(&bytes)
-        .map_err(|e| bail(exit::STATE, format!("registry corrupt ({e}); run: iimod doctor --rebuild-registry")))?;
+    let registry: Registry = serde_json::from_slice(&bytes).map_err(|e| {
+        bail(
+            exit::STATE,
+            format!("registry corrupt ({e}); run: iimod doctor --rebuild-registry"),
+        )
+    })?;
     if registry.schema_version > REGISTRY_SCHEMA_VERSION {
         return Err(bail(
             exit::PROTOCOL,
@@ -210,10 +229,16 @@ impl Lock {
     pub fn acquire_at(path: &Path) -> Result<Lock> {
         std::fs::create_dir_all(path.parent().expect("lock path has a parent"))?;
         for attempt in 0..2 {
-            match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+            {
                 Ok(mut f) => {
                     let _ = writeln!(f, "{}", std::process::id());
-                    return Ok(Lock { path: path.to_path_buf() });
+                    return Ok(Lock {
+                        path: path.to_path_buf(),
+                    });
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempt == 0 => {
                     let holder = std::fs::read_to_string(path).unwrap_or_default();
@@ -224,7 +249,11 @@ impl Lock {
                     if alive {
                         return Err(bail(
                             exit::STATE,
-                            format!("another iimod is running (pid {}); lock: {}", holder.trim(), path.display()),
+                            format!(
+                                "another iimod is running (pid {}); lock: {}",
+                                holder.trim(),
+                                path.display()
+                            ),
                         ));
                     }
                     let _ = std::fs::remove_file(path); // stale — reclaim
@@ -232,7 +261,10 @@ impl Lock {
                 Err(e) => return Err(bail(exit::STATE, format!("cannot acquire lock: {e}"))),
             }
         }
-        Err(bail(exit::STATE, "cannot acquire lock after reclaiming a stale one"))
+        Err(bail(
+            exit::STATE,
+            "cannot acquire lock after reclaiming a stale one",
+        ))
     }
 }
 
@@ -262,12 +294,17 @@ mod tests {
     }
 
     fn module(id: &str, deps: &[&str]) -> InstalledModule {
-        let mut m: Manifest =
-            serde_json::from_str(include_str!("../../../spec/fixtures/valid/tier-a-minimal.json")).unwrap();
+        let mut m: Manifest = serde_json::from_str(include_str!(
+            "../../../spec/fixtures/valid/tier-a-minimal.json"
+        ))
+        .unwrap();
         m.id = id.to_string();
         m.requires.modules = deps
             .iter()
-            .map(|d| manifest::ModuleReq { id: d.to_string(), version_req: "*".into() })
+            .map(|d| manifest::ModuleReq {
+                id: d.to_string(),
+                version_req: "*".into(),
+            })
             .collect();
         InstalledModule {
             manifest: m,
@@ -305,7 +342,11 @@ mod tests {
     fn newer_schema_refused() {
         let dir = tmp("newer");
         let path = dir.join("registry.json");
-        std::fs::write(&path, br#"{"schemaVersion": 99, "hostVersion": null, "modules": []}"#).unwrap();
+        std::fs::write(
+            &path,
+            br#"{"schemaVersion": 99, "hostVersion": null, "modules": []}"#,
+        )
+        .unwrap();
         let err = load_from(&path).unwrap_err();
         assert_eq!(crate::exit::code_of(&err), crate::exit::PROTOCOL);
     }
@@ -320,7 +361,10 @@ mod tests {
         let pos = |id: &str| order.iter().position(|x| x == id).unwrap();
         assert!(pos("lib") < pos("app"));
         assert!(pos("app") < pos("plugin"));
-        assert_eq!(reg.dependent_closure("lib"), vec!["app".to_string(), "plugin".to_string()]);
+        assert_eq!(
+            reg.dependent_closure("lib"),
+            vec!["app".to_string(), "plugin".to_string()]
+        );
     }
 
     #[test]
