@@ -11,6 +11,7 @@ mod paths;
 mod pkg;
 mod probe;
 mod qs;
+mod recovery;
 mod registry;
 mod store;
 mod translations;
@@ -140,8 +141,8 @@ fn run() -> anyhow::Result<()> {
         Command::Pack { payload, out } => commands::cmd_pack(&payload, out),
         Command::Suggest { source, max_size } => commands::cmd_suggest(&source, max_size),
         Command::Verify => commands::cmd_verify(),
-        Command::Repair { id } => commands::cmd_repair(id.as_deref()),
-        Command::Reapply => commands::cmd_reapply(),
+        Command::Repair { id } => recovery::cmd_repair(id.as_deref()),
+        Command::Reapply => recovery::cmd_reapply(),
         Command::Doctor { rebuild_registry } => doctor::cmd_doctor(rebuild_registry),
     }
 }
