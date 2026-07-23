@@ -15,6 +15,7 @@ mod recovery;
 mod registry;
 mod store;
 mod translations;
+mod verify;
 
 use std::path::PathBuf;
 
@@ -140,7 +141,7 @@ fn run() -> anyhow::Result<()> {
         Command::Info { id } => commands::cmd_info(&id),
         Command::Pack { payload, out } => commands::cmd_pack(&payload, out),
         Command::Suggest { source, max_size } => commands::cmd_suggest(&source, max_size),
-        Command::Verify => commands::cmd_verify(),
+        Command::Verify => verify::cmd_verify(),
         Command::Repair { id } => recovery::cmd_repair(id.as_deref()),
         Command::Reapply => recovery::cmd_reapply(),
         Command::Doctor { rebuild_registry } => doctor::cmd_doctor(rebuild_registry),

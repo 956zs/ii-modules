@@ -17,7 +17,7 @@ use crate::paths;
 use crate::pkg;
 use crate::probe;
 use crate::qs;
-use crate::registry::{self, InstalledModule, Lock, ModuleState};
+use crate::registry::{self, Lock, ModuleState};
 use crate::store;
 use crate::translations;
 
@@ -357,84 +357,5 @@ pub fn cmd_suggest(source: &Path, max_size: u64) -> Result<()> {
         println!("note: {note}");
     }
     println!("\nsuggestions are heuristics — review before pasting into module.json");
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// verify / repair
-// ---------------------------------------------------------------------------
-
-fn module_file_state(m: &InstalledModule) -> &'static str {
-    let dir = paths::mod_root().join(&m.manifest.id);
-    if !dir.exists() {
-        return "missing";
-    }
-    match store::hash_tree(&dir) {
-        Ok(actual) if actual == m.files => "intact",
-        Ok(_) => "module-modified",
-        Err(_) => "missing",
-    }
-}
-
-pub fn cmd_verify() -> Result<()> {
-    let registry = registry::load()?;
-    if wipe_banner(&registry) {
-        for m in &registry.modules {
-            println!("{:<24} wiped", m.manifest.id);
-        }
-        return Err(bail(exit::STATE, "shell tree wiped — run: iimod reapply"));
-    }
-    let ii = paths::ii_root();
-    let mut bad = 0;
-
-    for m in &registry.modules {
-        let mut state = module_file_state(m).to_string();
-        if state == "intact" {
-            for rel in m.patch_records.keys() {
-                let target = ii.join(rel);
-                let current = std::fs::read_to_string(&target).unwrap_or_default();
-                match patch::strip(&current) {
-                    Err(_) => {
-                        state = "fence-broken".into();
-                        break;
-                    }
-                    Ok((stripped, _)) => {
-                        if let Some(pristine) = store::read_pristine(rel) {
-                            if stripped != pristine {
-                                state = "stock-drifted".into();
-                            }
-                        }
-                        let expected =
-                            patch::compose(&stripped, &full_patch_set(&registry, rel, None))?;
-                        if expected != current {
-                            state = "fence-broken".into();
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        if state != "intact" {
-            bad += 1;
-        }
-        println!("{:<24} {}", m.manifest.id, state);
-    }
-
-    // Host integrity.
-    let host_state = if hostpatch::read_sentinel().is_none() && !registry.modules.is_empty() {
-        "wiped"
-    } else if hostpatch::host_files_present() || registry.modules.is_empty() {
-        "intact"
-    } else {
-        "missing"
-    };
-    println!("{:<24} {}", "(host)", host_state);
-    if bad > 0 || host_state != "intact" {
-        return Err(bail(
-            exit::STATE,
-            "verify found problems — see states above (repair/reapply)",
-        ));
-    }
-    println!("✓ all intact");
     Ok(())
 }
