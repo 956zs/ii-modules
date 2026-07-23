@@ -1,8 +1,11 @@
 mod commands;
+mod doctor;
 mod exit;
 mod hostpatch;
+mod install;
 mod lint;
 mod manifest;
+mod ops;
 mod patch;
 mod paths;
 mod pkg;
@@ -120,9 +123,9 @@ fn run() -> anyhow::Result<()> {
             reinstall,
             no_enable,
             max_size,
-        } => commands::cmd_install(
+        } => install::cmd_install(
             &source,
-            &commands::InstallOpts {
+            &install::InstallOpts {
                 allow_patches,
                 reinstall,
                 no_enable,
@@ -139,7 +142,7 @@ fn run() -> anyhow::Result<()> {
         Command::Verify => commands::cmd_verify(),
         Command::Repair { id } => commands::cmd_repair(id.as_deref()),
         Command::Reapply => commands::cmd_reapply(),
-        Command::Doctor { rebuild_registry } => commands::cmd_doctor(rebuild_registry),
+        Command::Doctor { rebuild_registry } => doctor::cmd_doctor(rebuild_registry),
     }
 }
 
