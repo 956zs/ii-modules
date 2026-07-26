@@ -8,6 +8,10 @@ import qs.modules.common
  */
 FileView {
     id: root
+    // False until the file content (or its confirmed absence) is in the
+    // adapter. Accounting must not initialise from default zeroes.
+    property bool ready: false
+
     path: Directories.shellConfig + "/modules/network_traffic.json"
     watchChanges: true
     onFileChanged: reload()
@@ -17,10 +21,14 @@ FileView {
     // adapter does not fall back to the defaults declared below for absent
     // keys — it yields the type zero value instead. Writing back on load keeps
     // upgrades honest and makes every option visible in the file.
-    onLoaded: writeAdapter()
+    onLoaded: {
+        writeAdapter()
+        root.ready = true
+    }
     onLoadFailed: error => {
         if (error == FileViewError.FileNotFound) {
             writeAdapter()
+            root.ready = true
         }
     }
 
@@ -38,8 +46,25 @@ FileView {
         // 1920px screen with bar.verbose on is about 65px once the tray, the
         // indicator cluster and the weather pill have taken their share.
         property int autoStackMaxWidth: 1920
-        // Direction arrows in stacked mode. Off trades them for colour coding
-        // (download primary, upload tertiary) and saves another ~9px.
+        // Direction arrows in stacked mode. Values are colour-coded either way
+        // (download primary, upload tertiary); off saves another ~9px.
         property bool stackedShowIcons: true
+
+        // Which totals the popup shows; left-click on the bar widget cycles it.
+        property string statsPeriod: "boot" // "boot" | "today" | "month"
+
+        // Persisted accounting state (managed by TrafficLogic, flushed at most
+        // once a minute — not user settings). rx/tx are bytes accumulated for
+        // the key's period; sample* is the last /proc/net/dev reading so a
+        // shell restart within one boot doesn't drop the interval since the
+        // last flush, and a counter that shrank signals a reboot.
+        property string acctDayKey: ""
+        property real acctDayRx: 0
+        property real acctDayTx: 0
+        property string acctMonthKey: ""
+        property real acctMonthRx: 0
+        property real acctMonthTx: 0
+        property real acctSampleRx: 0
+        property real acctSampleTx: 0
     }
 }
