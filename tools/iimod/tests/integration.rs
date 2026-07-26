@@ -444,3 +444,75 @@ fn capability_lint_blocks_undeclared_exec() {
     w.expect(&["validate", payload.to_str().unwrap()], 3);
     w.expect(&["install", payload.to_str().unwrap()], 3);
 }
+
+#[test]
+fn update_from_file_origin() {
+    let w = World::new("update");
+
+    // v1.0.0 installed with a file:// origin pointing at a local repo dir.
+    let payload = w.make_module("upd_widget", serde_json::json!({}));
+    let repo = w.root.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let origin = format!("file://{}/index.json", repo.display());
+    w.expect(
+        &["install", payload.to_str().unwrap(), "--origin", &origin],
+        0,
+    );
+
+    // Publish v1.1.0: bump the manifest, pack into the repo, index it.
+    let manifest_path = payload.join("module.json");
+    let manifest = std::fs::read_to_string(&manifest_path)
+        .unwrap()
+        .replace("\"1.0.0\"", "\"1.1.0\"");
+    std::fs::write(&manifest_path, manifest).unwrap();
+    let pkg_path = repo.join("upd_widget-1.1.0.iimod");
+    w.expect(
+        &[
+            "pack",
+            payload.to_str().unwrap(),
+            "--out",
+            pkg_path.to_str().unwrap(),
+        ],
+        0,
+    );
+    let sha = {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(std::fs::read(&pkg_path).unwrap());
+        format!("{:x}", h.finalize())
+    };
+    let write_index = |sha: &str| {
+        std::fs::write(
+            repo.join("index.json"),
+            serde_json::json!({
+                "indexVersion": 1,
+                "modules": {
+                    "upd_widget": {
+                        "version": "1.1.0",
+                        "url": "upd_widget-1.1.0.iimod", // relative to the index
+                        "sha256": sha
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+    };
+
+    // Tampered index digest → integrity failure, nothing installed.
+    write_index(&"0".repeat(64));
+    w.expect(&["update"], 6);
+    let out = w.expect(&["info", "upd_widget"], 0);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1.0.0"));
+
+    // Honest index: dry-run reports, update installs, origin survives.
+    write_index(&sha);
+    let out = w.expect(&["update", "--dry-run"], 0);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1.0.0 → 1.1.0"));
+    w.expect(&["update"], 0);
+    let out = w.expect(&["info", "upd_widget"], 0);
+    let info = String::from_utf8_lossy(&out.stdout);
+    assert!(info.contains("1.1.0"), "info: {info}");
+    let out = w.expect(&["update"], 0);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("up to date"));
+}
