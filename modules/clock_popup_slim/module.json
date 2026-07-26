@@ -1,0 +1,41 @@
+{
+  "protocolVersion": 1,
+  "id": "clock_popup_slim",
+  "name": {
+    "en_US": "Slim Clock Popup",
+    "zh_TW": "精簡時鐘彈窗",
+    "zh_CN": "精简时钟弹窗"
+  },
+  "description": {
+    "en_US": "Shrinks the clock widget's hover popup to a single date line by hiding the system-uptime row and the To-Do section. Disable the module to get the full popup back.",
+    "zh_TW": "把時鐘的 hover 彈窗縮成一行日期：隱藏 system uptime 列與 To Do 區塊。停用本模塊即可還原完整彈窗。"
+  },
+  "version": "1.0.0",
+  "authors": ["nlcat"],
+  "license": "MIT",
+  "slots": ["window"],
+  "entries": {
+    "window": "main.qml"
+  },
+  "compat": {
+    "probes": [
+      {"type": "file-exists", "path": "modules/ii/bar/ClockWidgetPopup.qml", "reason": "the popup being slimmed"}
+    ],
+    "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
+  },
+  "capabilities": [],
+  "patches": [
+    {
+      "file": "modules/ii/bar/ClockWidgetPopup.qml",
+      "op": "insert-after",
+      "anchor": "label: Translation.tr(\"System uptime:\")",
+      "content": "            visible: false\n"
+    },
+    {
+      "file": "modules/ii/bar/ClockWidgetPopup.qml",
+      "op": "insert-after",
+      "anchor": "Layout.fillWidth: true",
+      "content": "            visible: false\n"
+    }
+  ]
+}
