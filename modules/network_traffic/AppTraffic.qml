@@ -82,22 +82,28 @@ Item {
 
     function tryInitAcct() {
         if (acctLoaded || !store || !storeReady || bootId === "") return
+        let s = null
+        try {
+            s = JSON.parse(store.appAcctState)
+        } catch (e) {
+            s = null
+        }
         const map = {}
-        for (const e of store.appAcct) {
+        for (const e of (s?.apps ?? [])) {
             map[e.n] = { dk: e.dk, drx: e.drx, dtx: e.dtx,
-                         mk: e.mk, mrx: e.mrx, mtx: e.mtx,
+                         mk: e.mk, mrx: Math.max(e.mrx, e.drx), mtx: Math.max(e.mtx, e.dtx),
                          brx: e.brx, btx: e.btx }
         }
-        if (store.appAcctBootId !== bootId) {
+        if ((s?.bootId ?? "") !== bootId) {
             for (const n in map) {
                 map[n].brx = 0
                 map[n].btx = 0
             }
-            store.appAcctBootId = bootId
         }
         acct = map
         acctLoaded = true
         acctRevision++
+        flushAcct() // persist the boot reset / repairs promptly
     }
 
     function dayKey(now) {
@@ -119,6 +125,9 @@ Item {
         a.drx += drx; a.dtx += dtx
         a.mrx += drx; a.mtx += dtx
         a.brx += drx; a.btx += dtx
+        // A month contains its days — self-heal any impossible stored state.
+        a.mrx = Math.max(a.mrx, a.drx)
+        a.mtx = Math.max(a.mtx, a.dtx)
         acct[name] = a
     }
 
@@ -161,7 +170,8 @@ Item {
             out.push({ n, dk: a.dk, drx: a.drx, dtx: a.dtx,
                        mk: a.mk, mrx: a.mrx, mtx: a.mtx, brx: a.brx, btx: a.btx })
         }
-        store.appAcct = out
+        // One blob, one assignment, one consistent write.
+        store.appAcctState = JSON.stringify({ v: 1, bootId, apps: out })
     }
 
     // Each JsonAdapter assignment is a config-file write; flush sparsely.

@@ -72,8 +72,14 @@ Item {
     }
 
     // --- persisted day/month accounting --------------------------------
+    // State is one JSON-string blob (store.acctState), written by a single
+    // adapter assignment: per-field flushes could be read back torn (fresh
+    // day counters, stale month counters) across watchChanges reloads and
+    // iimod hot reloads, which showed "this month" below "today".
 
     property bool acctReady: false
+    property string curDayKey: ""
+    property string curMonthKey: ""
 
     function dayKey(now) {
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
@@ -83,50 +89,78 @@ Item {
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
     }
 
+    // Whatever storage said, a month contains its days. Self-heals torn or
+    // otherwise impossible persisted states.
+    function clampInvariant() {
+        monthRx = Math.max(monthRx, todayRx)
+        monthTx = Math.max(monthTx, todayTx)
+    }
+
     function initAccounting(rx, tx) {
         const now = new Date()
-        todayRx = store.acctDayKey === dayKey(now) ? store.acctDayRx : 0
-        todayTx = store.acctDayKey === dayKey(now) ? store.acctDayTx : 0
-        monthRx = store.acctMonthKey === monthKey(now) ? store.acctMonthRx : 0
-        monthTx = store.acctMonthKey === monthKey(now) ? store.acctMonthTx : 0
+        curDayKey = dayKey(now)
+        curMonthKey = monthKey(now)
+        let s = null
+        try {
+            s = JSON.parse(store.acctState)
+        } catch (e) {
+            s = null
+        }
+        const day = s?.day
+        const month = s?.month
+        const sample = s?.sample
+        todayRx = (day && day.k === curDayKey) ? day.rx : 0
+        todayTx = (day && day.k === curDayKey) ? day.tx : 0
+        monthRx = (month && month.k === curMonthKey) ? month.rx : 0
+        monthTx = (month && month.k === curMonthKey) ? month.tx : 0
         // Same boot (counters grew): credit the unflushed interval since the
         // last shell run. A shrunk counter means a reboot; that gap is lost by
         // design — /proc/net/dev is all we have.
-        if (store.acctSampleRx > 0 && rx >= store.acctSampleRx) {
-            todayRx += rx - store.acctSampleRx
-            todayTx += Math.max(0, tx - store.acctSampleTx)
-            monthRx += rx - store.acctSampleRx
-            monthTx += Math.max(0, tx - store.acctSampleTx)
+        if (sample && sample.rx > 0 && rx >= sample.rx) {
+            todayRx += rx - sample.rx
+            todayTx += Math.max(0, tx - sample.tx)
+            monthRx += rx - sample.rx
+            monthTx += Math.max(0, tx - sample.tx)
         }
+        clampInvariant()
         acctReady = true
+        flushAccounting() // persist the repaired/credited state promptly
     }
 
     function accumulate(deltaRx, deltaTx) {
         const now = new Date()
-        if (store.acctDayKey !== dayKey(now)) {
-            store.acctDayKey = dayKey(now)
+        let rolled = false
+        if (curDayKey !== dayKey(now)) {
+            curDayKey = dayKey(now)
             todayRx = 0
             todayTx = 0
+            rolled = true
         }
-        if (store.acctMonthKey !== monthKey(now)) {
-            store.acctMonthKey = monthKey(now)
+        if (curMonthKey !== monthKey(now)) {
+            curMonthKey = monthKey(now)
             monthRx = 0
             monthTx = 0
+            rolled = true
         }
         todayRx += deltaRx
         todayTx += deltaTx
         monthRx += deltaRx
         monthTx += deltaTx
+        clampInvariant()
+        // Persist a rollover immediately — keys and values travel together in
+        // one blob, so there is no window where the file holds a new key with
+        // the previous period's values.
+        if (rolled) flushAccounting()
     }
 
     function flushAccounting() {
         if (!store || !acctReady) return
-        store.acctDayRx = todayRx
-        store.acctDayTx = todayTx
-        store.acctMonthRx = monthRx
-        store.acctMonthTx = monthTx
-        store.acctSampleRx = totalRx
-        store.acctSampleTx = totalTx
+        store.acctState = JSON.stringify({
+            v: 1,
+            day: { k: curDayKey, rx: todayRx, tx: todayTx },
+            month: { k: curMonthKey, rx: monthRx, tx: monthTx },
+            sample: { rx: totalRx, tx: totalTx }
+        })
     }
 
     // Flush at most once a minute: every JsonAdapter assignment is a config
@@ -168,12 +202,14 @@ Item {
                                     Math.max(0, tx - root.previousStats.tx))
                 }
             }
-            if (root.store && root.storeReady && !root.acctReady) {
-                root.initAccounting(rx, tx)
-            }
             root.previousStats = { rx, tx, time: now }
             root.totalRx = rx
             root.totalTx = tx
+            // After totals: initAccounting flushes, and the flushed sample
+            // must be this tick's reading.
+            if (root.store && root.storeReady && !root.acctReady) {
+                root.initAccounting(rx, tx)
+            }
 
             root.updateHistories()
             interval = root.updateInterval

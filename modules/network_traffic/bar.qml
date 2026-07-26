@@ -46,7 +46,9 @@ BarGroup {
             }
         }
 
-        ConfigLoader { id: cfg }
+        // Sole owner: this instance materialises defaults/migrations and hosts
+        // the accounting flushes. The settings fragment's loader is read-only.
+        ConfigLoader { id: cfg; owner: true }
 
         readonly property real screenWidth: barGroup.QsWindow.window?.screen?.width ?? 0
 
