@@ -254,6 +254,7 @@ pub(crate) fn write_index_projection(registry: &Registry) -> Result<()> {
             serde_json::json!({
                 "id": m.manifest.id,
                 "name": m.manifest.name,
+                "description": m.manifest.description,
                 "version": m.manifest.version,
                 "slots": m.manifest.slots,
                 "state": m.state,
