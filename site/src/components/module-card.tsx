@@ -30,7 +30,7 @@ export function ModuleCard({ module: mod, version }: ModuleCardProps) {
   return (
     <Card className="flex h-full flex-col">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
           {mod.name.zh_TW}
           {version.status === 'loading' ? (
             <Skeleton className="h-5 w-14 rounded-full" />

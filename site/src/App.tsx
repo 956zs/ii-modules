@@ -17,7 +17,7 @@ function App() {
         <Hero firstModule={firstModule} firstModuleVersion={firstModule ? versions[firstModule.id] : undefined} />
 
         {registry.status === 'error' ? (
-          <p className="mx-auto max-w-6xl px-6 pb-24 text-center text-sm text-muted-foreground">
+          <p className="mx-auto max-w-6xl px-4 pb-24 text-center text-sm text-muted-foreground sm:px-6">
             模塊清單暫時無法取得，請稍後再試。
           </p>
         ) : (

@@ -25,7 +25,7 @@ export function ModuleGrid({ modules, versions }: ModuleGridProps) {
   )
 
   return (
-    <section className="mx-auto flex max-w-6xl flex-col gap-6 px-6 pb-24">
+    <section className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-24 sm:px-6">
       <div className="relative max-w-sm">
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input

@@ -31,7 +31,10 @@ export function CopyButton({ value, label = '複製', className, size = 'icon-sm
           type="button"
           variant="ghost"
           size={size}
-          className={cn('text-muted-foreground hover:text-foreground', className)}
+          className={cn(
+            'touch-manipulation text-muted-foreground hover:text-foreground pointer-coarse:size-10',
+            className,
+          )}
           onClick={handleCopy}
           aria-label={label}
         >
