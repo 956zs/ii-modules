@@ -10,7 +10,7 @@
     "en_US": "Up/down bandwidth meter for the bar: live rates, DNS ping, boot/today/month totals (whole-system and per-app), Bezier trend graphs with dynamic scale, and a per-app usage ranking (continuous nethogs accounting) in the hover popup. Reads /proc/net/dev; tunnel and container interfaces are excluded by default so VPN traffic is not double-counted.",
     "zh_TW": "Bar 上下行流量計：即時速率、DNS ping、開機/本日/本月累計（全系統與 per-app）、動態刻度貝茲趨勢曲線、hover 彈窗含 per-app 佔用排行（nethogs 常駐統計）。預設排除隧道/容器介面，VPN 不重複計算。窄螢幕自動改用雙行緊湊版面。"
   },
-  "version": "1.4.0",
+  "version": "1.5.0",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["bar"],

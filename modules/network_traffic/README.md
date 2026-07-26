@@ -88,6 +88,10 @@ ii 的 bar 右區是 `anchors { left: middleSection.right; right: parent.right }
 單行版 171px 是右區最寬的單一元件。雙行版約 58px，剛好把溢出補平。
 寬螢幕不受這個限制，所以 `auto` 只在窄螢幕上壓縮。
 
+**支援四種 bar 位置**：上/下（水平，單行或雙行版面）、左/右（垂直，
+圖示在上數字在下的直向堆疊，自動適配 45px 窄膠囊）。垂直 bar 的載入
+圍欄由 iimod ≥1.1 的 host P5 提供。
+
 字級不寫死，從 `baseBarHeight` 反推（膠囊高 = `baseBarHeight - 8`，行高 =
 `floor((膠囊高 - 6) / 2)`，字級 = `clamp(行高 - 2, 9, small)`），因此改 bar 高度或
 cornerStyle 時內容不會超出膠囊。

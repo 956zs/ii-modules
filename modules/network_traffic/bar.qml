@@ -23,12 +23,15 @@ import qs.mod.network_traffic
  */
 BarGroup {
     id: barGroup
+    // Side (left/right) bar: BarGroup's own vertical pill (fixed
+    // baseVerticalBarWidth, horizontal insets) — baseline Config API.
+    vertical: Config.options.bar.vertical === true
 
     MouseArea {
         id: root
 
         implicitWidth: content.implicitWidth + root.hPadding * 2
-        implicitHeight: Appearance.sizes.baseBarHeight
+        implicitHeight: root.barVertical ? content.implicitHeight + 8 : Appearance.sizes.baseBarHeight
         hoverEnabled: !Config.options.bar.tooltips.clickToShow
         acceptedButtons: Qt.LeftButton | Qt.RightButton
 
@@ -51,6 +54,7 @@ BarGroup {
         ConfigLoader { id: cfg; owner: true }
 
         readonly property real screenWidth: barGroup.QsWindow.window?.screen?.width ?? 0
+        readonly property bool barVertical: barGroup.vertical
 
         // Config values are coerced, never trusted raw: a file written by an
         // older version has no entry for these keys and the adapter hands back
@@ -70,16 +74,17 @@ BarGroup {
             // Width 0 means the window isn't attached yet; don't thrash the layout.
             return root.screenWidth > 0 && root.screenWidth <= root.autoStackMaxWidth;
         }
-        readonly property bool showIcons: !root.stacked || cfg.options.stackedShowIcons === true
+        readonly property bool showIcons: !(root.stacked || root.barVertical) || cfg.options.stackedShowIcons === true
 
         // BarGroup insets its pill 4px top and bottom, so the visible box is
         // baseBarHeight - 8. Two stacked rows plus ~3px of breathing room at
         // each edge have to fit inside that.
         readonly property real pillHeight: Appearance.sizes.baseBarHeight - 8
         readonly property int rowHeight: Math.max(10, Math.floor((root.pillHeight - 6) / 2))
-        readonly property int textSize: root.stacked ? Math.max(9, Math.min(Appearance.font.pixelSize.small, root.rowHeight - 2)) : Appearance.font.pixelSize.small
-        readonly property int iconSize: root.stacked ? Math.max(8, root.textSize - 1) : Appearance.font.pixelSize.normal
-        readonly property int hPadding: root.stacked ? 4 : 10
+        readonly property bool compact: root.stacked || root.barVertical
+        readonly property int textSize: root.compact ? Math.max(9, Math.min(Appearance.font.pixelSize.small, root.rowHeight - 2)) : Appearance.font.pixelSize.small
+        readonly property int iconSize: root.compact ? Math.max(8, root.textSize - 1) : Appearance.font.pixelSize.normal
+        readonly property int hPadding: root.barVertical ? 2 : root.stacked ? 4 : 10
 
         // Values follow the Material You scheme (regenerated from the
         // wallpaper): download primary, upload tertiary — same coding as the
@@ -113,7 +118,7 @@ BarGroup {
             // Reserved width, so the pill doesn't jitter on every sample. The
             // formatter tops out at 4 glyphs in practice ("2.0M", "203K"); the
             // Math.max below still lets a rare 5-glyph value through uncropped.
-            text: root.stacked ? "888M" : "888.8M"
+            text: root.compact ? "888M" : "888.8M"
             font.family: Appearance.font.family.main
             font.pixelSize: root.textSize
         }
@@ -126,7 +131,6 @@ BarGroup {
             fill: 0
             iconSize: root.iconSize
             color: speed >= 1024 ? Appearance.colors.colOnLayer1 : Appearance.colors.colOnLayer1Inactive
-            Layout.alignment: Qt.AlignVCenter
 
             SequentialAnimation {
                 running: arrow.visible && arrow.speed >= root.breatheThreshold
@@ -144,15 +148,21 @@ BarGroup {
         // items instead of reserving their cell, so hiding the arrows made the
         // following value shift up into the icon column and knocked the two
         // rows out of alignment.
+        // Each direction is a self-contained group whose own `columns` flips
+        // it between icon-beside-value (horizontal/stacked bars) and
+        // icon-above-value (vertical bars, where the pill's content box is
+        // only ~27px wide).
         GridLayout {
             id: content
             anchors.centerIn: parent
-            columns: root.stacked ? 1 : 2
+            columns: (root.stacked || root.barVertical) ? 1 : 2
             columnSpacing: 8
-            rowSpacing: 0
+            rowSpacing: root.barVertical ? 6 : 0
 
-            RowLayout {
-                spacing: 2
+            GridLayout {
+                columns: root.barVertical ? 1 : 2
+                columnSpacing: 2
+                rowSpacing: 0
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.stacked ? root.rowHeight : implicitHeight
 
@@ -160,10 +170,11 @@ BarGroup {
                     visible: root.showIcons
                     text: "arrow_downward"
                     speed: logic.downSpeed
+                    Layout.alignment: root.barVertical ? Qt.AlignHCenter : Qt.AlignVCenter
                 }
 
                 StyledText {
-                    Layout.alignment: Qt.AlignVCenter
+                    Layout.alignment: root.barVertical ? Qt.AlignHCenter : Qt.AlignVCenter
                     Layout.preferredWidth: Math.max(speedTextMetrics.width, implicitWidth)
                     horizontalAlignment: root.stacked ? Text.AlignRight : Text.AlignHCenter
                     font.pixelSize: root.textSize
@@ -172,8 +183,10 @@ BarGroup {
                 }
             }
 
-            RowLayout {
-                spacing: 2
+            GridLayout {
+                columns: root.barVertical ? 1 : 2
+                columnSpacing: 2
+                rowSpacing: 0
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.stacked ? root.rowHeight : implicitHeight
 
@@ -181,10 +194,11 @@ BarGroup {
                     visible: root.showIcons
                     text: "arrow_upward"
                     speed: logic.upSpeed
+                    Layout.alignment: root.barVertical ? Qt.AlignHCenter : Qt.AlignVCenter
                 }
 
                 StyledText {
-                    Layout.alignment: Qt.AlignVCenter
+                    Layout.alignment: root.barVertical ? Qt.AlignHCenter : Qt.AlignVCenter
                     Layout.preferredWidth: Math.max(speedTextMetrics.width, implicitWidth)
                     horizontalAlignment: root.stacked ? Text.AlignRight : Text.AlignHCenter
                     font.pixelSize: root.textSize
