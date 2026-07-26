@@ -80,6 +80,24 @@ ColumnLayout {
         }
     }
 
+    ConfigSwitch {
+        text: Translation.tr("Per-app usage accounting")
+        buttonIcon: "apps"
+        checked: cfg.options.appMonitoring
+        onCheckedChanged: {
+            cfg.options.appMonitoring = checked;
+        }
+    }
+
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        color: Appearance.colors.colOnSurfaceVariant
+        font.pixelSize: Appearance.font.pixelSize.smaller
+        wrapMode: Text.WordWrap
+        text: Translation.tr("Samples continuously via nethogs to build boot/today/month per-app totals. Turn off to save power on battery.")
+    }
+
     ConfigSpinBox {
         icon: "av_timer"
         text: Translation.tr("Update interval (ms)")

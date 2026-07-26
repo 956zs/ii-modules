@@ -8,8 +8,8 @@ Bar 上下行流量計（Tier A，零 stock 補丁）。即時速率、開機/�
 | 操作 | 效果 |
 |---|---|
 | hover bar 元件 | 開啟彈窗：速率、累計、趨勢圖、Top app |
-| 左鍵點 bar 元件 | 切換統計範圍：本次開機 → 今日 → 本月 |
-| 右鍵點 bar 元件 | 展開/收合 Top 5 應用排行 |
+| 左鍵點 bar 元件 | 切換統計範圍：本次開機 → 今日 → 本月（全系統與 per-app 排行同步切換） |
+| 右鍵點 bar 元件 | 展開/收合 Top 5 應用排行（顯示所選範圍的累計量） |
 
 顏色跟隨 Material You 主題（下載 `colPrimary`、上傳 `colTertiary`），
 換壁紙自動變。任一方向速率 ≥ 1 MiB/s 時該方向箭頭呼吸閃爍。
@@ -18,9 +18,14 @@ Bar 上下行流量計（Tier A，零 stock 補丁）。即時速率、開機/�
 ## 依賴
 
 `nethogs` 宣告在 `requires.system`——`iimod check`/`install` 缺它時會直接提示安裝指令。
-per-app 排行以 nethogs（pcap，TCP+UDP 全計，QUIC 不漏）為主；若執行失敗
-（例如 binary 沒有 file capabilities），runtime 自動降級為 `ss -tinp` 輪詢
-（僅 kernel TCP，UI 會標「僅 TCP」）。無 root 抓包：
+per-app 統計以 nethogs **常駐取樣**（`-t -v 2` 累計模式；pcap，TCP+UDP 全計，QUIC 不漏），
+delta 累加進開機/今日/本月三桶並持久化，每分鐘至多寫盤一次；追蹤上限 30 個 app，
+長尾摺疊進「其他」。若 nethogs 執行失敗（例如 binary 沒有 file capabilities），
+runtime 自動降級為 `ss -tinp` 輪詢（僅 kernel TCP，UI 會標「僅 TCP」）。
+可在設定頁關閉整個 per-app 統計（筆電省電）。
+
+已知限制：userspace 取樣器只能統計「shell 在看著」的期間——開機到 shell 啟動之間、
+以及 shell 沒跑的時段不會入帳（任何非 root/eBPF 常駐方案皆然）。無 root 抓包：
 
 ```bash
 sudo setcap 'cap_net_admin,cap_net_raw,cap_dac_read_search,cap_sys_ptrace+ep' /usr/bin/nethogs
@@ -85,7 +90,7 @@ cornerStyle 時內容不會超出膠囊。
 ## 實作說明（給模塊作者的參考）
 
 - `TrafficLogic.qml`：輪詢邏輯**實例**（非單例——IIMP 模塊禁用 pragma Singleton），由 `bar.qml` 建立並向下傳遞；今日/本月累計以 delta 累加（`/proc/net/dev` 計數器縮小＝重開機，該段遺失是設計取捨）
-- `AppTraffic.qml`：per-app 取樣器，只在彈窗開啟期間執行（Process 隨彈窗生滅）；nethogs 需 `stdbuf -oL`（接管道時會整塊緩衝）
+- `AppTraffic.qml`：per-app 常駐取樣器＋記帳（隨 bar 元件生滅，不是隨彈窗）；nethogs 用 `-v 2` 累計模式取 delta、需 `stdbuf -oL`（接管道時會整塊緩衝）；`/proc/self/exe` 型程式名先把 delta 暫存，等 `ps` 解析出 comm 再入帳，避免 Electron app 被記成「exe」；boot 桶以 `/proc/sys/kernel/random/boot_id` 判斷換機重置
 - `BezierGraph.qml`：Catmull-Rom → 貝茲曲線 Canvas，視窗最大值即滿刻度並以小字標註
 - `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔，永不碰 shell 的 `config.json`；`ready` 旗標讓統計初始化等檔案真正載入（FileView 是非同步的）
 - `bar.qml`：以 `BarGroup` 為根自帶藥丸外觀；固定欄寬防抖動（TextMetrics）；版面用「每個方向一個獨立 RowLayout」而非共用四格 GridLayout——GridLayout 會**跳過** `visible: false` 的項目而不是保留格位，箭頭一關兩行就會錯位
