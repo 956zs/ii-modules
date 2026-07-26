@@ -1,16 +1,33 @@
+<div align="center">
+
 # ii-modules — IIMP（illogical-impulse Module Protocol）
 
 給 [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland)「illogical-impulse」Quickshell 桌面的**嚴謹社群模塊協議**：
 愛好者可以安全地製作、分享、安裝彼此的 shell 模塊（bar 元件、懸浮視窗面板），
 帶完整的版本控制、相容性檢測、依賴管理與交易性安裝。
 
-```
-┌─ 為什麼需要協議 ────────────────────────────────────────┐
-│ dots-hyprland 更新會 rsync --delete 整個 shell 樹；     │
-│ ii 沒有任何版本標記；手工補丁會互相打架、更新即蒸發。         │
-│ IIMP 用「特徵探針+圍欄重組引擎+母本庫」系統性解決這些        │
-└──────────────────────────────────────────────────────┘
-```
+[![CI](https://github.com/956zs/ii-modules/actions/workflows/ci.yml/badge.svg)](https://github.com/956zs/ii-modules/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/956zs/ii-modules)](https://github.com/956zs/ii-modules/releases)
+[![License: MIT](https://img.shields.io/github/license/956zs/ii-modules)](LICENSE)
+
+</div>
+
+> [!IMPORTANT]
+> **為什麼需要協議**
+>
+> dots-hyprland 更新會 `rsync --delete` 整個 shell 樹；ii 沒有任何版本標記；手工補丁會互相打架、更新即蒸發。
+> IIMP 用「特徵探針＋圍欄重組引擎＋母本庫」系統性解決這些。
+
+## 目錄
+
+- [快速開始（使用者）](#快速開始使用者)
+- [快速開始（模塊作者）](#快速開始模塊作者)
+- [核心概念](#核心概念)
+- [AI Agent Skills](#ai-agent-skills)
+- [Release workflow（多人協作）](#release-workflow多人協作)
+- [模塊更新（iimod update）](#模塊更新iimod-update)
+- [Exit codes（穩定契約）](#exit-codes穩定契約)
+- [Repo 佈局](#repo-佈局)
 
 ## 快速開始（使用者）
 
@@ -60,7 +77,10 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 | **母本庫（store）** | 完整狀態存在 `~/.local/share/iimp/`（rsync 清除區之外）；`reapply` 隨時可整批重建 |
 | **capabilities** | 模塊必須誠實宣告 exec/network/filesystem-write/dbus；靜態 lint 交叉查核，不符拒裝 |
 
-完整規格：[`spec/SPEC-1.0.md`](spec/SPEC-1.0.md)（含威脅模型——capabilities 是知情同意，不是沙箱；裝前請審查程式碼）。
+完整規格：[`spec/SPEC-1.0.md`](spec/SPEC-1.0.md)。
+
+> [!WARNING]
+> capabilities 是知情同意，不是沙箱；裝前請審查程式碼。
 
 ## AI Agent Skills
 
@@ -69,7 +89,8 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 - **ii-module-author** — 開發紀律：命名規則、自包含、探針宣告、semver、發佈清單
 - **ii-module-manage** — 安裝紀律：必跑 validate+check、Tier B 同意流程、exit code 對照、更新後 reapply
 
-若要帶到別的模塊專案，複製到該專案的 `.claude/skills/`，不要裝進全域 `~/.claude/skills/`。
+> [!TIP]
+> 若要帶到別的模塊專案，複製到該專案的 `.claude/skills/`，不要裝進全域 `~/.claude/skills/`。
 
 ## Release workflow（多人協作）
 
@@ -83,6 +104,18 @@ git push origin v1.0.2
 GitHub Actions 會自動跑 `tools/release/build.sh` 和 `tools/release/verify.sh`，
 產出 Linux binary、`.iimod`、starter zip、`SHA256SUMS`，再發布 GitHub Release。
 
+<details>
+<summary>本機 dry-run（開發用）</summary>
+
+```bash
+tools/release/build.sh --allow-dirty v1.0.2
+tools/release/verify.sh dist/release/v1.0.2
+```
+
+`build.sh` 預設要求 git tree 乾淨；`--allow-dirty` 只給本機試包用，正式 CI 不使用。
+
+</details>
+
 ## 模塊更新（`iimod update`）
 
 去中心化設計——沒有中央倉庫，每個模塊在安裝時記住自己的來源
@@ -91,6 +124,9 @@ GitHub Actions 會自動跑 `tools/release/build.sh` 和 `tools/release/verify.s
 裝了就能 `iimod update`。沒內嵌時，從 URL 安裝自動記同目錄的 `index.json`；
 `--origin` 永遠可顯式覆寫（優先序：flag ＞ 內嵌 ＞ URL 同目錄）。來源是一個靜態 `index.json`，掛在任何
 HTTPS 位置（GitHub raw / Releases / 自架皆可）：
+
+<details>
+<summary>index.json 範例</summary>
 
 ```json
 {"indexVersion": 1,
@@ -101,6 +137,8 @@ HTTPS 位置（GitHub raw / Releases / 自架皆可）：
      "sha256": "…"}}}
 ```
 
+</details>
+
 - `url` 可相對於 index 位置；傳輸用系統 `curl`（僅 `https://` 與 `file://`，
   後者供區網分享與離線測試）
 - 下載一律驗 `sha256`，不符即 exit 6，不落地
@@ -109,23 +147,23 @@ HTTPS 位置（GitHub raw / Releases / 自架皆可）：
 - `iimod pack` 強制要求 `--origin`（或明確 `--no-origin` 退出，僅供本機/開發用途）——
   沒帶任一 flag 會直接拒絕打包
 
-本機 dry-run：
-
-```bash
-tools/release/build.sh --allow-dirty v1.0.2
-tools/release/verify.sh dist/release/v1.0.2
-```
-
-`build.sh` 預設要求 git tree 乾淨；`--allow-dirty` 只給本機試包用，正式 CI 不使用。
-
 ## Exit codes（穩定契約）
 
-`0` ok · `3` 驗證失敗 · `4` 探針失敗（絕對擋）· `5` 依賴/衝突 · `6` 完整性
-· `7` 狀態錯誤 · `8` 錨點失敗 · `9` Tier B 需 `--allow-patches` · `10` 協議版本
+| Exit code | 意義 |
+|---|---|
+| `0` | ok |
+| `3` | 驗證失敗 |
+| `4` | 探針失敗（絕對擋） |
+| `5` | 依賴/衝突 |
+| `6` | 完整性 |
+| `7` | 狀態錯誤 |
+| `8` | 錨點失敗 |
+| `9` | Tier B 需 `--allow-patches` |
+| `10` | 協議版本 |
 
 ## Repo 佈局
 
-```
+```text
 spec/            SPEC-1.0.md＋fixtures（規範與測試語料）
 tools/iimod/     Rust CLI（50 tests：單元＋對迷你 stock 樹的整合矩陣）
 tools/release/   release build/verify 腳本
@@ -133,7 +171,9 @@ tools/release/   release build/verify 腳本
 .claude/skills/  Claude Code project skills ×2
 skills/          portable skill copies ×2
 modules/         參考模塊（network_traffic）
-examples/        最小範例（hello-window）
+examples/        最小範例（hello_window）
 ```
+
+---
 
 License: MIT（工具/規格/host QML；各模塊依其 manifest 自訂）。
