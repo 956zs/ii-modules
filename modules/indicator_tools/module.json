@@ -1,0 +1,73 @@
+{
+  "protocolVersion": 1,
+  "id": "indicator_tools",
+  "name": {
+    "en_US": "Indicator Tools",
+    "zh_TW": "指示器工具",
+    "zh_CN": "指示器工具"
+  },
+  "description": {
+    "en_US": "Right-click the bar's WiFi / Bluetooth indicator icons to launch their D-Bus GUI tools (nm-connection-editor / blueberry, with fallbacks). Left-click behaviour is untouched.",
+    "zh_TW": "右鍵 bar 上的 WiFi／藍牙指示圖示，直接開啟對應的 D-Bus 圖形工具（nm-connection-editor／blueberry，含備援鏈）。左鍵行為不變。"
+  },
+  "version": "1.0.0",
+  "authors": [
+    "nlcat"
+  ],
+  "license": "MIT",
+  "slots": [
+    "window"
+  ],
+  "entries": {
+    "window": "main.qml"
+  },
+  "compat": {
+    "probes": [
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "text: Network.materialSymbol",
+        "reason": "wifi indicator icon being patched"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "text: BluetoothStatus.connected",
+        "reason": "bluetooth indicator icon being patched"
+      }
+    ],
+    "testedOn": {
+      "dotsCommit": "446504ad42",
+      "qsVersion": "0.2.1"
+    }
+  },
+  "capabilities": [
+    "exec"
+  ],
+  "patches": [
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-after",
+      "anchor": "text: Network.materialSymbol",
+      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in nm-connection-editor iwgtk; do command -v $t >/dev/null && exec $t; done; exec better-control --wifi\"])\n                        }\n"
+    },
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-after",
+      "anchor": "text: BluetoothStatus.connected",
+      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in blueberry overskride blueman-manager; do command -v $t >/dev/null && exec $t; done\"])\n                        }\n"
+    },
+    {
+      "file": "modules/ii/verticalBar/VerticalBarContent.qml",
+      "op": "insert-after",
+      "anchor": "text: Network.materialSymbol",
+      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in nm-connection-editor iwgtk; do command -v $t >/dev/null && exec $t; done; exec better-control --wifi\"])\n                        }\n"
+    },
+    {
+      "file": "modules/ii/verticalBar/VerticalBarContent.qml",
+      "op": "insert-after",
+      "anchor": "text: BluetoothStatus.connected",
+      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in blueberry overskride blueman-manager; do command -v $t >/dev/null && exec $t; done\"])\n                        }\n"
+    }
+  ]
+}

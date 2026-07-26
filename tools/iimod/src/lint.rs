@@ -244,6 +244,18 @@ pub fn lint(manifest: &Manifest, payload: &Path, ii_root: &Path) -> Result<LintR
         }
     }
 
+    // Patch content executes in stock-file scope with the same powers as
+    // payload QML — a Tier B module hiding execDetached in a patch must not
+    // dodge the capability cross-check.
+    for patch in &manifest.patches {
+        let code = strip_comments(&patch.content);
+        for (cap, re) in detectors() {
+            if re.is_match(&code) {
+                detected.insert(cap);
+            }
+        }
+    }
+
     for cap in &detected {
         if !declared.contains(cap) {
             errors.push(format!(
