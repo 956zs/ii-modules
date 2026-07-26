@@ -70,6 +70,23 @@ verify_top_level_checksums() {
     local release_dir="$1"
     [[ -f "$release_dir/SHA256SUMS" ]] || die "missing SHA256SUMS in $release_dir"
     (cd "$release_dir" && sha256sum -c SHA256SUMS)
+    [[ -f "$release_dir/index.json" ]] || die "missing update index.json in $release_dir"
+    python3 - "$release_dir" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+release = pathlib.Path(sys.argv[1])
+index = json.loads((release / "index.json").read_text(encoding="utf-8"))
+assert index["indexVersion"] == 1, "unsupported indexVersion"
+for mod_id, entry in index["modules"].items():
+    package = release / entry["url"]
+    assert package.is_file(), f"index url missing from release: {entry['url']}"
+    digest = hashlib.sha256(package.read_bytes()).hexdigest()
+    assert digest == entry["sha256"], f"index sha256 mismatch for {mod_id}"
+print("✓ update index consistent")
+PY
 }
 
 verify_top_level_packages() {

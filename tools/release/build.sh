@@ -160,6 +160,37 @@ pack_module() {
     "$IIMOD_BIN" pack --out "$package_path" "$MODULE_DIR"
     "$IIMOD_BIN" validate "$package_path"
     run_with_fixture "module-package-check" "$IIMOD_BIN" check "$package_path"
+    write_update_index "$package_path"
+}
+
+# Update index published next to the package. `iimod install <package-url>`
+# records the sibling index.json automatically, so releases fetched from
+# .../releases/latest/download/ get zero-config `iimod update`.
+write_update_index() {
+    local package_path="$1"
+    python3 - "$MODULE_DIR/module.json" "$package_path" "$(release_dir)/index.json" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+package = pathlib.Path(sys.argv[2])
+sha = hashlib.sha256(package.read_bytes()).hexdigest()
+index = {
+    "indexVersion": 1,
+    "modules": {
+        manifest["id"]: {
+            "version": manifest["version"],
+            "url": package.name,
+            "sha256": sha,
+        }
+    },
+}
+pathlib.Path(sys.argv[3]).write_text(
+    json.dumps(index, indent=2) + "\n", encoding="utf-8"
+)
+PY
 }
 
 write_starter_readme() {
