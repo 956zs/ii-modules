@@ -51,6 +51,7 @@ pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
                     "            property JsonObject iimp: JsonObject {\n",
                     "                property list<string> enabledBar: []\n",
                     "                property list<string> enabledWindow: []\n",
+                    "                property string verticalPlacement: \"top\"\n",
                     "            }\n",
                 ),
             ),
@@ -108,12 +109,37 @@ pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
                 "spacing: 10",
                 concat!(
                     "            Repeater {\n",
-                    "                model: Config.options.iimp?.enabledBar ?? []\n",
+                    "                model: (Config.options.iimp?.verticalPlacement ?? \"top\") !== \"bottom\" ? (Config.options.iimp?.enabledBar ?? []) : []\n",
                     "                delegate: Loader {\n",
                     "                    required property string modelData\n",
                     "                    required property int index\n",
                     "                    Layout.alignment: Qt.AlignHCenter\n",
                     "                    Layout.topMargin: index === 0 ? Appearance.sizes.hyprlandGapsOut + 6 : 0\n",
+                    "                    source: Quickshell.shellPath(`mod/${modelData}/bar.qml`)\n",
+                    "                    onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] bar module failed: ${modelData}`)\n",
+                    "                }\n",
+                    "            }\n",
+                ),
+            ),
+        ),
+        // P6: the same vertical-bar slot, alternative placement above the
+        // tray. Gated by Config.options.iimp.verticalPlacement — exactly one
+        // of P5/P6 renders. Bottom placement can collide with the centred
+        // middle section on busy bars (stock sections reserve no space from
+        // each other); that trade-off is the user's to make.
+        (
+            VERTICAL_BAR_FILE,
+            p(
+                6,
+                PatchOp::InsertBefore,
+                "Bar.SysTray {",
+                concat!(
+                    "            Repeater {\n",
+                    "                model: (Config.options.iimp?.verticalPlacement ?? \"top\") === \"bottom\" ? (Config.options.iimp?.enabledBar ?? []) : []\n",
+                    "                delegate: Loader {\n",
+                    "                    required property string modelData\n",
+                    "                    Layout.alignment: Qt.AlignHCenter\n",
+                    "                    Layout.bottomMargin: 4\n",
                     "                    source: Quickshell.shellPath(`mod/${modelData}/bar.qml`)\n",
                     "                    onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] bar module failed: ${modelData}`)\n",
                     "                }\n",

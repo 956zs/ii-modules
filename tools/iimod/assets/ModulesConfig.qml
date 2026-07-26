@@ -48,6 +48,31 @@ ContentPage {
     }
 
     ContentSection {
+        icon: "swap_vert"
+        title: Translation.tr("Bar placement")
+
+        StyledText {
+            Layout.fillWidth: true
+            font.pixelSize: Appearance.font.pixelSize.smaller
+            color: Appearance.colors.colOnSurfaceVariant
+            wrapMode: Text.WordWrap
+            text: Translation.tr("Where bar modules sit on a vertical (left/right) bar. Top uses the empty stretch and can never collide with the centred widgets; bottom sits above the tray but may overlap the clock on busy bars.")
+        }
+
+        ConfigSelectionArray {
+            Layout.fillWidth: false
+            currentValue: Config.options.iimp?.verticalPlacement === "bottom" ? "bottom" : "top"
+            onSelected: newValue => {
+                Config.options.iimp.verticalPlacement = newValue;
+            }
+            options: [
+                { displayName: Translation.tr("Top"), icon: "vertical_align_top", value: "top" },
+                { displayName: Translation.tr("Above tray"), icon: "vertical_align_bottom", value: "bottom" },
+            ]
+        }
+    }
+
+    ContentSection {
         icon: "extension"
         title: Translation.tr("Installed modules")
 
