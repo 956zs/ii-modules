@@ -1,0 +1,41 @@
+{
+  "protocolVersion": 1,
+  "id": "memory_center",
+  "name": {
+    "en_US": "Memory Center",
+    "zh_TW": "記憶體中心",
+    "zh_CN": "内存中心"
+  },
+  "description": {
+    "en_US": "Visual RAM/swap viewer and cleaner for the bar: pressure-coloured percentage widget, hover popup with an honest composition mini-bar (in use / reclaimable cache / free always sum to MemTotal), and a click-to-open panel with an animated composition bar, treemap-style top-process blocks (area = RSS, double-click your own to SIGTERM), swap compaction (swapoff+swapon) and cache dropping (drop_caches) behind a polkit/sudo auth prompt with a measured freed delta.",
+    "zh_TW": "Bar 上的視覺化 RAM/swap 檢視與清理工具：壓力變色百分比元件、hover 彈窗含誠實的組成迷你條（應用程式／可回收快取／可用，總和恆等於 MemTotal）、點擊開啟詳細面板——動畫組成條、treemap 式程序方塊（面積＝RSS，點兩下可結束自己的程序）、整理 swap 與清除快取（polkit/sudo 認證後執行並回報實測釋放量）。",
+    "zh_CN": "Bar 上的可视化 RAM/swap 查看与清理工具：压力变色百分比组件、悬停弹窗含诚实的组成迷你条（应用程序／可回收缓存／可用，总和恒等于 MemTotal）、点击打开详细面板——动画组成条、treemap 式进程方块（面积＝RSS，双击可结束自己的进程）、整理 swap 与清除缓存（polkit/sudo 认证后执行并回报实测释放量）。"
+  },
+  "version": "1.0.0",
+  "authors": ["nlcat"],
+  "license": "MIT",
+  "slots": ["bar"],
+  "entries": {
+    "bar": "bar.qml",
+    "settings": "settings.qml"
+  },
+  "requires": {
+    "system": [
+      {"bin": "ps", "hint": "procps-ng — top-process sampling in the panel"},
+      {"bin": "pkexec", "hint": "polkit — auth prompt for the swap/cache cleanup actions"}
+    ]
+  },
+  "compat": {
+    "probes": [
+      {"type": "file-exists", "path": "modules/ii/bar/BarGroup.qml", "reason": "bar group container for the pill look"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopup.qml", "reason": "hover popup component"},
+      {"type": "file-exists", "path": "modules/common/widgets/RippleButton.qml", "reason": "cleanup action buttons in the panel"},
+      {"type": "file-exists", "path": "modules/common/widgets/StyledToolTip.qml", "reason": "process-block and disabled-button tooltips"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSpinBox.qml", "reason": "numeric options in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSwitch.qml", "reason": "toggle options in the settings fragment"},
+      {"type": "file-exists", "path": "modules/ii/polkit/Polkit.qml", "reason": "the shell's built-in polkit agent answers this module's pkexec prompts"}
+    ],
+    "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
+  },
+  "capabilities": ["exec"]
+}
