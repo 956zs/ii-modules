@@ -176,6 +176,10 @@ next to the manifest inside the package: `{"specVersion": 1, "manifestSha256":
   satisfying version (exit 5 otherwise). This also structurally prevents cycles.
 - `enable A` auto-enables A's installed dependency closure; `disable A`
   auto-disables A's transitive dependents (both reported in output).
+- A disabled module contributes **neither slots nor patches**: flipping a
+  Tier B module's state recomposes its target files (the same
+  `compose(strip(s), P)` with the module's patches excluded from `P` — this
+  is the same exclusion §9 already applies to `incompatible` modules).
 - `uninstall A` with installed dependents is refused (exit 5); `--cascade`
   removes dependents in reverse topological order after listing them.
 - `system` entries are binaries that must resolve on `$PATH` (`bin` is a

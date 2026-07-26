@@ -194,6 +194,15 @@ pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
     registry::save(&registry)?;
     write_index_projection(&registry)?;
     project_enabled(&registry)?;
+    // Tier B state changes move patches in or out of the composition;
+    // Tier A flips are config-list-only and reload live without this.
+    if to_flip
+        .iter()
+        .any(|t| registry.get(t).is_some_and(|m| m.manifest.is_tier_b()))
+    {
+        crate::ops::recompose_all(&registry, true)?;
+        let _ = crate::qs::trigger_reload();
+    }
     println!(
         "✓ {} {:?}",
         if enable { "enabled" } else { "disabled" },

@@ -144,17 +144,15 @@ impl Registry {
         Ok(order)
     }
 
-    /// Surviving patch set for one stock file across all non-incompatible modules.
+    /// Surviving patch set for one stock file: enabled modules only. A
+    /// disabled module contributes neither slots nor patches — "off" must
+    /// mean off for Tier B too, or disabling a patch module in the settings
+    /// app would visibly do nothing.
     pub fn patches_for_file(&self, rel: &str) -> Vec<PatchInstance> {
         let mut set: Vec<PatchInstance> = self
             .modules
             .iter()
-            .filter(|m| {
-                !matches!(
-                    m.state,
-                    ModuleState::Incompatible | ModuleState::BlockedByDep
-                )
-            })
+            .filter(|m| matches!(m.state, ModuleState::Enabled))
             .flat_map(|m| m.patch_records.get(rel).cloned().unwrap_or_default())
             .collect();
         set.sort_by_key(|p| (p.owner.clone(), p.index));

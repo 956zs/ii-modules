@@ -516,3 +516,33 @@ fn update_from_file_origin() {
     let out = w.expect(&["update"], 0);
     assert!(String::from_utf8_lossy(&out.stdout).contains("up to date"));
 }
+
+#[test]
+fn disable_removes_tier_b_patches() {
+    let w = World::new("disflip");
+    let tier_b = serde_json::json!({
+        "patches": [{
+            "file": "modules/ii/bar/BarContent.qml",
+            "op": "insert-before",
+            "anchor": "            // Weather",
+            "content": "            Flip {}\n"
+        }]
+    });
+    let payload = w.make_module("flip_patcher", tier_b);
+    w.expect(
+        &["install", payload.to_str().unwrap(), "--allow-patches"],
+        0,
+    );
+    let target = w.ii().join("modules/ii/bar/BarContent.qml");
+    let read = || std::fs::read_to_string(&target).unwrap();
+    assert!(read().contains("iimp flip_patcher/0"), "installed: fences present");
+
+    // Disabled -> the module's effects stop: fences gone, stock text back.
+    w.expect(&["disable", "flip_patcher"], 0);
+    assert!(!read().contains("flip_patcher"), "disabled: fences removed");
+    assert!(read().contains("// Weather"), "stock text intact");
+
+    // Enabled -> patches recomposed.
+    w.expect(&["enable", "flip_patcher"], 0);
+    assert!(read().contains("iimp flip_patcher/0"), "re-enabled: fences back");
+}
