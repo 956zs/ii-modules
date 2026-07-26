@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.modules.common
 import qs.modules.common.widgets
+import qs.services
 import qs.mod.network_traffic
 
 /*
