@@ -62,6 +62,14 @@ FileView {
         // sysfs battery to read; "auto" resolves via UPower's nativePath,
         // then falls back to probing BAT0/BAT1/….
         property string batteryName: "auto"
+        // Bar presentation. The stock bar already has a battery gauge, so
+        // this module claims NO bar space by default — the sidebar tile /
+        // IPC toggle is the primary panel entry. Opting into showBar gives
+        // a sparkline-only pill (host layout skips the root while hidden;
+        // sampling and persistence run either way); showPercent adds the
+        // number on top of that.
+        property bool showBar: false
+        property bool showPercent: false
 
         // History blob, managed by BatteryLogic, flushed at most once a
         // minute — not a user setting.

@@ -1,26 +1,35 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
+import qs
 import qs.modules.common
 import qs.modules.common.widgets
 import qs.modules.ii.bar
 import qs.mod.battery_trend
 
 /*
- * Bar slot entry (visual root). Self-contained: own BarGroup pill, own
- * sampling instance, own config file, hover popup, click-to-open detail
- * panel. Deliberately does NOT duplicate the stock BatteryIndicator's icon —
- * this widget's job is the trend: percentage + a 3 h sparkline.
+ * Bar slot entry — but NOT a bar widget by default. The stock bar already
+ * has a battery gauge, so this module claims zero bar space out of the box
+ * (showBar defaults to false): this root exists to host the sampling
+ * instance, the config file, and the detail panel with its IPC surface,
+ * and stays invisible (layouts skip invisible items, so no ghost margins).
+ * The sidebar tile / `ipc call battery_trend toggle` is the primary entry.
+ *
+ * Opting into showBar renders a sparkline-only pill (percentage text is a
+ * further opt-in — the stock widget already shows the number) with the
+ * hover popup and click-to-open panel.
  *
  * Multi-monitor: the bar slot is instantiated once per screen, but the
  * history file must have exactly one writer. The instance on the first
  * screen is elected primary (samples + persists + materialises config
- * defaults); the others run the logic in reader mode, re-deriving their
- * views from the watched config file.
+ * defaults + registers the IPC target); the others run the logic in reader
+ * mode, re-deriving their views from the watched config file.
  */
 BarGroup {
     id: barGroup
     vertical: Config.options.bar.vertical === true
+    visible: cfg.options.showBar === true
 
     MouseArea {
         id: root
@@ -45,9 +54,31 @@ BarGroup {
             return name !== "" && name === scr[0].name
         }
 
+        // Sparkline needs ≥2 samples; until then (first minutes of a fresh
+        // install) the percentage stands in so the pill is never blank.
+        readonly property bool sparkReady: logic.available && logic.spark.length >= 2
+
         ConfigLoader {
             id: cfg
             owner: root.isPrimary
+        }
+
+        // Sidebar tile entry point. Gated to the primary instance: the bar
+        // slot exists once per screen and duplicate IpcHandler targets would
+        // collide.
+        LazyLoader {
+            active: root.isPrimary
+
+            IpcHandler {
+                target: "battery_trend"
+
+                function toggle(): void {
+                    // Opened from the sidebar tile: drop the sidebar first so
+                    // the two focus grabs don't fight over who closes whom.
+                    GlobalStates.sidebarRightOpen = false
+                    detailPanel.toggle()
+                }
+            }
         }
 
         BatteryLogic {
@@ -84,6 +115,9 @@ BarGroup {
             rowSpacing: 1
 
             StyledText {
+                // Stock BatteryIndicator already shows the number — opt-in
+                // only, except as a bootstrap fallback for an empty sparkline.
+                visible: cfg.options.showPercent === true || !root.sparkReady
                 Layout.alignment: Qt.AlignCenter
                 Layout.preferredWidth: Math.max(pctMetrics.width, implicitWidth)
                 horizontalAlignment: Text.AlignHCenter
@@ -99,9 +133,11 @@ BarGroup {
             }
 
             TrendGraph {
-                visible: logic.available && logic.spark.length >= 2
+                visible: root.sparkReady
                 Layout.alignment: Qt.AlignCenter
-                Layout.preferredWidth: root.barVertical ? 30 : 34
+                // A little wider when it is the pill's only content.
+                Layout.preferredWidth: root.barVertical ? 30
+                    : cfg.options.showPercent === true ? 34 : 44
                 Layout.preferredHeight: root.barVertical ? 12 : Math.round(Appearance.sizes.baseBarHeight * 0.42)
                 samples: logic.spark
                 windowSec: logic.sparkSec
