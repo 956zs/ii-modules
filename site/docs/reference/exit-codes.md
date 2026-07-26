@@ -1,3 +1,7 @@
+---
+description: iimod CLI 的穩定 exit code 契約,適合腳本化與問題回報。
+---
+
 # Exit codes
 
 `iimod` 的 exit code 是**穩定契約**(stable API),適合腳本化與問題回報。

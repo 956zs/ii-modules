@@ -1,3 +1,7 @@
+---
+description: 一頁看懂 IIMP 名詞:Tier A/B、插槽、manifest、探針、聯邦式更新。
+---
+
 # 核心概念
 
 一頁看懂 IIMP 的名詞。深入細節請讀 [SPEC-1.0.md](https://github.com/956zs/ii-modules/blob/main/spec/SPEC-1.0.md)。

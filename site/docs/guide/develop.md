@@ -1,3 +1,7 @@
+---
+description: 從 iimod init 腳手架到通過 validate/check 的完整模塊開發教學。
+---
+
 # 開發你的第一個模塊
 
 這一頁帶你從腳手架到能安裝的模塊。完整規範請以 [SPEC-1.0.md](https://github.com/956zs/ii-modules/blob/main/spec/SPEC-1.0.md) 為準。

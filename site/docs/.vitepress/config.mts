@@ -1,10 +1,13 @@
-import { defineConfig } from 'vitepress'
+import { defineConfig, type HeadConfig } from 'vitepress'
+
+const SITE_ORIGIN = 'https://ii.n1cat.xyz'
+const DOCS_DESCRIPTION =
+  'IIMP——illogical-impulse 桌面的社群模塊協議。安裝、日常使用、模塊開發與發佈教學,以及完整協議參考。'
 
 export default defineConfig({
   lang: 'zh-Hant-TW',
   title: 'IIMP 文件',
-  description:
-    'IIMP——illogical-impulse 桌面的社群模塊協議。安裝、日常使用、模塊開發與發佈教學,以及完整協議參考。',
+  description: DOCS_DESCRIPTION,
   base: '/docs/',
   outDir: '../dist/docs',
   cleanUrls: true,
@@ -12,7 +15,32 @@ export default defineConfig({
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
     ['meta', { name: 'theme-color', content: '#a78bfa' }],
+    // Open Graph（Discord/Telegram/FB 共用;爬蟲不跑 JS,必須是靜態標籤）。
+    // og:title / og:description / og:url 逐頁由 transformHead 生成。
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'IIMP' }],
+    ['meta', { property: 'og:image', content: `${SITE_ORIGIN}/og.png` }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
+    ['meta', { property: 'og:image:alt', content: 'IIMP — 給 illogical-impulse 桌面的社群模塊協議' }],
+    ['meta', { property: 'og:locale', content: 'zh_TW' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:image', content: `${SITE_ORIGIN}/og.png` }],
   ],
+  transformHead({ pageData }): HeadConfig[] {
+    // 對齊 VitePress 渲染的 <title>（`:title | IIMP 文件`）。
+    const title = pageData.title ? `${pageData.title} | IIMP 文件` : 'IIMP 文件'
+    const description = pageData.description || DOCS_DESCRIPTION
+    // cleanUrls: guide/install.md → /docs/guide/install;index.md → /docs/。
+    const path = pageData.relativePath.replace(/(?:^|\/)index\.md$/, '').replace(/\.md$/, '')
+    return [
+      ['meta', { property: 'og:title', content: title }],
+      ['meta', { property: 'og:description', content: description }],
+      ['meta', { property: 'og:url', content: `${SITE_ORIGIN}/docs/${path}` }],
+      ['meta', { name: 'twitter:title', content: title }],
+      ['meta', { name: 'twitter:description', content: description }],
+    ]
+  },
   themeConfig: {
     siteTitle: 'IIMP 文件',
     nav: [

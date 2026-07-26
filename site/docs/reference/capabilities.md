@@ -1,3 +1,7 @@
+---
+description: capabilities 欄位的四種能力宣告、lint 偵測方式,與安裝時的安全提示。
+---
+
 # Capabilities 與安全
 
 `capabilities` 是 manifest 的必要欄位(可以是 `[]`),**誠實宣告模塊的程式碼實際做什麼**。
