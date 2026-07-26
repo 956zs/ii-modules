@@ -7,11 +7,11 @@
     "zh_CN": "电量趋势"
   },
   "description": {
-    "en_US": "Long-term battery history and analytics for the bar: percentage with a 3 h sparkline, hover popup with smoothed power draw, regression-based time estimate and health, and a click-open detail panel with a 24 h curve (charge segments tinted, suspend gaps annotated), 30-day daily min/max bands, a year of health snapshots, drain-rate/cycle statistics and charge-session records. Tiered retention (24 h raw / 30 d hourly / 365 d daily) keeps the history file bounded. Native sources only: UPower service + sysfs reads, no external processes.",
-    "zh_TW": "手機級的長期電量趨勢與分析：bar 顯示百分比＋3 小時迷你曲線；hover 彈窗有平滑功耗、回歸法剩餘時間估計（與 UPower 對照）與電池健康；點擊開詳情面板——24 小時曲線（充電段上色、休眠斷點標註）、30 天每日最高/最低區間、一年健康快照、耗電速率/循環統計與充放電段記錄。分層保留（原始 24 小時／小時級 30 天／日級 365 天）讓歷史檔案大小有界。純原生資料來源：UPower 服務＋sysfs 檔案讀取，不執行任何外部程式。",
-    "zh_CN": "手机级的长期电量趋势与分析：bar 显示百分比＋3 小时迷你曲线；悬停弹窗有平滑功耗、回归法剩余时间估计（与 UPower 对照）与电池健康；点击打开详情面板——24 小时曲线（充电段上色、休眠断点标注）、30 天每日最高/最低区间、一年健康快照、耗电速率/循环统计与充放电段记录。分层保留（原始 24 小时／小时级 30 天／日级 365 天）让历史文件大小有界。纯原生数据来源：UPower 服务＋sysfs 文件读取，不执行任何外部程序。"
+    "en_US": "Long-term battery history and analytics — with zero bar footprint by default (the stock bar already has a battery gauge). Sampling runs invisibly; the detail panel opens from a sidebar quick-toggle tile (Tier B patch) or IPC: 24 h curve (charge segments tinted, suspend gaps annotated), 30-day daily min/max bands, a year of health snapshots, drain-rate/cycle statistics and charge-session records, plus a hover popup with smoothed power draw and a regression-based time estimate. Optional opt-in bar pill: 3 h sparkline (percentage text a further opt-in). Tiered retention (24 h raw / 30 d hourly / 365 d daily) keeps the history file bounded. Native data sources only: UPower service + sysfs reads.",
+    "zh_TW": "手機級的長期電量趨勢與分析——預設零 bar 佔位（stock bar 已有電池指示器）。取樣在背景進行；詳情面板由側欄快速開關磁貼（Tier B 補丁）或 IPC 開啟——24 小時曲線（充電段上色、休眠斷點標註）、30 天每日最高/最低區間、一年健康快照、耗電速率/循環統計與充放電段記錄，另有 hover 彈窗顯示平滑功耗與回歸法剩餘時間估計（與 UPower 對照）。可選開啟 bar 藥丸：3 小時迷你曲線（百分比文字再另行選開）。分層保留（原始 24 小時／小時級 30 天／日級 365 天）讓歷史檔案大小有界。純原生資料來源：UPower 服務＋sysfs 檔案讀取。",
+    "zh_CN": "手机级的长期电量趋势与分析——默认零 bar 占位（stock bar 已有电池指示器）。采样在后台进行；详情面板由侧栏快速开关磁贴（Tier B 补丁）或 IPC 打开——24 小时曲线（充电段上色、休眠断点标注）、30 天每日最高/最低区间、一年健康快照、耗电速率/循环统计与充放电段记录，另有悬停弹窗显示平滑功耗与回归法剩余时间估计（与 UPower 对照）。可选开启 bar 药丸：3 小时迷你曲线（百分比文字再另行选开）。分层保留（原始 24 小时／小时级 30 天／日级 365 天）让历史文件大小有界。纯原生数据来源：UPower 服务＋sysfs 文件读取。"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["bar"],
@@ -27,9 +27,20 @@
       {"type": "file-exists", "path": "modules/common/widgets/StyledRectangularShadow.qml", "reason": "detail panel drop shadow"},
       {"type": "file-exists", "path": "modules/common/widgets/ConfigSpinBox.qml", "reason": "numeric options in the settings fragment"},
       {"type": "file-exists", "path": "modules/common/widgets/ConfigSwitch.qml", "reason": "toggle options in the settings fragment"},
-      {"type": "file-exists", "path": "modules/common/widgets/MaterialTextField.qml", "reason": "battery name override in the settings fragment"}
+      {"type": "file-exists", "path": "modules/common/widgets/MaterialTextField.qml", "reason": "battery name override in the settings fragment"},
+      {"type": "file-contains", "path": "GlobalStates.qml", "pattern": "property bool sidebarRightOpen", "reason": "the IPC toggle closes the sidebar the tile was clicked in"},
+      {"type": "file-contains", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidToggleDelegateChooser.qml", "pattern": "roleValue: \"antiFlashbang\"", "reason": "patch anchor for the sidebar tile delegate"},
+      {"type": "file-exists", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidQuickToggleButton.qml", "reason": "stock component the sidebar tile patch instantiates"}
     ],
     "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
   },
-  "capabilities": []
+  "capabilities": ["exec"],
+  "patches": [
+    {
+      "file": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidToggleDelegateChooser.qml",
+      "op": "insert-before",
+      "anchor": "roleValue: \"antiFlashbang\"",
+      "content": "    DelegateChoice { roleValue: \"battery_trend\"; AndroidQuickToggleButton {\n        required property int index\n        required property var modelData\n        buttonIndex: root.startingIndex + index\n        buttonData: modelData\n        editMode: root.editMode\n        expandedSize: modelData.size > 1\n        baseCellWidth: root.baseCellWidth\n        baseCellHeight: root.baseCellHeight\n        cellSpacing: root.spacing\n        cellSize: modelData.size\n        name: Translation.tr(\"Battery trends\")\n        tooltipText: Translation.tr(\"Battery trends\")\n        buttonIcon: \"battery_horiz_075\"\n        toggled: false\n        mainAction: () => Quickshell.execDetached([\"qs\", \"-c\", \"ii\", \"ipc\", \"--any-display\", \"call\", \"battery_trend\", \"toggle\"])\n    } }\n\n"
+    }
+  ]
 }
