@@ -10,7 +10,7 @@
     "en_US": "Phone-style screen time tracking. Focus accounting via Quickshell's native ToplevelManager (event-driven, pauses while locked, suspend gaps not counted): today's per-app seconds, hourly histogram, and a 30-day daily history. A separate 'AI work time' dimension samples the CPU of agent process trees (claude/codex by default) every 10s and counts sessions actually working — even unfocused or locked — with parallel-session peak and sum. Bar pill with today's total and a hover popup (top apps, yesterday comparison, AI work time); detail panel via IPC with hourly/7-day/30-day charts, per-app ranking, and an AI section; optional sidebar quick-toggle tile (Tier B patch) that opens the detail panel.",
     "zh_TW": "手機風格的螢幕使用時間統計。以 Quickshell 原生 ToplevelManager 做焦點記帳（事件驅動、鎖屏暫停、休眠時段不入帳）：今日各應用秒數、每小時直方圖、30 天每日歷史。另有獨立的「AI 工作時長」維度：每 10 秒取樣 agent 程序樹（預設 claude/codex）的 CPU，統計真正在工作的 session——即使未聚焦甚至鎖屏——含並行峰值與合計。Bar 藥丸顯示今日總時長，hover 彈窗含 Top 應用、昨日比較與 AI 工作時長；IPC 開啟詳情面板（時段/7 天/30 天圖表、應用排行與 AI 區塊）；可選側欄快速開關磁貼（Tier B 補丁），點擊開啟詳情面板。"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["bar", "window"],
@@ -30,7 +30,8 @@
       {"type": "file-exists", "path": "modules/common/widgets/ConfigSpinBox.qml", "reason": "numeric options in the settings fragment"},
       {"type": "file-exists", "path": "modules/common/widgets/MaterialTextField.qml", "reason": "text options in the settings fragment"},
       {"type": "file-contains", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidToggleDelegateChooser.qml", "pattern": "roleValue: \"antiFlashbang\"", "reason": "patch anchor for the sidebar tile delegate"},
-      {"type": "file-exists", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidQuickToggleButton.qml", "reason": "stock component the sidebar tile patch instantiates"}
+      {"type": "file-exists", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidQuickToggleButton.qml", "reason": "stock component the sidebar tile patch instantiates"},
+      {"type": "file-contains", "path": "modules/ii/sidebarRight/quickToggles/AndroidQuickPanel.qml", "pattern": "id: unusedRows", "reason": "patch anchor for the edit-mode re-add row"}
     ],
     "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
   },
@@ -41,6 +42,12 @@
       "op": "insert-before",
       "anchor": "roleValue: \"antiFlashbang\"",
       "content": "    DelegateChoice { roleValue: \"screentime\"; AndroidQuickToggleButton {\n        required property int index\n        required property var modelData\n        buttonIndex: root.startingIndex + index\n        buttonData: modelData\n        editMode: root.editMode\n        expandedSize: modelData.size > 1\n        baseCellWidth: root.baseCellWidth\n        baseCellHeight: root.baseCellHeight\n        cellSpacing: root.spacing\n        cellSize: modelData.size\n        name: Translation.tr(\"Screen time\")\n        tooltipText: Translation.tr(\"Screen time\")\n        buttonIcon: \"hourglass_bottom\"\n        toggled: false\n        mainAction: () => Quickshell.execDetached([\"qs\", \"-c\", \"ii\", \"ipc\", \"--any-display\", \"call\", \"screentime\", \"toggleDetails\"])\n    } }\n\n"
+    },
+    {
+      "file": "modules/ii/sidebarRight/quickToggles/AndroidQuickPanel.qml",
+      "op": "insert-after",
+      "anchor": "id: unusedRows",
+      "content": "                // screentime: the stock unused list is built from the hardcoded\n                // availableToggleTypes, so once this tile is removed in edit mode\n                // it could never be re-added from the UI. Offer it here whenever\n                // it is absent from the config.\n                ButtonGroup {\n                    visible: !root.toggles.some(t => t && t.type === \"screentime\")\n                    spacing: root.spacing\n\n                    Repeater {\n                        model: ScriptModel {\n                            values: root.toggles.some(t => t && t.type === \"screentime\") ? [] : [{ type: \"screentime\", size: 1 }]\n                            objectProp: \"type\"\n                        }\n                        delegate: AndroidToggleDelegateChooser {\n                            startingIndex: -1\n                            editMode: root.editMode\n                            baseCellWidth: root.baseCellWidth\n                            baseCellHeight: root.baseCellHeight\n                            spacing: root.spacing\n                        }\n                    }\n                }\n"
     }
   ]
 }
