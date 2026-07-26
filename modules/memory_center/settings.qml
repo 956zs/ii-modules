@@ -15,6 +15,24 @@ ColumnLayout {
     ConfigLoader { id: cfg }
 
     ConfigSwitch {
+        text: Translation.tr("Show the bar widget")
+        buttonIcon: "memory"
+        checked: cfg.options.showBar
+        onCheckedChanged: {
+            cfg.options.showBar = checked;
+        }
+    }
+
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        color: Appearance.colors.colOnSurfaceVariant
+        font.pixelSize: Appearance.font.pixelSize.smaller
+        wrapMode: Text.WordWrap
+        text: Translation.tr("Off frees bar space (stock's Resources widget already shows a memory dial) — the panel stays reachable via the sidebar tile or IPC.")
+    }
+
+    ConfigSwitch {
         text: Translation.tr("Show percentage in the bar")
         buttonIcon: "percent"
         checked: cfg.options.showBarPercent
@@ -78,6 +96,24 @@ ColumnLayout {
         onValueChanged: {
             cfg.options.warnPercent = value;
         }
+    }
+
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        Layout.topMargin: 8
+        color: Appearance.colors.colOnSurfaceVariant
+        font.pixelSize: Appearance.font.pixelSize.smaller
+        wrapMode: Text.WordWrap
+        text: Translation.tr("Sidebar tile: to show a Memory tile in the right sidebar's quick toggles, add this entry to sidebar.quickToggles.android.toggles in the shell's config.json (the tile editor only offers stock types):")
+    }
+
+    MaterialTextField {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        Layout.rightMargin: 8
+        readOnly: true
+        text: "{\"type\": \"memory_center\", \"size\": 1}"
     }
 
     StyledText {

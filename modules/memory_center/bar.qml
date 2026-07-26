@@ -22,6 +22,12 @@ import qs.mod.memory_center
 BarGroup {
     id: barGroup
     vertical: Config.options.bar.vertical === true
+    // showBar off: the host layout skips invisible children, so the pill
+    // vanishes without a ghost gap. The IpcHandler and the panel LazyLoader
+    // below are non-visual/window objects — they stay alive and the panel
+    // remains reachable via the sidebar tile or `qs ... call memory_center
+    // toggle`.
+    visible: cfg.options.showBar !== false
 
     MouseArea {
         id: root
@@ -43,6 +49,9 @@ BarGroup {
         // the outer id.
         MemInfo {
             id: memInfo
+            // Nothing consumes samples while the bar entry is hidden and the
+            // panel is closed — stop touching /proc/meminfo entirely.
+            active: barGroup.visible || (panelLoader.item?.visible ?? false)
             updateInterval: cfg.options.meminfoInterval >= 500 ? cfg.options.meminfoInterval : 2000
         }
 

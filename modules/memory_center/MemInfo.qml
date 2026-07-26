@@ -23,6 +23,11 @@ Item {
     height: 0
 
     property int updateInterval: 2000
+    // Polling gate: with the bar entry hidden and the panel closed there is
+    // no consumer, so the owner turns this off. Resample immediately on
+    // reactivation — the first Timer tick is otherwise a full interval away.
+    property bool active: true
+    onActiveChanged: if (active) resample()
 
     // kB, straight from /proc/meminfo.
     property real memTotal: 0
@@ -77,7 +82,7 @@ Item {
 
     Timer {
         interval: 1
-        running: true
+        running: root.active
         repeat: true
         onTriggered: {
             fileMeminfo.reload()

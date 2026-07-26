@@ -36,6 +36,10 @@ FileView {
     property alias options: adapterItem
     adapter: JsonAdapter {
         id: adapterItem
+        // Show the widget in the bar. Off frees bar space; the detail panel
+        // stays reachable via the sidebar tile or IPC, and nothing polls
+        // while both the bar entry and the panel are hidden.
+        property bool showBar: true
         // /proc/meminfo poll (bar widget + popup), ms. Cheap: one file read.
         property int meminfoInterval: 2000
         // ps poll while the detail panel is open, ms. Nothing runs when closed.
