@@ -67,6 +67,12 @@ BarGroup {
             .map(([n, s]) => ({ n, s: Number(s) || 0 }))
             .filter(a => a.s >= 60)
             .sort((a, b) => b.s - a.s)
+        // Today's AI-work bucket from the same blob (zeroes when absent —
+        // older blobs or tracking off).
+        readonly property var todayAi: (root.hist?.day?.k === root.todayKey
+                                        && typeof root.hist.day.ai === "object"
+                                        && root.hist.day.ai !== null)
+                                       ? root.hist.day.ai : ({})
         // -1 = no record for yesterday (don't fake a zero comparison)
         readonly property real yesterdayTotal: {
             const d = new Date()
@@ -120,6 +126,9 @@ BarGroup {
             todayTotal: root.todayTotal
             ranking: root.ranking
             yesterdayTotal: root.yesterdayTotal
+            aiUnion: Number(root.todayAi.u) || 0
+            aiSum: Number(root.todayAi.s) || 0
+            aiPeak: Number(root.todayAi.p) || 0
         }
     }
 }

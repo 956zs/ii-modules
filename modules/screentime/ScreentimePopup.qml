@@ -20,6 +20,9 @@ StyledPopup {
     property real todayTotal: 0
     property list<var> ranking: []
     property real yesterdayTotal: -1 // -1 = no record
+    property real aiUnion: 0
+    property real aiSum: 0
+    property int aiPeak: 0
 
     readonly property list<var> top5: root.ranking.slice(0, 5)
     readonly property real topSeconds: root.top5.length > 0 ? root.top5[0].s : 0
@@ -83,6 +86,41 @@ StyledPopup {
                     text: (root.delta >= 0 ? "+" : "−") + fmt.dur(Math.abs(root.delta))
                           + " " + Translation.tr("vs yesterday")
                 }
+            }
+        }
+
+        // AI agents' day, next to the user's — appears once they have done
+        // a minute of work. Values are ≤1 min stale like everything else
+        // here (the popup reads the flushed blob, not the live accountant).
+        ColumnLayout {
+            visible: root.aiUnion >= 60
+            spacing: 0
+
+            RowLayout {
+                spacing: 4
+                MaterialSymbol {
+                    text: "smart_toy"
+                    iconSize: Appearance.font.pixelSize.small
+                    color: Appearance.colors.colSubtext
+                }
+                StyledText {
+                    font.pixelSize: Appearance.font.pixelSize.smaller
+                    color: Appearance.colors.colSubtext
+                    text: Translation.tr("AI work time")
+                }
+            }
+            StyledText {
+                font.pixelSize: Appearance.font.pixelSize.large
+                font.weight: Font.DemiBold
+                color: Appearance.colors.colOnLayer1
+                text: fmt.dur(root.aiUnion)
+            }
+            StyledText {
+                visible: root.aiPeak > 1
+                font.pixelSize: Appearance.font.pixelSize.smaller
+                color: Appearance.colors.colSubtext
+                text: Translation.tr("peak %1 parallel").arg(root.aiPeak)
+                      + " · " + Translation.tr("sum %1").arg(fmt.dur(root.aiSum))
             }
         }
 

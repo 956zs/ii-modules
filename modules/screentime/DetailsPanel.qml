@@ -79,6 +79,25 @@ PanelWindow {
     }
     readonly property real avg7: root.t7.reduce((acc, d) => acc + d.total, 0) / 7
 
+    // AI dimension: shown once there is anything to show — data today, a
+    // matching session alive right now, or history from past days.
+    readonly property bool aiAny: {
+        root.logic.revision
+        return root.logic.aiUnion >= 1 || root.logic.aiSessionsNow > 0
+            || root.t7.some(d => d.ai >= 1)
+    }
+    readonly property real aiAvg7: root.t7.reduce((acc, d) => acc + d.ai, 0) / 7
+    readonly property string aiCaption: {
+        const bits = []
+        if (root.logic.aiActiveNow > 0)
+            bits.push(Translation.tr("%1 working now").arg(root.logic.aiActiveNow))
+        if (root.logic.aiPeak > 1) {
+            bits.push(Translation.tr("peak %1 parallel").arg(root.logic.aiPeak))
+            bits.push(Translation.tr("sum %1").arg(fmt.dur(root.logic.aiSum)))
+        }
+        return bits.join(" · ")
+    }
+
     function mdLabel(key) {
         const p = key.split("-")
         return p.length === 3 ? `${Number(p[1])}/${Number(p[2])}` : key
@@ -170,6 +189,54 @@ PanelWindow {
                                 text: (root.delta >= 0 ? "+" : "−") + fmt.dur(Math.abs(root.delta))
                                       + " " + Translation.tr("vs yesterday")
                             }
+                        }
+                    }
+
+                    // AI agents working — the other dimension: how long agent
+                    // sessions (claude/codex process trees) were actually
+                    // burning CPU, focused or not, locked or not. Wall-clock
+                    // union is the hero number ("my agents were working for
+                    // 3h"); the sum and peak tell the parallelism story.
+                    ColumnLayout {
+                        visible: root.aiAny
+                        Layout.fillWidth: true
+                        spacing: 4
+
+                        RowLayout {
+                            spacing: 6
+                            MaterialSymbol {
+                                text: "smart_toy"
+                                iconSize: Appearance.font.pixelSize.large
+                                color: Appearance.colors.colOnSurfaceVariant
+                            }
+                            StyledText {
+                                font.pixelSize: Appearance.font.pixelSize.small
+                                font.weight: Font.DemiBold
+                                color: Appearance.colors.colOnSurfaceVariant
+                                text: Translation.tr("AI work time")
+                            }
+                        }
+                        StyledText {
+                            font.pixelSize: Appearance.font.pixelSize.huge
+                            font.weight: Font.DemiBold
+                            color: Appearance.colors.colOnLayer1
+                            text: fmt.dur(root.logic.aiUnion)
+                        }
+                        StyledText {
+                            visible: root.aiCaption !== ""
+                            font.pixelSize: Appearance.font.pixelSize.smaller
+                            color: Appearance.colors.colSubtext
+                            text: root.aiCaption
+                        }
+                        ColumnChart {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 2
+                            values: root.t7.map(d => d.ai)
+                            highlightIndex: 6
+                            chartHeight: 56
+                            xLabels: root.t7.map((d, i) => ({i, text: fmt.weekdayLetter(d.dow)}))
+                            hoverLabel: (i, v) => `${root.mdLabel(root.t7[i].k)} · ${fmt.dur(v)}`
+                            defaultLabel: Translation.tr("Daily average") + ` · ${fmt.dur(root.aiAvg7)}`
                         }
                     }
 

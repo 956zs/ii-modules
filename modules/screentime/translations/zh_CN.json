@@ -26,6 +26,15 @@
   "A wall-clock jump longer than this between samples (suspend, hibernate) is treated as away time and not counted.": "两次采样之间的时钟跳跃超过此值（睡眠、休眠）视为离开，不计入。",
   "Keep 30-day history": "保留 30 天历史",
   "Off wipes the daily history and keeps only today. Locked-screen time is never counted.": "关闭会清除每日历史，只保留今日。锁屏期间一律不计入。",
+  "AI work time": "AI 工作时长",
+  "%1 working now": "%1 个工作中",
+  "peak %1 parallel": "峰值 %1 并行",
+  "sum %1": "合计 %1",
+  "Track AI agent work time": "统计 AI agent 工作时长",
+  "Samples the CPU of matching processes every 10 s; a session whose process tree exceeds the threshold counts as working — even unfocused or with the screen locked. Its own stat, never mixed into focused screen time.": "每 10 秒采样一次符合条件进程的 CPU；进程树超过阈值的 session 记为工作中——即使窗口未聚焦、甚至已锁屏。独立统计，绝不混入前台屏幕时间。",
+  "Agent process regex": "Agent 进程名称正则",
+  "Working threshold (% CPU)": "工作判定阈值（% CPU）",
+  "Percent of one CPU core per sample window. An agent CLI idle at its prompt measures 0%, a working one 20%+ — the default 1% separates them with margin.": "按单核百分比计。空闲在提示符的 agent CLI 实测为 0%，工作中通常 20% 以上——默认 1% 已留足余量。",
   "Sidebar tile: to show a Screen Time tile in the right sidebar's quick toggles, add this entry to sidebar.quickToggles.android.toggles in the shell's config.json (the tile editor only offers stock types):": "侧栏磁贴：要在右侧栏快速开关中显示“屏幕使用时间”磁贴，请把下列条目加入 shell config.json 的 sidebar.quickToggles.android.toggles（内置磁贴编辑器只提供原生类型）：",
   "Config file:": "配置文件："
 }
