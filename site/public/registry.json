@@ -1,0 +1,16 @@
+{
+  "modules": [
+    {
+      "id": "network_traffic",
+      "name": { "en_US": "Network Traffic", "zh_TW": "網路流量" },
+      "description": {
+        "zh_TW": "Bar 上下行流量計：即時速率、DNS ping、開機/本日/本月累計（全系統與 per-app）、動態刻度貝茲趨勢曲線、per-app 佔用排行。",
+        "en_US": "Up/down bandwidth meter with live rates, DNS ping, boot/today/month totals, Bezier trend graphs, and a per-app usage ranking."
+      },
+      "tierB": false,
+      "capabilities": ["exec"],
+      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "repo": "https://github.com/956zs/ii-modules"
+    }
+  ]
+}
