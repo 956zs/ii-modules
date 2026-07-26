@@ -1,6 +1,30 @@
 # network_traffic — IIMP 參考模塊
 
-Bar 上下行流量計（Tier A，零 stock 補丁）。即時速率、開機累計、hover 彈窗含 60 樣本趨勢曲線。
+Bar 上下行流量計（Tier A，零 stock 補丁）。即時速率、開機/本日/本月累計、
+動態刻度貝茲趨勢曲線、per-app 佔用排行（nethogs）、高流量呼吸動效。
+
+## 互動
+
+| 操作 | 效果 |
+|---|---|
+| hover bar 元件 | 開啟彈窗：速率、累計、趨勢圖、Top app |
+| 左鍵點 bar 元件 | 切換統計範圍：本次開機 → 今日 → 本月 |
+| 右鍵點 bar 元件 | 展開/收合 Top 5 應用排行 |
+
+顏色跟隨 Material You 主題（下載 `colPrimary`、上傳 `colTertiary`），
+換壁紙自動變。任一方向速率 ≥ 1 MiB/s 時該方向箭頭呼吸閃爍。
+彈窗頂部的網路圖示由 stock `Network` 服務提供，本來就隨訊號強度變化。
+
+## 依賴
+
+`nethogs` 宣告在 `requires.system`——`iimod check`/`install` 缺它時會直接提示安裝指令。
+per-app 排行以 nethogs（pcap，TCP+UDP 全計，QUIC 不漏）為主；若執行失敗
+（例如 binary 沒有 file capabilities），runtime 自動降級為 `ss -tinp` 輪詢
+（僅 kernel TCP，UI 會標「僅 TCP」）。無 root 抓包：
+
+```bash
+sudo setcap 'cap_net_admin,cap_net_raw,cap_dac_read_search,cap_sys_ptrace+ep' /usr/bin/nethogs
+```
 
 ## 安裝
 
@@ -20,7 +44,11 @@ iimod install network_traffic/     # 或先 iimod pack 再裝 .iimod
 | `excludeRegex` | `^(lo\|docker.*\|veth.*\|br-.*\|virbr.*\|tun.*\|tap.*\|wg.*\|tailscale.*\|CloudflareWARP)$` | 排除的介面（隧道/容器預設排除，VPN 不重複計算） |
 | `displayMode` | `auto` | `auto` / `stacked`（雙行）/ `horizontal`（單行） |
 | `autoStackMaxWidth` | 1920 | `auto` 模式下，螢幕寬度 ≤ 此值時改用雙行 |
-| `stackedShowIcons` | `true` | 雙行時是否顯示方向箭頭；關閉改以顏色區分（下載 primary、上傳 tertiary） |
+| `stackedShowIcons` | `true` | 雙行時是否顯示方向箭頭 |
+| `statsPeriod` | `boot` | 彈窗統計範圍（左鍵點 bar 元件循環切換，自動持久化） |
+
+`acct*` 開頭的 key 是模塊自管的統計狀態（今日/本月累計、上次取樣點），
+每分鐘至多寫回一次，不是使用者設定。
 
 全部選項在設定 app 的 **Modules → Network Traffic** 頁有對應控件。
 
@@ -56,8 +84,10 @@ cornerStyle 時內容不會超出膠囊。
 
 ## 實作說明（給模塊作者的參考）
 
-- `TrafficLogic.qml`：輪詢邏輯**實例**（非單例——IIMP 模塊禁用 pragma Singleton），由 `bar.qml` 建立並向下傳遞
-- `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔，永不碰 shell 的 `config.json`
+- `TrafficLogic.qml`：輪詢邏輯**實例**（非單例——IIMP 模塊禁用 pragma Singleton），由 `bar.qml` 建立並向下傳遞；今日/本月累計以 delta 累加（`/proc/net/dev` 計數器縮小＝重開機，該段遺失是設計取捨）
+- `AppTraffic.qml`：per-app 取樣器，只在彈窗開啟期間執行（Process 隨彈窗生滅）；nethogs 需 `stdbuf -oL`（接管道時會整塊緩衝）
+- `BezierGraph.qml`：Catmull-Rom → 貝茲曲線 Canvas，視窗最大值即滿刻度並以小字標註
+- `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔，永不碰 shell 的 `config.json`；`ready` 旗標讓統計初始化等檔案真正載入（FileView 是非同步的）
 - `bar.qml`：以 `BarGroup` 為根自帶藥丸外觀；固定欄寬防抖動（TextMetrics）；版面用「每個方向一個獨立 RowLayout」而非共用四格 GridLayout——GridLayout 會**跳過** `visible: false` 的項目而不是保留格位，箭頭一關兩行就會錯位
 - `ConfigLoader.qml`：`onLoaded: writeAdapter()` 把合併後的設定寫回檔案。舊版寫的設定檔缺少後來新增的 key，JsonAdapter 對缺失的 key 是回傳型別零值而非 QML 宣告的預設值，不寫回就會讓升級的使用者拿到 `false` / `0`
 - 每個用到的 stock API（BarGroup、StyledPopup、Graph、Network 服務）都在 manifest 宣告了探針
