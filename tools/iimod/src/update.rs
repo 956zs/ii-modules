@@ -64,7 +64,7 @@ fn resolve_url(index_url: &str, url: &str) -> String {
     }
 }
 
-fn curl_fetch(url: &str, out: &Path, max_bytes: u64) -> Result<()> {
+pub(crate) fn curl_fetch(url: &str, out: &Path, max_bytes: u64) -> Result<()> {
     check_url_scheme(url)?;
     let status = std::process::Command::new("curl")
         .args([

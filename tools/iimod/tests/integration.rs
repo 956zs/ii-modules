@@ -546,3 +546,60 @@ fn disable_removes_tier_b_patches() {
     w.expect(&["enable", "flip_patcher"], 0);
     assert!(read().contains("iimp flip_patcher/0"), "re-enabled: fences back");
 }
+
+#[test]
+fn url_install_auto_records_sibling_origin() {
+    let w = World::new("urlinst");
+
+    // Publish v1.0.0 into a local repo and install straight from the URL.
+    let payload = w.make_module("url_widget", serde_json::json!({}));
+    let repo = w.root.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let pkg = repo.join("url_widget-1.0.0.iimod");
+    w.expect(
+        &["pack", payload.to_str().unwrap(), "--out", pkg.to_str().unwrap()],
+        0,
+    );
+    let url = format!("file://{}", pkg.display());
+    let out = w.expect(&["install", &url], 0);
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("recording update origin:"),
+        "auto-origin message"
+    );
+    let out = w.expect(&["info", "url_widget"], 0);
+    let info = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        info.contains(&format!("file://{}/index.json", repo.display())),
+        "origin points at the sibling index: {info}"
+    );
+
+    // Publish 1.1.0 + the sibling index; a plain `iimod update` finds it.
+    let manifest_path = payload.join("module.json");
+    let manifest = std::fs::read_to_string(&manifest_path)
+        .unwrap()
+        .replace("\"1.0.0\"", "\"1.1.0\"");
+    std::fs::write(&manifest_path, manifest).unwrap();
+    let pkg2 = repo.join("url_widget-1.1.0.iimod");
+    w.expect(
+        &["pack", payload.to_str().unwrap(), "--out", pkg2.to_str().unwrap()],
+        0,
+    );
+    let sha = {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(std::fs::read(&pkg2).unwrap());
+        format!("{:x}", h.finalize())
+    };
+    std::fs::write(
+        repo.join("index.json"),
+        serde_json::json!({
+            "indexVersion": 1,
+            "modules": {"url_widget": {"version": "1.1.0", "url": "url_widget-1.1.0.iimod", "sha256": sha}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    w.expect(&["update"], 0);
+    let out = w.expect(&["info", "url_widget"], 0);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1.1.0"));
+}

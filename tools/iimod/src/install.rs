@@ -28,6 +28,7 @@ const BACKUPS_TO_KEEP: usize = 10;
 type ModuleDicts = BTreeMap<String, BTreeMap<String, String>>;
 type PatchRecords = BTreeMap<String, Vec<PatchInstance>>;
 
+#[derive(Clone)]
 pub struct InstallOpts {
     pub allow_patches: bool,
     pub reinstall: bool,
@@ -59,6 +60,43 @@ enum InstallReadiness {
 }
 
 pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
+    // URL sources: download first, and default the update origin to the
+    // sibling index.json so `iimod update` works with nothing typed —
+    // publishers keep an index.json next to their packages (GitHub Releases'
+    // latest/download/ satisfies this for free).
+    let mut opts = opts.clone();
+    let downloaded: Option<std::path::PathBuf>;
+    let source: &Path = match source.to_str() {
+        Some(url) if url.starts_with("https://") || url.starts_with("file://") => {
+            let name = url.rsplit('/').next().unwrap_or("package.iimod");
+            if !name.ends_with(".iimod") {
+                return Err(bail(
+                    exit::USAGE,
+                    format!("URL install expects a .iimod package, got {name:?}"),
+                ));
+            }
+            let dir = paths::tmp_dir().join(format!(
+                "fetch-{}-{}",
+                registry::now_epoch(),
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir)?;
+            let file = dir.join(name);
+            crate::update::curl_fetch(url, &file, opts.max_size)?;
+            if opts.origin.is_none() {
+                if let Some(i) = url.rfind('/') {
+                    let origin = format!("{}/index.json", &url[..i]);
+                    println!("recording update origin: {origin}");
+                    opts.origin = Some(origin);
+                }
+            }
+            downloaded = Some(file);
+            downloaded.as_deref().unwrap()
+        }
+        _ => source,
+    };
+    let opts = &opts;
+
     let _lock = Lock::acquire()?;
     let registry = registry::load()?;
     reject_wiped_tree(&registry)?;
