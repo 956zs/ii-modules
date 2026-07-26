@@ -33,6 +33,8 @@ pub struct InstallOpts {
     pub reinstall: bool,
     pub no_enable: bool,
     pub max_size: u64,
+    /// Update index URL to record; None preserves an existing record's origin.
+    pub origin: Option<String>,
 }
 
 struct InstallCandidate {
@@ -95,7 +97,7 @@ fn prepare_install(
         InstallReadiness::AlreadyCurrent => return Ok(None),
         InstallReadiness::Proceed { upgrading } => upgrading,
     };
-    let next = registry_with_candidate(&registry, &candidate)?;
+    let next = registry_with_candidate(&registry, &candidate, opts.origin.as_deref())?;
     dry_run_stock_composition(&next)?;
     let module_dicts = translations::load_module_dicts(&candidate.payload.dir)?;
     let stock_targets = all_stock_targets(&next, &[]);
@@ -169,8 +171,16 @@ fn require_patch_permission(manifest: &Manifest, opts: &InstallOpts) -> Result<(
     ))
 }
 
-fn registry_with_candidate(registry: &Registry, candidate: &InstallCandidate) -> Result<Registry> {
+fn registry_with_candidate(
+    registry: &Registry,
+    candidate: &InstallCandidate,
+    origin: Option<&str>,
+) -> Result<Registry> {
     let mut next = registry.clone();
+    // Upgrades keep their update origin unless the caller supplies a new one.
+    let origin = origin
+        .map(str::to_string)
+        .or_else(|| next.get(&candidate.manifest.id).and_then(|m| m.origin.clone()));
     next.remove(&candidate.manifest.id);
     next.modules.push(InstalledModule {
         manifest: candidate.manifest.clone(),
@@ -179,6 +189,7 @@ fn registry_with_candidate(registry: &Registry, candidate: &InstallCandidate) ->
         patch_records: candidate.patch_records.clone(),
         translation_keys: BTreeMap::new(),
         installed_at_epoch: registry::now_epoch(),
+        origin,
     });
     Ok(next)
 }

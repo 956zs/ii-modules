@@ -107,6 +107,8 @@ fn installed_module_from_payload(payload: &Path) -> Result<InstalledModule> {
         patch_records,
         translation_keys: BTreeMap::new(),
         installed_at_epoch: registry::now_epoch(),
+        // A rebuilt registry cannot know where a module came from.
+        origin: None,
     })
 }
 

@@ -13,7 +13,9 @@ use crate::manifest::Manifest;
 use crate::patch::PatchInstance;
 use crate::paths;
 
-pub const REGISTRY_SCHEMA_VERSION: u32 = 1;
+// v2: adds InstalledModule.origin (update index URL). Missing on v1 records —
+// serde default covers the forward migration; writes stamp the new version.
+pub const REGISTRY_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -36,6 +38,9 @@ pub struct InstalledModule {
     /// locale → keys this module owns in the merged translation dicts
     pub translation_keys: BTreeMap<String, Vec<String>>,
     pub installed_at_epoch: u64,
+    /// Update index URL (`iimod install --origin`); consulted by `iimod update`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -313,6 +318,7 @@ mod tests {
             patch_records: BTreeMap::new(),
             translation_keys: BTreeMap::new(),
             installed_at_epoch: 0,
+            origin: None,
         }
     }
 
