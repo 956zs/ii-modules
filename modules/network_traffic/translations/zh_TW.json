@@ -4,5 +4,13 @@
   "Received (boot):": "接收（本次開機）：",
   "Sent (boot):": "傳送（本次開機）：",
   "Update interval (ms):": "更新間隔（毫秒）：",
-  "Config file:": "設定檔："
+  "Update interval (ms)": "更新間隔（毫秒）",
+  "Config file:": "設定檔：",
+  "Bar layout": "Bar 版面",
+  "Auto": "自動",
+  "Stacked": "雙行",
+  "Single line": "單行",
+  "Stacked roughly thirds the widget width. Use it where the bar's right section runs out of room and starts overlapping the clock and battery.": "雙行可把寬度縮到約三分之一。當 bar 右區空間不足、開始壓到時鐘和電池時請改用雙行。",
+  "Auto: stack at or below this screen width (px)": "自動：螢幕寬度小於等於此值時用雙行（px）",
+  "Direction arrows when stacked": "雙行時顯示方向箭頭"
 }

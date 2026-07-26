@@ -8,9 +8,9 @@
   },
   "description": {
     "en_US": "Up/down bandwidth meter for the bar: live rates, boot totals, and 60-sample trend graphs in the hover popup. Reads /proc/net/dev; tunnel and container interfaces are excluded by default so VPN traffic is not double-counted.",
-    "zh_TW": "Bar 上下行流量計：即時速率、開機累計、hover 彈窗含 60 樣本趨勢曲線。預設排除隧道/容器介面，VPN 不重複計算。"
+    "zh_TW": "Bar 上下行流量計：即時速率、開機累計、hover 彈窗含 60 樣本趨勢曲線。預設排除隧道/容器介面，VPN 不重複計算。窄螢幕自動改用雙行緊湊版面。"
   },
-  "version": "1.0.2",
+  "version": "1.1.0",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["bar"],
@@ -25,6 +25,9 @@
       {"type": "file-exists", "path": "modules/ii/bar/StyledPopupHeaderRow.qml", "reason": "popup header row"},
       {"type": "file-exists", "path": "modules/ii/bar/StyledPopupValueRow.qml", "reason": "popup value rows"},
       {"type": "file-exists", "path": "modules/common/widgets/Graph.qml", "reason": "trend graphs in the popup"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSelectionArray.qml", "reason": "bar layout picker in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSpinBox.qml", "reason": "numeric options in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSwitch.qml", "reason": "toggle options in the settings fragment"},
       {"type": "file-contains", "path": "services/Network.qml", "pattern": "property string materialSymbol", "reason": "connection-type icon in the popup header"}
     ],
     "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
