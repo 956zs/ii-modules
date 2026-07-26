@@ -182,10 +182,16 @@ fn registry_with_candidate(
         .map(str::to_string)
         .or_else(|| next.get(&candidate.manifest.id).and_then(|m| m.origin.clone()));
     next.remove(&candidate.manifest.id);
+    // The generated qmldir is part of the installed tree, so it must be part
+    // of the recorded hash set or verify would flag every module.
+    let mut files = store::hash_tree(&candidate.payload.dir)?;
+    if let Some(content) = store::qmldir_content(&candidate.manifest.id, &candidate.payload.dir)? {
+        files.insert("qmldir".into(), store::sha256_bytes(content.as_bytes()));
+    }
     next.modules.push(InstalledModule {
         manifest: candidate.manifest.clone(),
         state: ModuleState::Enabled,
-        files: store::hash_tree(&candidate.payload.dir)?,
+        files,
         patch_records: candidate.patch_records.clone(),
         translation_keys: BTreeMap::new(),
         installed_at_epoch: registry::now_epoch(),
@@ -268,6 +274,7 @@ fn stage_module_payload(prepared: &PreparedInstall) -> Result<()> {
     }
     std::fs::create_dir_all(paths::mod_root())?;
     store::copy_tree(&prepared.candidate.payload.dir, &staging)?;
+    store::write_qmldir(&manifest.id, &staging)?;
     if prepared.module_dir.exists() {
         std::fs::remove_dir_all(&prepared.module_dir)?;
     }
