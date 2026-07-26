@@ -1,0 +1,40 @@
+{
+  "protocolVersion": 1,
+  "id": "activewindow_fix",
+  "name": {
+    "en_US": "ActiveWindow Monitor-ID Fix",
+    "zh_TW": "視窗標題多螢幕修復",
+    "zh_CN": "窗口标题多屏修复"
+  },
+  "description": {
+    "en_US": "Stock ActiveWindow indexes the monitors array by Hyprland monitor ID, which breaks whenever IDs stop matching array positions (e.g. after switching from the internal panel to an external monitor) — the bar then shows 'Workspace N' instead of the focused window's title. This module overrides the binding with an id-based lookup via an inserted Binding{}. Self-retiring once upstream fixes the line.",
+    "zh_TW": "stock 的 ActiveWindow 拿 Hyprland monitor ID 當陣列索引，ID 與陣列位置不一致時（例如從內建螢幕換到外接螢幕）標題區只會顯示「Workspace N」。本模塊插入 Binding{} 以 id 查找覆蓋錯誤綁定；上游修復後錨點消失、模塊自動退場。"
+  },
+  "version": "1.0.0",
+  "authors": [
+    "nlcat"
+  ],
+  "license": "MIT",
+  "slots": [
+    "window"
+  ],
+  "entries": {
+    "window": "main.qml"
+  },
+  "compat": {
+    "probes": [],
+    "testedOn": {
+      "dotsCommit": "446504ad42",
+      "qsVersion": "0.2.1"
+    }
+  },
+  "capabilities": [],
+  "patches": [
+    {
+      "file": "modules/ii/bar/ActiveWindow.qml",
+      "op": "insert-after",
+      "anchor": "HyprlandData.monitors[root.monitor?.id]",
+      "content": "\n    // Override: the line above indexes the monitors ARRAY by Hyprland\n    // monitor ID, which only holds while IDs equal array positions. A\n    // Binding beats the original expression at runtime, insert-only.\n    Binding {\n        target: root\n        property: \"biggestWindow\"\n        value: HyprlandData.biggestWindowForWorkspace(HyprlandData.monitors.find(m => m.id === root.monitor?.id)?.activeWorkspace?.id)\n    }\n"
+    }
+  ]
+}
