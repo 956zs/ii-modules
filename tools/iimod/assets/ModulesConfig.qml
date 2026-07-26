@@ -61,36 +61,81 @@ ContentPage {
             delegate: Rectangle {
                 id: card
                 required property var modelData
+                required property int index
                 readonly property bool moduleOn: card.modelData.state === "enabled"
                 readonly property bool flippable: card.modelData.state === "enabled" || card.modelData.state === "disabled"
                 property bool busy: false
                 property bool showSettings: false
+                property string lastFlipError: ""
+                // Loaded lazily on first open and kept mounted afterwards
+                // (only clipped away by the Revealer below) so collapsing
+                // never discards the settings fragment's own state.
+                property bool settingsEverOpened: false
 
                 Layout.fillWidth: true
                 implicitHeight: cardColumn.implicitHeight + 10 * 2
                 radius: Appearance.rounding.small
-                color: Appearance.colors.colLayer1
+                color: cardHover.hovered ? Appearance.colors.colLayer1Hover : Appearance.colors.colLayer1
+                opacity: 0
+
+                Behavior on implicitHeight {
+                    animation: Appearance.animation.elementResize.numberAnimation.createObject(this)
+                }
+                Behavior on color {
+                    animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this)
+                }
+
+                HoverHandler {
+                    id: cardHover
+                }
+
+                // Quick staggered fade-in on page load; capped so a long
+                // module list doesn't drag the reveal out.
+                SequentialAnimation {
+                    id: enterAnim
+                    PauseAnimation { duration: Math.min(card.index * 25, 150) }
+                    NumberAnimation {
+                        target: card
+                        property: "opacity"
+                        from: 0
+                        to: 1
+                        duration: Appearance.animation.elementMoveFast.duration
+                        easing.type: Appearance.animation.elementMoveFast.type
+                        easing.bezierCurve: Appearance.animation.elementMoveFast.bezierCurve
+                    }
+                }
+                Component.onCompleted: enterAnim.start()
 
                 // Runs iimod; PATH may lack ~/.local/bin in a session-launched
                 // settings app, so fall back to the conventional install path.
                 Process {
                     id: flipProc
                     property string wanted: ""
+                    property string lastError: ""
                     command: ["sh", "-c",
                         `bin=$(command -v iimod || echo "$HOME/.local/bin/iimod"); exec "$bin" ${wanted} ${card.modelData.id}`]
+                    stderr: StdioCollector {
+                        id: flipStderr
+                        onStreamFinished: flipProc.lastError = flipStderr.text
+                    }
                     onExited: (exitCode, exitStatus) => {
                         card.busy = false;
                         // The index projection reload is the real sync; snap
                         // the switch back explicitly on failure.
                         moduleSwitch.checked = Qt.binding(() => card.moduleOn);
-                        if (exitCode !== 0)
-                            console.warn(`[iimp] iimod ${wanted} ${card.modelData.id} failed (${exitCode})`);
+                        if (exitCode !== 0) {
+                            console.warn(`[iimp] iimod ${wanted} ${card.modelData.id} failed (${exitCode}): ${flipProc.lastError.trim()}`);
+                            card.lastFlipError = flipProc.lastError.trim();
+                        } else {
+                            card.lastFlipError = "";
+                        }
                     }
                 }
 
                 function flip(on) {
                     if (card.busy) return;
                     card.busy = true;
+                    card.lastFlipError = "";
                     flipProc.wanted = on ? "enable" : "disable";
                     flipProc.running = true;
                 }
@@ -149,12 +194,41 @@ ContentPage {
                             implicitHeight: 30
                             buttonRadius: Appearance.rounding.full
                             toggled: card.showSettings
-                            onClicked: card.showSettings = !card.showSettings
+                            onClicked: {
+                                card.showSettings = !card.showSettings;
+                                if (card.showSettings) card.settingsEverOpened = true;
+                            }
                             contentItem: MaterialSymbol {
                                 horizontalAlignment: Text.AlignHCenter
                                 text: "settings"
                                 iconSize: Appearance.font.pixelSize.larger
                                 color: card.showSettings ? Appearance.m3colors.m3onSecondaryContainer : Appearance.colors.colOnLayer1
+                                rotation: card.showSettings ? 180 : 0
+                                Behavior on rotation {
+                                    animation: Appearance.animation.elementMoveSmall.numberAnimation.createObject(this)
+                                }
+                                Behavior on color {
+                                    animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this)
+                                }
+                            }
+                        }
+
+                        MaterialSymbol {
+                            id: busySpinner
+                            text: "progress_activity"
+                            iconSize: Appearance.font.pixelSize.larger
+                            color: Appearance.colors.colOnLayer1Inactive
+                            opacity: card.busy ? 1 : 0
+                            Behavior on opacity {
+                                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
+                            }
+                            RotationAnimation on rotation {
+                                running: card.busy
+                                loops: Animation.Infinite
+                                from: 0
+                                to: 360
+                                duration: 900
+                                easing.type: Easing.Linear
                             }
                         }
 
@@ -162,7 +236,11 @@ ContentPage {
                             id: moduleSwitch
                             enabled: card.flippable && !card.busy
                             checked: card.moduleOn
+                            opacity: card.busy ? 0.5 : 1
                             onClicked: card.flip(!card.moduleOn)
+                            Behavior on opacity {
+                                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
+                            }
                         }
                     }
 
@@ -175,16 +253,44 @@ ContentPage {
                         text: root.localized(card.modelData.description, "")
                     }
 
+                    // Last flip failure, if any; cleared as soon as another
+                    // attempt starts (see flip()).
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: card.lastFlipError.length > 0
+                        spacing: 4
+
+                        MaterialSymbol {
+                            text: "error"
+                            iconSize: Appearance.font.pixelSize.small
+                            color: Appearance.m3colors.m3error
+                        }
+                        StyledText {
+                            Layout.fillWidth: true
+                            font.pixelSize: Appearance.font.pixelSize.smaller
+                            color: Appearance.m3colors.m3error
+                            wrapMode: Text.WordWrap
+                            text: card.lastFlipError
+                        }
+                    }
+
                     // Unfolded settings fragment (only meaningful when the
                     // module is on — its config file is still the module's own
-                    // either way).
-                    Loader {
+                    // either way). The Revealer animates the height so the
+                    // gear unfold doesn't hard-pop the layout.
+                    Revealer {
+                        id: settingsRevealer
                         Layout.fillWidth: true
-                        Layout.topMargin: 4
-                        active: card.showSettings && card.modelData.settings
-                        visible: active
-                        source: active ? Quickshell.shellPath(`mod/${card.modelData.id}/${card.modelData.settings}`) : ""
-                        onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] settings fragment failed: ${card.modelData.id}`)
+                        Layout.topMargin: settingsRevealer.visible ? 4 : 0
+                        vertical: true
+                        reveal: card.showSettings
+
+                        Loader {
+                            width: settingsRevealer.width
+                            active: card.settingsEverOpened && card.modelData.settings
+                            source: active ? Quickshell.shellPath(`mod/${card.modelData.id}/${card.modelData.settings}`) : ""
+                            onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] settings fragment failed: ${card.modelData.id}`)
+                        }
                     }
                 }
             }
