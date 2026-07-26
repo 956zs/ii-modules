@@ -1,9 +1,29 @@
 import Quickshell
+import Quickshell.Io
+import qs.mod.indicator_tools
 
 /*
- * Intentionally empty. This module's entire effect is its Tier B patches:
- * right-click handlers on the stock WiFi / Bluetooth indicator icons that
- * launch the matching D-Bus GUI tools. SPEC 1.0 has no patch-only module
- * shape, so it rides the window slot with a zero-footprint Scope.
+ * Window-slot entry: hosts the WiFi/Bluetooth panels and the IPC surface the
+ * Tier B patches call into (right-click on the stock indicator icons runs
+ * `qs -c ii ipc call indicator_tools toggleWifi|toggleBt`).
  */
-Scope {}
+Scope {
+    id: root
+
+    WifiPanel { id: wifiPanel }
+    BtPanel { id: btPanel }
+
+    IpcHandler {
+        target: "indicator_tools"
+
+        function toggleWifi(): void {
+            btPanel.visible = false;
+            wifiPanel.toggle();
+        }
+
+        function toggleBt(): void {
+            wifiPanel.visible = false;
+            btPanel.toggle();
+        }
+    }
+}
