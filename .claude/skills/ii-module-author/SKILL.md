@@ -31,6 +31,9 @@ Author modules under IIMP SPEC 1.0. `iimod` is the reference tool and
 8. Store persistent options only in
    `~/.config/illogical-impulse/modules/<id>.json` using the ConfigLoader
    pattern. Never write module state into the shell's `config.json`.
+   Never declare `property var` inside a `JsonAdapter`/`JsonObject`:
+   Quickshell's deserializer segfaults writing a JSON object into it.
+   Represent maps as a JSON string property and `JSON.parse` at the reader.
 9. Probe every non-baseline stock API. Baseline APIs are `Config`, `Appearance`,
    `Directories`, `Translation`, `qs.modules.common`,
    `qs.modules.common.widgets`, and `qs.modules.common.functions`.

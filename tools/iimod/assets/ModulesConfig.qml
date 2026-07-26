@@ -276,9 +276,12 @@ ContentPage {
 
                     // Per-module placement on vertical (left/right) bars.
                     // Host-level concern, so it lives here, not in the
-                    // module's own settings fragment. Reassign the whole map:
-                    // mutating a key inside a var property emits no change
-                    // signal, so the bar would never react.
+                    // module's own settings fragment. The map is stored as a
+                    // JSON string (JsonAdapter can't hold `property var`
+                    // without crashing on load — see hostpatch.rs P2), so
+                    // reads go through JSON.parse and writes reassign the
+                    // whole string via JSON.stringify to trigger the change
+                    // signal.
                     RowLayout {
                         visible: (card.modelData.slots ?? []).indexOf("bar") !== -1
                         spacing: 8
@@ -295,11 +298,11 @@ ContentPage {
                         }
                         ConfigSelectionArray {
                             Layout.fillWidth: false
-                            currentValue: ((Config.options.iimp?.barPlacements ?? ({}))[card.modelData.id] ?? "top")
+                            currentValue: ((JSON.parse(Config.options.iimp?.barPlacementsJson ?? "{}"))[card.modelData.id] ?? "top")
                             onSelected: newValue => {
-                                const next = Object.assign({}, Config.options.iimp.barPlacements ?? ({}));
+                                const next = JSON.parse(Config.options.iimp?.barPlacementsJson ?? "{}");
                                 next[card.modelData.id] = newValue;
-                                Config.options.iimp.barPlacements = next;
+                                Config.options.iimp.barPlacementsJson = JSON.stringify(next);
                             }
                             options: [
                                 { displayName: Translation.tr("Top"), icon: "vertical_align_top", value: "top" },

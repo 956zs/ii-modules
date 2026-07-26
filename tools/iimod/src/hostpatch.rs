@@ -51,7 +51,13 @@ pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
                     "            property JsonObject iimp: JsonObject {\n",
                     "                property list<string> enabledBar: []\n",
                     "                property list<string> enabledWindow: []\n",
-                    "                property var barPlacements: ({})\n",
+                    // `property var` inside a JsonObject segfaults Quickshell's
+                    // JsonAdapter deserializer (QQmlVMEMetaObject::writeProperty
+                    // has no handling for writing a JSON object into a generic
+                    // `var`-typed property). A JSON-encoded string is the
+                    // supported representation; consumers JSON.parse it and
+                    // reassign the whole string to trigger change notification.
+                    "                property string barPlacementsJson: \"{}\"\n",
                     "            }\n",
                 ),
             ),
@@ -109,7 +115,7 @@ pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
                 "spacing: 10",
                 concat!(
                     "            Repeater {\n",
-                    "                model: (Config.options.iimp?.enabledBar ?? []).filter(id => ((Config.options.iimp?.barPlacements ?? ({}))[id] ?? \"top\") !== \"bottom\")\n",
+                    "                model: (Config.options.iimp?.enabledBar ?? []).filter(id => ((JSON.parse(Config.options.iimp?.barPlacementsJson ?? \"{}\"))[id] ?? \"top\") !== \"bottom\")\n",
                     "                delegate: Loader {\n",
                     "                    required property string modelData\n",
                     "                    required property int index\n",
@@ -123,8 +129,9 @@ pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
             ),
         ),
         // P6: the same vertical-bar slot, alternative placement above the
-        // tray. Per-module: iimp.barPlacements maps module id -> "top"
-        // (default) | "bottom"; each module renders in exactly one of P5/P6. Bottom placement can collide with the centred
+        // tray. Per-module: iimp.barPlacementsJson is a JSON-encoded map of
+        // module id -> "top" (default) | "bottom"; each module renders in
+        // exactly one of P5/P6. Bottom placement can collide with the centred
         // middle section on busy bars (stock sections reserve no space from
         // each other); that trade-off is the user's to make.
         (
@@ -135,7 +142,7 @@ pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
                 "Bar.SysTray {",
                 concat!(
                     "            Repeater {\n",
-                    "                model: (Config.options.iimp?.enabledBar ?? []).filter(id => ((Config.options.iimp?.barPlacements ?? ({}))[id] ?? \"top\") === \"bottom\")\n",
+                    "                model: (Config.options.iimp?.enabledBar ?? []).filter(id => ((JSON.parse(Config.options.iimp?.barPlacementsJson ?? \"{}\"))[id] ?? \"top\") === \"bottom\")\n",
                     "                delegate: Loader {\n",
                     "                    required property string modelData\n",
                     "                    Layout.alignment: Qt.AlignHCenter\n",
