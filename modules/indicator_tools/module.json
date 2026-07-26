@@ -7,10 +7,10 @@
     "zh_CN": "指示器工具"
   },
   "description": {
-    "en_US": "Right-click the bar's WiFi / Bluetooth indicator icons to open the module's own QML panels: WiFi list with connect + inline password (stock Network service backend), Bluetooth devices with pair/connect/forget (Quickshell's native Bluetooth service). No external tools.",
-    "zh_TW": "右鍵 bar 上的 WiFi／藍牙指示圖示，開啟模塊自製的 QML 面板：WiFi 列表＋連線＋行內密碼（stock Network 服務後端）、藍牙裝置配對/連線/移除（Quickshell 原生 Bluetooth 服務）。不依賴外部工具。"
+    "en_US": "Right-click the bar's WiFi / Bluetooth indicator icons to open the module's own QML panels: a multi-adapter networks list (own nmcli parsing — every wifi adapter gets its own section, plus bluetooth-tethered PAN/NAP and ethernet sections) with connect + inline password + inline error, and a Bluetooth devices panel with pair/connect/forget (Quickshell's native Bluetooth service). No external tools.",
+    "zh_TW": "右鍵 bar 上的 WiFi／藍牙指示圖示，開啟模塊自製的 QML 面板：多介面卡網路列表（自行解析 nmcli——每張 WiFi 網卡各自成段，外加藍牙網路共享 PAN/NAP 與乙太網路分段）＋連線＋行內密碼＋行內錯誤訊息、藍牙裝置面板配對/連線/移除（Quickshell 原生 Bluetooth 服務）。不依賴外部工具。"
   },
-  "version": "2.0.0",
+  "version": "2.1.0",
   "authors": [
     "nlcat"
   ],
@@ -34,18 +34,6 @@
         "path": "modules/ii/bar/BarContent.qml",
         "pattern": "text: BluetoothStatus.connected",
         "reason": "bluetooth indicator icon being patched"
-      },
-      {
-        "type": "file-contains",
-        "path": "services/Network.qml",
-        "pattern": "function connectToWifiNetwork",
-        "reason": "wifi panel connect flow"
-      },
-      {
-        "type": "file-contains",
-        "path": "services/Network.qml",
-        "pattern": "function changePassword",
-        "reason": "wifi panel password flow"
       },
       {
         "type": "file-exists",

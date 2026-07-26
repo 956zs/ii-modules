@@ -7,5 +7,14 @@
   "No Bluetooth adapter": "沒有藍牙介面卡",
   "Unknown device": "未知裝置",
   "Connected": "已連線",
-  "Paired": "已配對"
+  "Paired": "已配對",
+  "Networks": "網路",
+  "Connecting…": "連線中…",
+  "Not connected": "未連線",
+  "Unavailable": "無法使用",
+  "Unmanaged": "未管理",
+  "Bluetooth network": "藍牙網路",
+  "Ethernet": "乙太網路",
+  "No networks found": "找不到網路",
+  "Connection failed": "連線失敗"
 }
