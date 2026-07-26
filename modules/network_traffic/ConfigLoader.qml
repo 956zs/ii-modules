@@ -105,6 +105,16 @@ FileView {
         // popup's app section and spawns nothing.
         property bool appMonitoring: true
 
+        // Ping target for the popup's latency row. "auto" resolves the host's
+        // configured DNS (resolvectl/resolv.conf; loopback stubs and the
+        // tailscale magic resolver skipped, public addresses preferred).
+        // Any hostname or IP pins it.
+        property string pingHost: "auto"
+
+        // Bar arrows breathe while that direction's rate is at or above this
+        // (KiB/s).
+        property int breatheThresholdKB: 1024
+
         // Whole-system accounting blob, managed by TrafficLogic, flushed at
         // most once a minute — not a user setting.
         // {v, day:{k,rx,tx}, month:{k,rx,tx}, sample:{rx,tx}}

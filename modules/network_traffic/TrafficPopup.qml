@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Io
 import qs.modules.common
 import qs.modules.common.widgets
 import qs.modules.ii.bar
@@ -51,13 +52,112 @@ StyledPopup {
         return name === appTraffic.otherKey ? Translation.tr("Other") : name
     }
 
+    // --- latency ---------------------------------------------------------
+    // One ping in flight at a time, only while the popup is open. Target
+    // "auto" resolves the host's configured DNS once per popup lifetime.
+
+    property string pingHost: "auto"
+    property string resolvedDns: ""
+    readonly property string pingTarget: pingHost !== "auto" ? pingHost : resolvedDns
+    property real pingMs: -1 // -1 pending, -2 timeout/unreachable
+
+    onActiveChanged: {
+        pingMs = -1
+        if (active && pingHost === "auto" && resolvedDns === "") {
+            dnsProc.running = true
+        }
+    }
+
+    function pickDns(text) {
+        // Skip loopback stubs (systemd-resolved) and the tailscale magic
+        // resolver; prefer a public address ("the host's public DNS") over
+        // the router.
+        const seen = []
+        for (const tok of text.split(/\s+/)) {
+            if (!/^[0-9a-fA-F.:]+$/.test(tok) || !/[.:]/.test(tok)) continue
+            if (tok.startsWith("127.") || tok === "::1") continue
+            if (tok === "100.100.100.100" || tok.toLowerCase().startsWith("fd7a:115c:a1e0")) continue
+            if (!seen.includes(tok)) seen.push(tok)
+        }
+        const isPrivate = a =>
+            a.startsWith("192.168.") || a.startsWith("10.") || a.startsWith("169.254.") ||
+            /^172\.(1[6-9]|2[0-9]|3[01])\./.test(a) ||
+            a.toLowerCase().startsWith("fe80") || /^f[cd]/i.test(a)
+        return seen.find(a => !isPrivate(a)) ?? seen[0] ?? ""
+    }
+
     ColumnLayout {
         anchors.centerIn: parent
         spacing: 8
 
-        StyledPopupHeaderRow {
-            icon: Network.materialSymbol
-            label: Network.networkName
+        // StyledPopup's default property is a single Item — non-visual
+        // helpers must live inside it, not on the popup root.
+        Process {
+            id: dnsProc
+            command: ["sh", "-c", "resolvectl dns 2>/dev/null; grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}'"]
+            stdout: StdioCollector {
+                onStreamFinished: root.resolvedDns = root.pickDns(text)
+            }
+        }
+
+        Timer {
+            running: root.active && root.pingTarget !== ""
+            interval: 3000
+            repeat: true
+            triggeredOnStart: true
+            onTriggered: if (!pingProc.running) pingProc.running = true
+        }
+
+        Process {
+            id: pingProc
+            command: ["ping", "-n", "-c", "1", "-W", "2", root.pingTarget]
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    const m = text.match(/time=([\d.]+)/)
+                    if (m) root.pingMs = parseFloat(m[1])
+                }
+            }
+            onExited: (exitCode, exitStatus) => {
+                if (exitCode !== 0) root.pingMs = -2
+            }
+        }
+
+        // The stock Network service only refreshes on nmcli monitor events —
+        // connection changes, not signal drift. Poll its public update() while
+        // the popup is open so the header icon tracks live signal strength.
+        Timer {
+            running: root.active
+            interval: 5000
+            repeat: true
+            triggeredOnStart: true
+            onTriggered: Network.update()
+        }
+
+        // Stock StyledPopupHeaderRow, unrolled so the icon can animate: the
+        // signal-strength glyph slide-fades on change (StyledText's
+        // animateChange) instead of hard-swapping.
+        Row {
+            spacing: 5
+
+            MaterialSymbol {
+                anchors.verticalCenter: parent.verticalCenter
+                fill: 0
+                font.weight: Font.DemiBold
+                text: Network.materialSymbol
+                iconSize: Appearance.font.pixelSize.large
+                color: Appearance.colors.colOnSurfaceVariant
+                animateChange: true
+            }
+
+            StyledText {
+                anchors.verticalCenter: parent.verticalCenter
+                text: Network.networkName
+                font {
+                    weight: Font.DemiBold
+                    pixelSize: Appearance.font.pixelSize.normal
+                }
+                color: Appearance.colors.colOnSurfaceVariant
+            }
         }
 
         ColumnLayout {
@@ -74,6 +174,14 @@ StyledPopup {
                 icon: "arrow_upward"
                 label: Translation.tr("Upload:")
                 value: root.logic.format(root.logic.upSpeed, true)
+            }
+            StyledPopupValueRow {
+                Layout.fillWidth: true
+                icon: "network_ping"
+                label: Translation.tr("Ping:")
+                value: root.pingMs >= 0 ? `${Math.round(root.pingMs)} ms`
+                     : root.pingMs === -2 ? Translation.tr("timeout")
+                     : root.pingTarget === "" ? "—" : "…"
             }
         }
 

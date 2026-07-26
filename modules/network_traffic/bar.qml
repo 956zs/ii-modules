@@ -86,8 +86,8 @@ BarGroup {
         // popup's two graphs.
         readonly property color downColor: Appearance.colors.colPrimary
         readonly property color upColor: Appearance.colors.colTertiary
-        // Breathing arrows above this rate ("high traffic").
-        readonly property real breatheThreshold: 1024 * 1024 // 1 MiB/s
+        // Breathing arrows at/above this rate ("high traffic").
+        readonly property real breatheThreshold: (cfg.options.breatheThresholdKB > 0 ? cfg.options.breatheThresholdKB : 1024) * 1024
 
         TrafficLogic {
             id: logic
@@ -202,6 +202,7 @@ BarGroup {
             statsPeriod: cfg.options.statsPeriod === "today" || cfg.options.statsPeriod === "month"
                          ? cfg.options.statsPeriod : "boot"
             appsExpanded: root.appsExpanded
+            pingHost: cfg.options.pingHost !== "" ? cfg.options.pingHost : "auto"
         }
     }
 }
