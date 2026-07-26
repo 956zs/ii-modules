@@ -23,6 +23,9 @@ Operate modules only through `iimod`. Exit codes are the contract.
    capabilities against code.
 6. Probe failure is final incompatibility. There is no force install path.
 7. After any dots-hyprland update or wipe warning, run `iimod reapply`.
+8. Module updates go through `iimod update` (origin index, sha256-verified).
+   A Tier B update re-requires `--allow-patches`; re-review its patches first
+   as in rule 5. Never bypass update by hand-downloading into the shell tree.
 8. Diagnose shell/module issues with `iimod doctor`, `iimod verify`, and the
    newest Quickshell log before changing state.
 9. On this machine, manual IPC calls use

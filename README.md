@@ -27,6 +27,11 @@ iimod install   modules/network_traffic/   # 交易性安裝（失敗自動回�
 # 日常
 iimod list / info / enable / disable / verify
 iimod reapply    # ★ dots-hyprland 更新後必跑：一鍵全部重套
+
+# 更新（聯邦式：每個模塊記住自己的來源 index）
+iimod install my_widget.iimod --origin https://example.com/mods/index.json
+iimod update --dry-run   # 查有什麼新版
+iimod update             # 全部更新（Tier B 更新需再次 --allow-patches）
 ```
 
 設定 app（`Ctrl+Super+,`）會多出 **Modules** 頁：開關模塊、看各模塊設定。
@@ -77,6 +82,27 @@ git push origin v1.0.2
 
 GitHub Actions 會自動跑 `tools/release/build.sh` 和 `tools/release/verify.sh`，
 產出 Linux binary、`.iimod`、starter zip、`SHA256SUMS`，再發布 GitHub Release。
+
+## 模塊更新（`iimod update`）
+
+去中心化設計——沒有中央倉庫，每個模塊在安裝時記住自己的來源（`--origin`，
+存在 registry v2，協議零改動）。來源是一個靜態 `index.json`，掛在任何
+HTTPS 位置（GitHub raw / Releases / 自架皆可）：
+
+```json
+{"indexVersion": 1,
+ "modules": {
+   "network_traffic": {
+     "version": "1.5.0",
+     "url": "network_traffic-1.5.0.iimod",
+     "sha256": "…"}}}
+```
+
+- `url` 可相對於 index 位置；傳輸用系統 `curl`（僅 `https://` 與 `file://`，
+  後者供區網分享與離線測試）
+- 下載一律驗 `sha256`，不符即 exit 6，不落地
+- Tier B 模塊的更新必須重新 `--allow-patches`（新版補丁可能不同）
+- 更新走既有的交易性 install 管線：失敗回滾、設定保留、origin 延續
 
 本機 dry-run：
 
