@@ -127,6 +127,9 @@ iimod install battery_trend/ --allow-patches   # 磁貼補丁需要 --allow-patc
 | `keepSessions` | `true` | 記錄充放電段 |
 | `batteryName` | `auto` | sysfs 電池名；`auto` 走 UPower `nativePath`，再退回探測 BAT0/BAT1/… |
 
+升級注意：設定檔裡已經有 `showBar` 的既有使用者維持自己的選擇（模塊
+只補缺失的 key，不覆寫既有值）；全新安裝預設沒有 bar 元件。
+
 `histState` 是模塊自管的歷史 blob（上表五層），非使用者設定。
 全部選項在設定 app 的 **Modules → Battery Trend** 頁有對應控件。
 
