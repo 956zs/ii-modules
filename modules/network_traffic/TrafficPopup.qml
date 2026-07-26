@@ -19,6 +19,11 @@ import qs.mod.network_traffic
 StyledPopup {
     id: root
     required property var logic
+    // Vertical bar -> wide two-column content: stock StyledPopup centres the
+    // popup on the hover target without clamping to the screen edge, so the
+    // tall single-column form near the bar's bottom lost its per-app section
+    // off-screen. Wide-and-short keeps everything visible.
+    readonly property bool wide: Config.options.bar.vertical === true
     required property var appTraffic
     property bool appsEnabled: true
     property string statsPeriod: "boot"
@@ -160,6 +165,15 @@ StyledPopup {
             }
         }
 
+        GridLayout {
+            columns: root.wide ? 2 : 1
+            columnSpacing: 16
+            rowSpacing: 8
+
+            ColumnLayout {
+                Layout.alignment: Qt.AlignTop
+                spacing: 8
+
         ColumnLayout {
             spacing: 4
 
@@ -207,6 +221,12 @@ StyledPopup {
                 value: root.logic.formatTotal(root.periodTx)
             }
         }
+
+            }
+
+            ColumnLayout {
+                Layout.alignment: Qt.AlignTop
+                spacing: 8
 
         ColumnLayout {
             spacing: 4
@@ -316,6 +336,9 @@ StyledPopup {
                         text: root.logic.formatTotal(modelData.tx)
                     }
                 }
+            }
+        }
+
             }
         }
 

@@ -74,7 +74,11 @@ BarGroup {
             // Width 0 means the window isn't attached yet; don't thrash the layout.
             return root.screenWidth > 0 && root.screenWidth <= root.autoStackMaxWidth;
         }
-        readonly property bool showIcons: !(root.stacked || root.barVertical) || cfg.options.stackedShowIcons === true
+        // Vertical bars drop the arrows entirely: the 45px pill is tight, and
+        // the colour coding (download primary / upload tertiary, same as the
+        // popup graphs) already carries the direction.
+        readonly property bool showIcons: !root.barVertical
+                                          && (!root.stacked || cfg.options.stackedShowIcons === true)
 
         // BarGroup insets its pill 4px top and bottom, so the visible box is
         // baseBarHeight - 8. Two stacked rows plus ~3px of breathing room at
@@ -82,7 +86,9 @@ BarGroup {
         readonly property real pillHeight: Appearance.sizes.baseBarHeight - 8
         readonly property int rowHeight: Math.max(10, Math.floor((root.pillHeight - 6) / 2))
         readonly property bool compact: root.stacked || root.barVertical
-        readonly property int textSize: root.compact ? Math.max(9, Math.min(Appearance.font.pixelSize.small, root.rowHeight - 2)) : Appearance.font.pixelSize.small
+        readonly property int textSize: root.barVertical ? Appearance.font.pixelSize.smaller
+                                       : root.compact ? Math.max(9, Math.min(Appearance.font.pixelSize.small, root.rowHeight - 2))
+                                       : Appearance.font.pixelSize.small
         readonly property int iconSize: root.compact ? Math.max(8, root.textSize - 1) : Appearance.font.pixelSize.normal
         readonly property int hPadding: root.barVertical ? 2 : root.stacked ? 4 : 10
 
@@ -157,7 +163,7 @@ BarGroup {
             anchors.centerIn: parent
             columns: (root.stacked || root.barVertical) ? 1 : 2
             columnSpacing: 8
-            rowSpacing: root.barVertical ? 6 : 0
+            rowSpacing: root.barVertical ? 2 : 0
 
             GridLayout {
                 columns: root.barVertical ? 1 : 2
