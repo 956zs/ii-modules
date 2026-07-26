@@ -1,9 +1,11 @@
 # battery_trend — 電量趨勢與分析
 
-手機級的長期電量歷史（Tier A，零 stock 補丁，零 capability）。bar 顯示
-百分比＋3 小時迷你曲線；hover 看即時分析；點擊開詳情面板看 24 小時曲線、
-30 天區間、一年健康趨勢與使用統計。stock 的 BatteryIndicator 只給當下
-百分比——本模塊補的是「趨勢」與「分析」，不重複畫電池圖示。
+手機級的長期電量歷史（Tier B：一個側欄磁貼補丁）。**預設零 bar
+佔位**——stock bar 已經有電池指示器，本模塊不再搶 bar 空間：取樣在
+背景進行，詳情面板由側欄磁貼或 IPC 開啟，看 24 小時曲線、30 天區間、
+一年健康趨勢與使用統計。想在 bar 上多一條 3 小時迷你曲線可在設定開
+`showBar`（窄版藥丸；百分比文字再另行選開——本模塊補的是「趨勢」與
+「分析」，不重複顯示數字）。
 
 ## 緣起
 
@@ -16,9 +18,25 @@
 
 | 操作 | 效果 |
 |---|---|
-| bar 元件 | 百分比＋近 3 小時迷你曲線（充電段以主題色上色；低電且放電時百分比轉警示色） |
-| hover | 彈窗：平滑功耗（W）、回歸法剩餘時間（與 UPower 對照）、健康度、今日耗電/充電摘要 |
-| 左鍵點擊 | 開/關詳情面板（Esc 或點外部關閉） |
+| 側欄快速開關磁貼（`battery_horiz_075` 圖示，**主要入口**，見下方設定） | 點擊：關閉側欄並開啟詳情面板 |
+| `qs -c ii ipc --any-display call battery_trend toggle` | 切換詳情面板 |
+| bar 元件（選開 `showBar` 後） | 近 3 小時迷你曲線（充電段以主題色上色）；`showPercent` 開啟時加百分比（低電且放電時轉警示色）。曲線樣本不足兩點（首裝頭幾分鐘）時暫以百分比替補，藥丸不留白 |
+| hover bar 元件 | 彈窗：平滑功耗（W）、回歸法剩餘時間（與 UPower 對照）、健康度、今日耗電/充電摘要 |
+| 左鍵點 bar 元件 | 開/關詳情面板（Esc 或點外部關閉） |
+
+## 側欄磁貼（主要入口，需手動加一行設定）
+
+內建磁貼編輯器只提供原生類型，**不會**列出本模塊的磁貼。請手動把
+下列項目加入 `~/.config/illogical-impulse/config.json` 的
+`sidebar.quickToggles.android.toggles` 陣列（`size: 2` 可換寬版，顯示名稱）：
+
+```json
+{"type": "battery_trend", "size": 1}
+```
+
+設定 app 的 **Modules → Battery Trend** 頁也有這行可直接複製。移除磁貼即
+從陣列刪掉該項；`iimod uninstall` 後殘留的該項只會被 DelegateChooser 靜默
+略過。沒加磁貼也能用 IPC 指令開面板。
 
 詳情面板由上而下：即時標頭（大字百分比、功耗、兩種時間估計）、24 小時
 曲線（0–100 固定刻度；充電段描邊＋面積填色、放電段中性墨色、休眠/關機
@@ -33,7 +51,7 @@
 
 ## 資料來源與取樣
 
-全部原生、零 capability：
+歷史資料全部原生（`exec` capability 只給側欄磁貼的 IPC 呼叫用）：
 
 - **UPower**（`Quickshell.Services.UPower`）：百分比後備、充放電狀態、
   `changeRate`、`timeToEmpty`/`timeToFull`（拿來對照）、電池自動偵測
@@ -48,8 +66,12 @@
 彈窗/面板開啟時另以 3 秒節奏刷新即時數字（不入歷史）。
 
 多螢幕：bar slot 每個螢幕都會實例化，但歷史檔只能有一個寫入者——
-第一個螢幕的實例當選 primary（取樣＋落盤＋補齊設定預設值），其餘
-實例以讀者模式跑，跟著設定檔的 watchChanges 重建畫面。
+第一個螢幕的實例當選 primary（取樣＋落盤＋補齊設定預設值＋註冊 IPC
+target），其餘實例以讀者模式跑，跟著設定檔的 watchChanges 重建畫面。
+
+`showBar: false`（預設）只把根元件設為不可見（layout 會整個跳過，
+不留幽靈邊距）——底下的 ConfigLoader、取樣邏輯、IPC handler 照常
+實例化，歷史一秒都不斷。bar 入口是「掛載點」而不是「畫面」。
 
 ## 保留策略（分層降採樣）
 
@@ -88,7 +110,7 @@ README）；JsonAdapter 內宣告 `property var` 會讓 quickshell 段錯誤，
 ```bash
 iimod validate battery_trend/
 iimod check battery_trend/
-iimod install battery_trend/
+iimod install battery_trend/ --allow-patches   # 磁貼補丁需要 --allow-patches
 ```
 
 ## 設定
@@ -97,6 +119,8 @@ iimod install battery_trend/
 
 | Key | 預設 | 說明 |
 |---|---|---|
+| `showBar` | `false` | 顯示 bar 元件（stock bar 已有電池指示器，預設不佔 bar 空間；無論開關取樣與歷史照常） |
+| `showPercent` | `false` | `showBar` 開啟時在 bar 加百分比文字（stock 指示器已有數字，預設不重複） |
 | `samplingIntervalSec` | 60 | 取樣間隔（秒，15–600） |
 | `keepHourly` | `true` | 保留 30 天小時級歷史 |
 | `keepDaily` | `true` | 保留 365 天日級歷史與健康快照 |
@@ -121,5 +145,12 @@ iimod install battery_trend/
   文字墨色（不用系列色染文字）
 - sysfs 單位族偵測一次定案（energy_* 優先，退 charge_*），之後每 tick
   只 reload 命中的那一族；`readInstant()` 同時服務取樣與快速輪詢
+- 補丁只有一個：往 `AndroidToggleDelegateChooser.qml` 的
+  `roleValue: "antiFlashbang"` 錨點前插入一個完整 `DelegateChoice`
+  （與 screentime 同錨點——引擎按模塊 id 排序組合，多模塊補同一錨點
+  安全共存；`mainAction` 用 `execDetached` 呼叫本模塊 IPC，這是
+  manifest 宣告 `exec` 的原因）。IPC handler 用 LazyLoader 綁 primary
+  當選——bar slot 每螢幕一份，重複註冊同名 target 會相撞
 - 每個用到的 stock API（BarGroup、StyledPopup、StyledPopupValueRow、
-  StyledRectangularShadow、Config* 控件）都在 manifest 宣告了探針
+  StyledRectangularShadow、Config* 控件、GlobalStates 側欄狀態、
+  補丁錨點與磁貼元件）都在 manifest 宣告了探針
