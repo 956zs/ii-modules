@@ -108,8 +108,12 @@ enum Command {
         out: Option<PathBuf>,
         /// Embed an update index URL: installers of this package get
         /// `iimod update` support with nothing typed
-        #[arg(long)]
+        #[arg(long, conflicts_with = "no_origin")]
         origin: Option<String>,
+        /// Explicitly opt out of an update origin (local/dev packaging only:
+        /// `iimod update` will never cover the resulting package)
+        #[arg(long, conflicts_with = "origin")]
+        no_origin: bool,
     },
     /// Analyze a payload and suggest compat.probes + capabilities for its manifest
     Suggest {
@@ -173,7 +177,8 @@ fn run() -> anyhow::Result<()> {
             payload,
             out,
             origin,
-        } => commands::cmd_pack(&payload, out, origin.as_deref()),
+            no_origin,
+        } => commands::cmd_pack(&payload, out, origin.as_deref(), no_origin),
         Command::Suggest { source, max_size } => commands::cmd_suggest(&source, max_size),
         Command::Verify => verify::cmd_verify(),
         Command::Repair { id } => recovery::cmd_repair(id.as_deref()),

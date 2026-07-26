@@ -389,6 +389,7 @@ fn pack_install_roundtrip_and_tamper() {
             payload.to_str().unwrap(),
             "--out",
             out_pkg.to_str().unwrap(),
+            "--no-origin",
         ],
         0,
     );
@@ -472,6 +473,7 @@ fn update_from_file_origin() {
             payload.to_str().unwrap(),
             "--out",
             pkg_path.to_str().unwrap(),
+            "--no-origin",
         ],
         0,
     );
@@ -568,6 +570,7 @@ fn url_install_auto_records_sibling_origin() {
             payload.to_str().unwrap(),
             "--out",
             pkg.to_str().unwrap(),
+            "--no-origin",
         ],
         0,
     );
@@ -597,6 +600,7 @@ fn url_install_auto_records_sibling_origin() {
             payload.to_str().unwrap(),
             "--out",
             pkg2.to_str().unwrap(),
+            "--no-origin",
         ],
         0,
     );
@@ -646,5 +650,47 @@ fn embedded_origin_beats_sibling_guess() {
     assert!(
         info.contains("file:///canonical/repo/index.json"),
         "embedded canonical origin wins over the mirror sibling: {info}"
+    );
+}
+
+#[test]
+fn pack_requires_origin_or_explicit_opt_out() {
+    let w = World::new("packorigin");
+    let payload = w.make_module("bare_widget", serde_json::json!({}));
+    let out_pkg = w.root.join("bare_widget-1.0.0.iimod");
+
+    // Neither --origin nor --no-origin → hard usage error, nothing written.
+    let out = w.expect(
+        &[
+            "pack",
+            payload.to_str().unwrap(),
+            "--out",
+            out_pkg.to_str().unwrap(),
+        ],
+        2,
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--no-origin"),
+        "error should mention the --no-origin escape hatch: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out_pkg.exists(), "no package should be written on failure");
+
+    // --no-origin: packs fine, and installing it warns it carries no origin.
+    w.expect(
+        &[
+            "pack",
+            payload.to_str().unwrap(),
+            "--out",
+            out_pkg.to_str().unwrap(),
+            "--no-origin",
+        ],
+        0,
+    );
+    let out = w.expect(&["install", out_pkg.to_str().unwrap()], 0);
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no update origin"),
+        "install should note the package has no update origin: {}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }

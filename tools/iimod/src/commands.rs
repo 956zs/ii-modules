@@ -252,7 +252,18 @@ pub fn cmd_info(id: &str) -> Result<()> {
 // pack / init
 // ---------------------------------------------------------------------------
 
-pub fn cmd_pack(payload: &Path, out: Option<PathBuf>, origin: Option<&str>) -> Result<()> {
+pub fn cmd_pack(
+    payload: &Path,
+    out: Option<PathBuf>,
+    origin: Option<&str>,
+    no_origin: bool,
+) -> Result<()> {
+    if origin.is_none() && !no_origin {
+        return Err(bail(
+            exit::USAGE,
+            "packages must carry their update origin: pass --origin <update-index-url> so installers get `iimod update` for free, or --no-origin to explicitly opt out for local/dev packaging",
+        ));
+    }
     let (m, warnings) = validate_payload(payload)?;
     for w in warnings {
         eprintln!("warning: {w}");

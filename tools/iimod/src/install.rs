@@ -145,6 +145,14 @@ fn prepare_install(
         println!("update origin: {o}");
     }
     let next = registry_with_candidate(&registry, &candidate, origin.as_deref())?;
+    if candidate.payload.from_package
+        && next
+            .get(&candidate.manifest.id)
+            .and_then(|m| m.origin.as_ref())
+            .is_none()
+    {
+        eprintln!("note: this package carries no update origin — `iimod update` will not cover it");
+    }
     dry_run_stock_composition(&next)?;
     let module_dicts = translations::load_module_dicts(&candidate.payload.dir)?;
     let stock_targets = all_stock_targets(&next, &[]);

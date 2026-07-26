@@ -177,7 +177,7 @@ pack_module() {
         "$IIMOD_BIN" pack --out "$package_path" --origin "$origin" "$MODULE_DIR"
     else
         echo "note: no GitHub remote — packing without an embedded origin" >&2
-        "$IIMOD_BIN" pack --out "$package_path" "$MODULE_DIR"
+        "$IIMOD_BIN" pack --out "$package_path" --no-origin "$MODULE_DIR"
     fi
     "$IIMOD_BIN" validate "$package_path"
     run_with_fixture "module-package-check" "$IIMOD_BIN" check "$package_path"

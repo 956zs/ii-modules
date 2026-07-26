@@ -106,6 +106,8 @@ HTTPS 位置（GitHub raw / Releases / 自架皆可）：
 - 下載一律驗 `sha256`，不符即 exit 6，不落地
 - Tier B 模塊的更新必須重新 `--allow-patches`（新版補丁可能不同）
 - 更新走既有的交易性 install 管線：失敗回滾、設定保留、origin 延續
+- `iimod pack` 強制要求 `--origin`（或明確 `--no-origin` 退出，僅供本機/開發用途）——
+  沒帶任一 flag 會直接拒絕打包
 
 本機 dry-run：
 
