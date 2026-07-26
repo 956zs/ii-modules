@@ -110,6 +110,38 @@ ColumnLayout {
         }
     }
 
+    ConfigSpinBox {
+        icon: "heart_plus"
+        text: Translation.tr("Arrows breathe above (KiB/s)")
+        value: cfg.options.breatheThresholdKB
+        from: 64
+        to: 65536
+        stepSize: 256
+        onValueChanged: {
+            cfg.options.breatheThresholdKB = value;
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        Layout.rightMargin: 8
+        spacing: 10
+
+        StyledText {
+            text: Translation.tr("Ping target")
+            color: Appearance.colors.colOnSecondaryContainer
+        }
+        MaterialTextField {
+            Layout.fillWidth: true
+            placeholderText: Translation.tr("auto = your DNS server")
+            text: cfg.options.pingHost
+            onEditingFinished: {
+                cfg.options.pingHost = text.trim() === "" ? "auto" : text.trim();
+            }
+        }
+    }
+
     StyledText {
         Layout.fillWidth: true
         Layout.leftMargin: 8

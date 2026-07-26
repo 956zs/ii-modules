@@ -7,13 +7,20 @@ Bar 上下行流量計（Tier A，零 stock 補丁）。即時速率、開機/�
 
 | 操作 | 效果 |
 |---|---|
-| hover bar 元件 | 開啟彈窗：速率、累計、趨勢圖、Top app |
+| hover bar 元件 | 開啟彈窗：速率、ping、累計、趨勢圖、Top app |
 | 左鍵點 bar 元件 | 切換統計範圍：本次開機 → 今日 → 本月（全系統與 per-app 排行同步切換） |
 | 右鍵點 bar 元件 | 展開/收合 Top 5 應用排行（顯示所選範圍的累計量） |
 
 顏色跟隨 Material You 主題（下載 `colPrimary`、上傳 `colTertiary`），
-換壁紙自動變。任一方向速率 ≥ 1 MiB/s 時該方向箭頭呼吸閃爍。
-彈窗頂部的網路圖示由 stock `Network` 服務提供，本來就隨訊號強度變化。
+換壁紙自動變。任一方向速率 ≥ 呼吸門檻（預設 1 MiB/s，可調）時該箭頭呼吸閃爍。
+
+彈窗的 ping 列每 3 秒測一次，只在彈窗開啟時執行。目標預設 `auto`＝主機設定的
+DNS（解析 `resolvectl dns` / `resolv.conf`，跳過 loopback stub 與 tailscale
+魔法解析器，公網位址優先），可在設定頁改成任意主機。
+
+彈窗頂部的訊號圖示：stock `Network` 服務只在 nmcli 連線事件時刷新，訊號漂移
+不觸發——所以彈窗開啟期間每 5 秒輪詢一次公開的 `Network.update()`，圖示隨即時
+強度換檔，換檔時帶滑動淡入動效。
 
 ## 依賴
 
