@@ -15,6 +15,7 @@ mod recovery;
 mod registry;
 mod store;
 mod translations;
+mod update;
 mod verify;
 
 use std::path::PathBuf;
@@ -66,6 +67,22 @@ enum Command {
         /// Install disabled (enable later via settings or `iimod enable`)
         #[arg(long)]
         no_enable: bool,
+        /// Record an update index URL for `iimod update` (https:// or file://)
+        #[arg(long)]
+        origin: Option<String>,
+        #[arg(long, default_value_t = pkg::DEFAULT_MAX_UNPACKED)]
+        max_size: u64,
+    },
+    /// Update modules from their recorded origin indexes
+    Update {
+        /// Update one module (omit to update everything with an origin)
+        id: Option<String>,
+        /// Required when an update is a Tier B module (it modifies stock files)
+        #[arg(long)]
+        allow_patches: bool,
+        /// Report available updates without installing
+        #[arg(long)]
+        dry_run: bool,
         #[arg(long, default_value_t = pkg::DEFAULT_MAX_UNPACKED)]
         max_size: u64,
     },
@@ -124,6 +141,7 @@ fn run() -> anyhow::Result<()> {
             allow_patches,
             reinstall,
             no_enable,
+            origin,
             max_size,
         } => install::cmd_install(
             &source,
@@ -132,8 +150,15 @@ fn run() -> anyhow::Result<()> {
                 reinstall,
                 no_enable,
                 max_size,
+                origin,
             },
         ),
+        Command::Update {
+            id,
+            allow_patches,
+            dry_run,
+            max_size,
+        } => update::cmd_update(id.as_deref(), allow_patches, dry_run, max_size),
         Command::Uninstall { id, cascade } => commands::cmd_uninstall(&id, cascade),
         Command::Enable { id } => commands::cmd_set_state(&id, true),
         Command::Disable { id } => commands::cmd_set_state(&id, false),
