@@ -109,7 +109,7 @@
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --ring: oklch(0.62 0.16 293);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -140,6 +140,33 @@
     }
 }
 
+/* Depth backdrop matching the OG card's brand language: violet glow top,
+   faint emerald counter-glow bottom, hairline grid fading out below the hero. */
+.site-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 55% 42% at 72% -8%, color-mix(in oklch, var(--brand) 13%, transparent), transparent 70%),
+    radial-gradient(ellipse 48% 38% at 12% 108%, color-mix(in oklch, var(--live) 6%, transparent), transparent 70%);
+}
+
+.site-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--foreground) 3.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 3.5%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 85% 62% at 50% 0%, black 25%, transparent 78%);
+}
+
+::selection {
+  background: color-mix(in oklch, var(--brand) 35%, transparent);
+}
+
 @keyframes live-breathe {
   0%,
   100% {
@@ -159,5 +186,14 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-live-breathe {
     animation: none;
+  }
+
+  /* Collapse all animation/transition (incl. tw-animate dialog in/out) to a frame. */
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

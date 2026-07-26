@@ -1,7 +1,17 @@
+import { CloudAlert } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Hero } from '@/components/hero'
 import { ModuleGrid } from '@/components/module-grid'
 import { SiteFooter } from '@/components/site-footer'
+import { SiteHeader } from '@/components/site-header'
 import { useRegistry } from '@/hooks/use-registry'
 import { useModuleVersions } from '@/hooks/use-module-versions'
 
@@ -13,15 +23,35 @@ function App() {
 
   return (
     <TooltipProvider>
-      <div className="min-h-svh bg-background text-foreground">
-        <Hero firstModule={firstModule} firstModuleVersion={firstModule ? versions[firstModule.id] : undefined} />
+      {/* No bg on this wrapper: body paints the canvas background, letting the
+          fixed z-[-1] backdrop layer sit between canvas and content. */}
+      <div id="top" className="min-h-svh text-foreground">
+        <div aria-hidden="true" className="site-backdrop" />
+        <SiteHeader />
+
+        <Hero
+          firstModule={firstModule}
+          firstModuleVersion={firstModule ? versions[firstModule.id] : undefined}
+          registryFailed={registry.status === 'error'}
+        />
 
         {registry.status === 'error' ? (
-          <p className="mx-auto max-w-6xl px-4 pb-24 text-center text-sm text-muted-foreground sm:px-6">
-            模塊清單暫時無法取得，請稍後再試。
-          </p>
+          <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
+            <Empty className="border border-dashed border-border py-16">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <CloudAlert />
+                </EmptyMedia>
+                <EmptyTitle>模塊清單暫時無法取得</EmptyTitle>
+                <EmptyDescription>網路或伺服器出了點狀況，請稍後再試。</EmptyDescription>
+              </EmptyHeader>
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                重新載入
+              </Button>
+            </Empty>
+          </div>
         ) : (
-          <ModuleGrid modules={modules} versions={versions} />
+          <ModuleGrid modules={modules} versions={versions} loading={registry.status === 'loading'} />
         )}
 
         <SiteFooter />
