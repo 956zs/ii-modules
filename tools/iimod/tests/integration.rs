@@ -46,7 +46,7 @@ fn write_stock_tree(ii: &Path) {
     std::fs::create_dir_all(ii.join("modules/ii/verticalBar")).unwrap();
     std::fs::write(
         ii.join("modules/ii/verticalBar/VerticalBarContent.qml"),
-        "Item {\n    ColumnLayout {\n            Bar.SysTray {\n            }\n    }\n}\n",
+        "Item {\n    ColumnLayout {\n            spacing: 10\n    }\n    ColumnLayout {\n            Bar.SysTray {\n            }\n    }\n}\n",
     )
     .unwrap();
     std::fs::write(

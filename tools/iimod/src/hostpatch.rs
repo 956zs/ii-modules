@@ -92,21 +92,28 @@ pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
         ),
         // P5: bar slot host in the VERTICAL bar (left/right placement) —
         // without it, bar modules silently vanish when bar.vertical is on.
-        // Modules stack above the tray; a module can read
-        // Config.options.bar.vertical (baseline API) to adapt its layout.
+        // Placement: the TOP section's otherwise-empty stretch (where the
+        // horizontal bar shows the window title). The top section's height is
+        // (bar - middle)/2 by stock design, so modules here can never collide
+        // with the centred middle section — the bottom section can (it grows
+        // upward into the centred clock/battery group). Declaration order
+        // puts modules above the sidebar button; with none enabled the bar
+        // is stock-identical. Modules read Config.options.bar.vertical
+        // (baseline API) to adapt their layout.
         (
             VERTICAL_BAR_FILE,
             p(
                 5,
-                PatchOp::InsertBefore,
-                "Bar.SysTray {",
+                PatchOp::InsertAfter,
+                "spacing: 10",
                 concat!(
                     "            Repeater {\n",
                     "                model: Config.options.iimp?.enabledBar ?? []\n",
                     "                delegate: Loader {\n",
                     "                    required property string modelData\n",
-                    "                    Layout.topMargin: 4\n",
+                    "                    required property int index\n",
                     "                    Layout.alignment: Qt.AlignHCenter\n",
+                    "                    Layout.topMargin: index === 0 ? Appearance.sizes.hyprlandGapsOut + 6 : 0\n",
                     "                    source: Quickshell.shellPath(`mod/${modelData}/bar.qml`)\n",
                     "                    onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] bar module failed: ${modelData}`)\n",
                     "                }\n",

@@ -89,8 +89,10 @@ ii 的 bar 右區是 `anchors { left: middleSection.right; right: parent.right }
 寬螢幕不受這個限制，所以 `auto` 只在窄螢幕上壓縮。
 
 **支援四種 bar 位置**：上/下（水平，單行或雙行版面）、左/右（垂直，
-圖示在上數字在下的直向堆疊，自動適配 45px 窄膠囊）。垂直 bar 的載入
-圍欄由 iimod ≥1.1 的 host P5 提供。
+無箭頭、純色彩編碼的直向數值，自動適配 45px 窄膠囊；彈窗改為寬扁雙欄，
+避開 stock 彈窗無邊緣夾取的裁切）。垂直 bar 的載入圍欄由 iimod ≥1.1 的
+host P5 提供，位置在頂段的留白區（水平 bar 放視窗標題的位置）——頂段高度
+天生等於「中段以上的剩餘空間」，模塊在此結構上不可能與置中的時鐘/電池相撞。
 
 字級不寫死，從 `baseBarHeight` 反推（膠囊高 = `baseBarHeight - 8`，行高 =
 `floor((膠囊高 - 6) / 2)`，字級 = `clamp(行高 - 2, 9, small)`），因此改 bar 高度或
