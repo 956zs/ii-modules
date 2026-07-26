@@ -28,7 +28,7 @@ Design axioms, in priority order:
 | shell | The Quickshell config tree at `$II` |
 | stock file | A file shipped by dots-hyprland inside `$II`, outside `$II/mod/` |
 | module | A directory `$II/mod/<id>/` plus its manifest, installed by iimod |
-| host | IIMP's own runtime (`$II/mod/iimp/` + five fenced patches), owned by iimod |
+| host | IIMP's own runtime (`$II/mod/iimp/` + its fenced host patches; targets absent from older stock trees are skipped), owned by iimod |
 | slot | A predefined extension point: `bar` or `window` |
 | Tier A module | A module with an empty `patches` array (slot-only, zero stock modification) |
 | Tier B module | A module with a non-empty `patches` array (modifies stock files) |

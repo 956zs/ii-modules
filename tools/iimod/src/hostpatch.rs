@@ -1,4 +1,5 @@
-//! The IIMP host: five fenced patches on stock files + two QML files under
+//! The IIMP host: fenced patches on stock files (P0–P5; see host_patches) +
+//! QML files under
 //! $II/mod/iimp/ + a sentinel. Embedded in the binary (single source of truth);
 //! `ensure_host` is run by every mutating command (SPEC blueprint §1.8).
 
@@ -16,8 +17,15 @@ pub const HOST_OWNER: &str = "host";
 const MODULE_HOST_QML: &str = include_str!("../assets/ModuleHost.qml");
 const MODULES_CONFIG_QML: &str = include_str!("../assets/ModulesConfig.qml");
 
-/// The five host patches (P0–P4). Anchors verified against dots-hyprland
-/// 446504ad42; each is unique in its stock file.
+/// Stock file hosting the vertical bar's content. Older dots revisions do
+/// not ship it, so its host patch is OPTIONAL: it only joins the composition
+/// when the file exists (see ops::all_stock_targets) and it is deliberately
+/// NOT part of HOST_FILES / the wipe sentinel.
+pub const VERTICAL_BAR_FILE: &str = "modules/ii/verticalBar/VerticalBarContent.qml";
+
+/// The host patches (P0–P5). Anchors verified against dots-hyprland
+/// 446504ad42; each is unique in its stock file. P5 targets the vertical
+/// bar and is skipped entirely on stock trees that predate it.
 pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
     let p = |index: u32, op: PatchOp, anchor: &str, content: &str| PatchInstance {
         owner: HOST_OWNER.into(),
@@ -82,6 +90,30 @@ pub fn host_patches() -> Vec<(&'static str, PatchInstance)> {
                 "        ,{ name: Translation.tr(\"Modules\"), icon: \"extension\", component: \"mod/iimp/ModulesConfig.qml\" }\n",
             ),
         ),
+        // P5: bar slot host in the VERTICAL bar (left/right placement) —
+        // without it, bar modules silently vanish when bar.vertical is on.
+        // Modules stack above the tray; a module can read
+        // Config.options.bar.vertical (baseline API) to adapt its layout.
+        (
+            VERTICAL_BAR_FILE,
+            p(
+                5,
+                PatchOp::InsertBefore,
+                "Bar.SysTray {",
+                concat!(
+                    "            Repeater {\n",
+                    "                model: Config.options.iimp?.enabledBar ?? []\n",
+                    "                delegate: Loader {\n",
+                    "                    required property string modelData\n",
+                    "                    Layout.topMargin: 4\n",
+                    "                    Layout.alignment: Qt.AlignHCenter\n",
+                    "                    source: Quickshell.shellPath(`mod/${modelData}/bar.qml`)\n",
+                    "                    onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] bar module failed: ${modelData}`)\n",
+                    "                }\n",
+                    "            }\n",
+                ),
+            ),
+        ),
     ]
 }
 
@@ -126,7 +158,7 @@ pub fn is_wiped(registry_nonempty: bool) -> bool {
     registry_nonempty && read_sentinel().is_none()
 }
 
-/// Write host QML files + sentinel and recompose the five host patches into the
+/// Write host QML files + sentinel and recompose the host patches into the
 /// stock files (preserving all other modules' patches passed in `extra`).
 /// Returns the list of stock files it rewrote.
 pub fn ensure_host(extra_patches_for: &dyn Fn(&str) -> Vec<PatchInstance>) -> Result<Vec<String>> {
@@ -154,14 +186,17 @@ pub fn ensure_host(extra_patches_for: &dyn Fn(&str) -> Vec<PatchInstance>) -> Re
     }
 
     // Safe live-reload order: shell.qml LAST (its import + instantiation must
-    // find everything else already on disk).
+    // find everything else already on disk). The vertical bar target joins
+    // only when the stock tree ships it (older dots revisions do not).
+    let mut order: Vec<&str> = vec!["modules/common/Config.qml", "modules/ii/bar/BarContent.qml"];
+    if ii.join(VERTICAL_BAR_FILE).is_file() {
+        order.push(VERTICAL_BAR_FILE);
+    }
+    order.push("settings.qml");
+    order.push("shell.qml");
+
     let mut touched = Vec::new();
-    for rel in [
-        "modules/common/Config.qml",
-        "modules/ii/bar/BarContent.qml",
-        "settings.qml",
-        "shell.qml",
-    ] {
+    for rel in order {
         let target = ii.join(rel);
         let current = std::fs::read_to_string(&target)
             .map_err(|e| bail(exit::STATE, format!("cannot read stock file {rel}: {e}")))?;

@@ -204,9 +204,18 @@ pub(crate) const HOST_FILES: [&str; 4] = [
     "shell.qml",
 ];
 
-/// Every stock file needing recomposition: the four host files + all patch targets.
+/// Every stock file needing recomposition: the four required host files, the
+/// optional vertical-bar host target (only when the stock tree has it — older
+/// dots revisions do not, and its absence must not fail anything), plus all
+/// module patch targets.
 pub(crate) fn all_stock_targets(registry: &Registry, extra: &[String]) -> Vec<String> {
     let mut files: Vec<String> = HOST_FILES.iter().map(|s| s.to_string()).collect();
+    if paths::ii_root()
+        .join(hostpatch::VERTICAL_BAR_FILE)
+        .is_file()
+    {
+        files.push(hostpatch::VERTICAL_BAR_FILE.to_string());
+    }
     files.extend(registry.all_patched_files());
     files.extend(extra.iter().cloned());
     files.sort();

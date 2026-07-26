@@ -43,6 +43,12 @@ fn write_stock_tree(ii: &Path) {
     )
     .unwrap();
     std::fs::write(ii.join("modules/ii/bar/BarGroup.qml"), "Item {}\n").unwrap();
+    std::fs::create_dir_all(ii.join("modules/ii/verticalBar")).unwrap();
+    std::fs::write(
+        ii.join("modules/ii/verticalBar/VerticalBarContent.qml"),
+        "Item {\n    ColumnLayout {\n            Bar.SysTray {\n            }\n    }\n}\n",
+    )
+    .unwrap();
     std::fs::write(
         ii.join("services/Network.qml"),
         "Singleton { property string materialSymbol: \"lan\" }\n",
@@ -693,4 +699,36 @@ fn pack_requires_origin_or_explicit_opt_out() {
         "install should note the package has no update origin: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+#[test]
+fn vertical_bar_host_fence_present_and_optional() {
+    // Modern stock tree: installing any module composes the vertical fence.
+    let w = World::new("vbar");
+    let payload = w.make_module("vbar_widget", serde_json::json!({}));
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+    let vfile = w.ii().join("modules/ii/verticalBar/VerticalBarContent.qml");
+    let text = std::fs::read_to_string(&vfile).unwrap();
+    assert!(
+        text.contains("iimp host/5"),
+        "vertical fence composed: {text}"
+    );
+    assert!(text.contains("enabledBar"), "vertical repeater present");
+
+    // Older stock tree without the vertical bar: everything still works and
+    // nothing references the missing file.
+    let w2 = World::new("vbar-old");
+    std::fs::remove_file(
+        w2.ii()
+            .join("modules/ii/verticalBar/VerticalBarContent.qml"),
+    )
+    .unwrap();
+    let payload2 = w2.make_module("oldtree_widget", serde_json::json!({}));
+    w2.expect(&["install", payload2.to_str().unwrap()], 0);
+    w2.expect(&["verify"], 0);
+    w2.expect(&["repair"], 0);
+    assert!(!w2
+        .ii()
+        .join("modules/ii/verticalBar/VerticalBarContent.qml")
+        .exists());
 }
