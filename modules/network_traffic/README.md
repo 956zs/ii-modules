@@ -58,6 +58,9 @@ iimod install network_traffic/     # 或先 iimod pack 再裝 .iimod
 | `autoStackMaxWidth` | 1920 | `auto` 模式下，螢幕寬度 ≤ 此值時改用雙行 |
 | `stackedShowIcons` | `true` | 雙行時是否顯示方向箭頭 |
 | `statsPeriod` | `boot` | 彈窗統計範圍（左鍵點 bar 元件循環切換，自動持久化） |
+| `appMonitoring` | `true` | per-app 常駐統計；關閉即隱藏彈窗應用區塊、不啟動任何取樣程序 |
+| `pingHost` | `auto` | 彈窗 ping 目標；`auto`＝主機設定的 DNS（公網優先），可填任意主機/IP |
+| `breatheThresholdKB` | `1024` | 箭頭呼吸門檻（KiB/s），該方向速率達標時呼吸閃爍 |
 
 `acctState` / `appAcctState` 是模塊自管的統計狀態（今日/本月累計、上次取樣點、
 per-app 記帳），各自是**單一 JSON 字串**、單次賦值寫入——分欄位儲存曾在熱重載
