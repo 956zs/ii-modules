@@ -339,16 +339,33 @@ pub(crate) fn project_enabled(registry: &Registry) -> Result<()> {
 }
 
 /// Ids to statically register via ModuleImports.qml: every installed module
-/// whose payload dir is on disk (incompatible modules may lack one).
+/// whose payload dir is on disk (incompatible modules may lack one) AND
+/// exposes at least one QML type. A dotted directory import only resolves if
+/// the directory contains an uppercase-named .qml type; a payload holding just
+/// entry files (main.qml, bar.qml) is an empty QML module and importing it
+/// fails the whole shell reload with "module ... is not installed".
 pub(crate) fn module_import_ids(registry: &Registry) -> Vec<String> {
     let mut ids: Vec<String> = registry
         .modules
         .iter()
-        .filter(|m| paths::mod_root().join(&m.manifest.id).is_dir())
+        .filter(|m| dir_exposes_qml_types(&paths::mod_root().join(&m.manifest.id)))
         .map(|m| m.manifest.id.clone())
         .collect();
     ids.sort();
     ids
+}
+
+/// True if the directory contains at least one `Uppercase*.qml` — the QML
+/// implicit-module rule for whether a directory import registers any types.
+fn dir_exposes_qml_types(dir: &std::path::Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries.flatten().any(|e| {
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        name.ends_with(".qml") && name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+    })
 }
 
 pub(crate) fn wipe_banner(registry: &Registry) -> bool {
@@ -361,4 +378,38 @@ pub(crate) fn wipe_banner(registry: &Registry) -> bool {
         return true;
     }
     false
+}
+
+#[cfg(test)]
+mod import_ids_tests {
+    use super::dir_exposes_qml_types;
+
+    #[test]
+    fn entry_only_payload_exposes_no_types() {
+        let dir = std::env::temp_dir().join("iimod_test_entry_only");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.qml"), "import QtQuick\nItem {}\n").unwrap();
+        std::fs::write(dir.join("module.json"), "{}").unwrap();
+        assert!(!dir_exposes_qml_types(&dir));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn uppercase_component_exposes_types() {
+        let dir = std::env::temp_dir().join("iimod_test_has_type");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bar.qml"), "import QtQuick\nItem {}\n").unwrap();
+        std::fs::write(dir.join("TrafficLogic.qml"), "import QtQuick\nItem {}\n").unwrap();
+        assert!(dir_exposes_qml_types(&dir));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn missing_dir_exposes_no_types() {
+        assert!(!dir_exposes_qml_types(std::path::Path::new(
+            "/nonexistent/iimod-test"
+        )));
+    }
 }
