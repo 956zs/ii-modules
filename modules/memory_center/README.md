@@ -1,6 +1,6 @@
 # memory_center — 記憶體中心
 
-視覺化 RAM/swap 檢視與清理工具（Tier A，零 stock 補丁）。不是清單式監控看板：
+視覺化 RAM/swap 檢視與清理工具（Tier B，一個側欄磁貼補丁）。不是清單式監控看板：
 組成一目了然的比例條 + treemap 式程序方塊，外加兩個真正有用的清理動作。
 
 ## 互動
@@ -8,13 +8,39 @@
 | 操作 | 效果 |
 |---|---|
 | hover bar 元件 | 彈窗：使用率、組成迷你條（應用程式／快取與緩衝／可用）、swap 一行 |
-| 點 bar 元件（或 IPC） | 開啟/關閉詳細面板 |
+| 點 bar 元件／側欄磁貼（或 IPC） | 開啟/關閉詳細面板 |
 | 面板：點程序方塊 | 自己的程序→武裝（變紅），再點一次→送 SIGTERM；別人的程序只顯示資訊 |
 | 面板：整理 swap | `swapoff -a && swapon -a`（需認證；swap 空或可用 RAM 不足時停用並附說明） |
 | 面板：清除快取 | `sync; echo 3 > /proc/sys/vm/drop_caches`（需認證） |
 
 Bar 元件顏色跟隨 Material You：正常為文字色，使用率超過警示門檻（預設 85%，可調）
 後線性漂向 error 色——即使關掉百分比只留圖示，壓力狀態仍看得到。
+
+## 隱藏 bar 元件（省 bar 空間）
+
+多模塊同時佔 bar 右區時空間吃緊，且 stock 的 Resources 元件本來就有記憶體儀表。
+設定 `showBar: false`（設定 app 有開關）即可隱藏 bar 藥丸——host layout 會跳過
+不可見子項，不留幽靈間距。IPC handler 與面板 LazyLoader 都掛在 bar entry 內、
+不隨可見性銷毀，面板仍可從側欄磁貼或 IPC 開啟。bar 元件隱藏且面板關閉時
+`/proc/meminfo` 輪詢完全停止，重新開啟面板時立即補採一次樣。
+
+## 側欄磁貼（Tier B 補丁）
+
+安裝時在 stock 的 `AndroidToggleDelegateChooser.qml`（`antiFlashbang` 錨點前）
+插入一個 `DelegateChoice`，包裝 stock `AndroidQuickToggleButton`（圖示
+`memory`），點擊經 `execDetached` 呼叫本模塊 IPC 開啟面板——manifest 宣告
+`exec` 的另一個原因。多個模塊可在同一錨點並存（依模塊 id 排序）。
+
+內建磁貼編輯器只提供原生類型，**不會**列出本模塊的磁貼。安裝後請手動把
+下列項目加入 `~/.config/illogical-impulse/config.json` 的
+`sidebar.quickToggles.android.toggles` 陣列（`size: 2` 可換寬版，顯示名稱）：
+
+```json
+{"type": "memory_center", "size": 1}
+```
+
+設定 app 的 **Modules → Memory Center** 頁也有這行可直接複製。移除磁貼即從
+陣列刪掉該項；`iimod uninstall` 後殘留的該項只會被 DelegateChooser 靜默略過。
 
 ## 誠實的組成分類
 
@@ -60,7 +86,7 @@ stderr 原文顯示在面板內。不重試、不背景靜默執行。
 ```bash
 iimod validate memory_center/
 iimod check memory_center/
-iimod install memory_center/     # 或先 iimod pack 再裝 .iimod
+iimod install memory_center/ --allow-patches   # Tier B：側欄磁貼補丁需明示允許
 ```
 
 測試鉤子：`qs -c ii ipc --any-display call memory_center toggle` 開關面板。
@@ -71,6 +97,7 @@ iimod install memory_center/     # 或先 iimod pack 再裝 .iimod
 
 | Key | 預設 | 說明 |
 |---|---|---|
+| `showBar` | `true` | 顯示 bar 元件；關閉省 bar 空間，面板仍可從側欄磁貼／IPC 開啟 |
 | `meminfoInterval` | 2000 | /proc/meminfo 輪詢間隔（毫秒） |
 | `procInterval` | 4000 | 面板開啟時 ps 輪詢間隔（毫秒） |
 | `showBarPercent` | `true` | bar 上顯示百分比（關閉只留圖示） |
