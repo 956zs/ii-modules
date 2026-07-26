@@ -18,9 +18,10 @@ import qs.mod.network_traffic
 StyledPopup {
     id: root
     required property var logic
+    required property var appTraffic
+    property bool appsEnabled: true
     property string statsPeriod: "boot"
     property bool appsExpanded: false
-    property int appUpdateInterval: 2000
 
     readonly property real periodRx: statsPeriod === "today" ? logic.todayRx
                                    : statsPeriod === "month" ? logic.monthRx
@@ -32,21 +33,27 @@ StyledPopup {
                                         : statsPeriod === "month" ? Translation.tr("This month")
                                         : Translation.tr("Boot")
 
-    function appRate(bytesPerSec) {
-        return logic.format(bytesPerSec, false)
+    // Accumulated per-app totals for the selected period. acctRevision is
+    // referenced so the binding re-evaluates as accounting rolls in.
+    readonly property list<var> appRanking: {
+        appTraffic.acctRevision
+        return appTraffic.ranking(statsPeriod)
+    }
+    readonly property var topApp: appRanking.length > 0 ? appRanking[0] : null
+    readonly property real topShare: {
+        if (!topApp) return 0
+        let total = 0
+        for (const a of appRanking) total += a.rx + a.tx
+        return total > 0 ? (topApp.rx + topApp.tx) / total : 0
+    }
+
+    function appName(name) {
+        return name === appTraffic.otherKey ? Translation.tr("Other") : name
     }
 
     ColumnLayout {
         anchors.centerIn: parent
         spacing: 8
-
-        // Sampler lives with the popup content but only runs while the popup
-        // window is actually open (the content itself is created eagerly).
-        AppTraffic {
-            id: appTraffic
-            active: root.active
-            updateInterval: root.appUpdateInterval
-        }
 
         StyledPopupHeaderRow {
             icon: Network.materialSymbol
@@ -130,9 +137,10 @@ StyledPopup {
             }
         }
 
-        // Per-app section: one summary line, right-click on the bar widget
-        // expands the top five.
+        // Per-app section: accumulated totals for the selected period. One
+        // summary line; right-click on the bar widget expands the top five.
         ColumnLayout {
+            visible: root.appsEnabled
             spacing: 4
 
             RowLayout {
@@ -147,14 +155,17 @@ StyledPopup {
                     elide: Text.ElideRight
                     color: Appearance.colors.colOnSurfaceVariant
                     text: {
-                        if (appTraffic.source === "starting") return Translation.tr("Measuring per-app usage…")
-                        if (appTraffic.source === "none") return Translation.tr("Per-app stats unavailable")
-                        if (!appTraffic.topApp) return Translation.tr("No active apps")
-                        return `${appTraffic.topApp.name}  ${Math.round(appTraffic.topShare * 100)}%`
+                        if (root.appTraffic.source === "none") return Translation.tr("Per-app stats unavailable")
+                        if (!root.topApp) {
+                            return root.appTraffic.source === "starting"
+                                ? Translation.tr("Measuring per-app usage…")
+                                : Translation.tr("No data yet")
+                        }
+                        return `${root.appName(root.topApp.name)}  ${Math.round(root.topShare * 100)}%`
                     }
                 }
                 StyledText {
-                    visible: appTraffic.tcpOnly
+                    visible: root.appTraffic.tcpOnly
                     font.pixelSize: Appearance.font.pixelSize.smallest
                     color: Appearance.colors.colOnLayer1Inactive
                     text: Translation.tr("TCP only")
@@ -162,7 +173,7 @@ StyledPopup {
             }
 
             Repeater {
-                model: root.appsExpanded ? appTraffic.apps.slice(0, 5) : []
+                model: root.appsExpanded ? root.appRanking.slice(0, 5) : []
                 delegate: RowLayout {
                     required property var modelData
                     spacing: 4
@@ -174,7 +185,7 @@ StyledPopup {
                         elide: Text.ElideRight
                         font.pixelSize: Appearance.font.pixelSize.smaller
                         color: Appearance.colors.colOnSurfaceVariant
-                        text: modelData.name
+                        text: root.appName(modelData.name)
                     }
                     MaterialSymbol {
                         text: "arrow_downward"
@@ -184,7 +195,7 @@ StyledPopup {
                     StyledText {
                         font.pixelSize: Appearance.font.pixelSize.smaller
                         color: Appearance.colors.colOnSurfaceVariant
-                        text: root.appRate(modelData.down)
+                        text: root.logic.formatTotal(modelData.rx)
                     }
                     MaterialSymbol {
                         text: "arrow_upward"
@@ -194,7 +205,7 @@ StyledPopup {
                     StyledText {
                         font.pixelSize: Appearance.font.pixelSize.smaller
                         color: Appearance.colors.colOnSurfaceVariant
-                        text: root.appRate(modelData.up)
+                        text: root.logic.formatTotal(modelData.tx)
                     }
                 }
             }

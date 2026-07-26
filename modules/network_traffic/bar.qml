@@ -95,6 +95,17 @@ BarGroup {
             storeReady: cfg.ready
         }
 
+        // Continuous per-app sampler: boot/today/month per-app totals only
+        // exist while someone is accounting, so this lives with the widget,
+        // not with the popup. appMonitoring=false spawns nothing.
+        AppTraffic {
+            id: appTraffic
+            active: cfg.ready && cfg.options.appMonitoring === true
+            updateInterval: cfg.options.updateInterval
+            store: cfg.options
+            storeReady: cfg.ready
+        }
+
         TextMetrics {
             id: speedTextMetrics
             // Reserved width, so the pill doesn't jitter on every sample. The
@@ -184,10 +195,11 @@ BarGroup {
         TrafficPopup {
             hoverTarget: root
             logic: logic
+            appTraffic: appTraffic
+            appsEnabled: cfg.options.appMonitoring === true
             statsPeriod: cfg.options.statsPeriod === "today" || cfg.options.statsPeriod === "month"
                          ? cfg.options.statsPeriod : "boot"
             appsExpanded: root.appsExpanded
-            appUpdateInterval: cfg.options.updateInterval
         }
     }
 }
