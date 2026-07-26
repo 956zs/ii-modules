@@ -216,9 +216,10 @@ fn registry_with_candidate(
 ) -> Result<Registry> {
     let mut next = registry.clone();
     // Upgrades keep their update origin unless the caller supplies a new one.
-    let origin = origin
-        .map(str::to_string)
-        .or_else(|| next.get(&candidate.manifest.id).and_then(|m| m.origin.clone()));
+    let origin = origin.map(str::to_string).or_else(|| {
+        next.get(&candidate.manifest.id)
+            .and_then(|m| m.origin.clone())
+    });
     next.remove(&candidate.manifest.id);
     // The generated qmldir is part of the installed tree, so it must be part
     // of the recorded hash set or verify would flag every module.

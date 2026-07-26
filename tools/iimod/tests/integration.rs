@@ -535,7 +535,10 @@ fn disable_removes_tier_b_patches() {
     );
     let target = w.ii().join("modules/ii/bar/BarContent.qml");
     let read = || std::fs::read_to_string(&target).unwrap();
-    assert!(read().contains("iimp flip_patcher/0"), "installed: fences present");
+    assert!(
+        read().contains("iimp flip_patcher/0"),
+        "installed: fences present"
+    );
 
     // Disabled -> the module's effects stop: fences gone, stock text back.
     w.expect(&["disable", "flip_patcher"], 0);
@@ -544,7 +547,10 @@ fn disable_removes_tier_b_patches() {
 
     // Enabled -> patches recomposed.
     w.expect(&["enable", "flip_patcher"], 0);
-    assert!(read().contains("iimp flip_patcher/0"), "re-enabled: fences back");
+    assert!(
+        read().contains("iimp flip_patcher/0"),
+        "re-enabled: fences back"
+    );
 }
 
 #[test]
@@ -557,7 +563,12 @@ fn url_install_auto_records_sibling_origin() {
     std::fs::create_dir_all(&repo).unwrap();
     let pkg = repo.join("url_widget-1.0.0.iimod");
     w.expect(
-        &["pack", payload.to_str().unwrap(), "--out", pkg.to_str().unwrap()],
+        &[
+            "pack",
+            payload.to_str().unwrap(),
+            "--out",
+            pkg.to_str().unwrap(),
+        ],
         0,
     );
     let url = format!("file://{}", pkg.display());
@@ -581,7 +592,12 @@ fn url_install_auto_records_sibling_origin() {
     std::fs::write(&manifest_path, manifest).unwrap();
     let pkg2 = repo.join("url_widget-1.1.0.iimod");
     w.expect(
-        &["pack", payload.to_str().unwrap(), "--out", pkg2.to_str().unwrap()],
+        &[
+            "pack",
+            payload.to_str().unwrap(),
+            "--out",
+            pkg2.to_str().unwrap(),
+        ],
         0,
     );
     let sha = {
