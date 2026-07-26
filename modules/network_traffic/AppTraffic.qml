@@ -2,15 +2,20 @@ import QtQuick
 import Quickshell.Io
 
 /*
- * Per-app bandwidth sampler (instance, not a singleton). Runs only while
- * `active` (the popup binds it to its own lifetime, so nothing is spawned
- * when the popup is closed).
+ * Per-app traffic sampler and accountant (instance, not a singleton).
  *
- * Primary source: `nethogs -t` (pcap; sees TCP and UDP, so QUIC-heavy apps
- * like browsers are counted). Declared in requires.system; running it
- * unprivileged needs file capabilities on the binary (see README). If it
- * dies or stays silent — no caps, other distro, whatever — we degrade to
- * polling `ss -tinp`, which is unprivileged but kernel-TCP only.
+ * Runs for the whole life of the bar widget (not just while the popup is
+ * open): per-app history only exists if someone is watching, so the sampler
+ * accumulates boot/today/month totals per app and persists them through the
+ * ConfigLoader adapter. A userspace sampler can only account for time it was
+ * actually running — the seconds between system boot and shell start are lost,
+ * for nethogs and ss alike.
+ *
+ * Primary source: `nethogs -t -v 2` (pcap, cumulative bytes since process
+ * start; sees TCP and UDP, so QUIC-heavy apps like browsers are counted).
+ * Declared in requires.system; rootless capture needs file capabilities on
+ * the binary (see README). If it dies or stays silent, degrade to polling
+ * `ss -tinp` — unprivileged but kernel-TCP only.
  */
 Item {
     id: root
@@ -20,28 +25,36 @@ Item {
 
     property bool active: false
     property int updateInterval: 2000
+    // ConfigLoader adapter + its ready flag, for persisted accounting.
+    property var store: null
+    property bool storeReady: false
 
     // "starting" | "nethogs" | "ss" | "none"
     property string source: "starting"
     readonly property bool tcpOnly: source === "ss"
-    // [{name, down, up}] bytes/s, sorted by down+up descending.
+    // Live rates, [{name, down, up}] bytes/s sorted by down+up descending.
     property list<var> apps: []
-    readonly property var topApp: apps.length > 0 ? apps[0] : null
-    // Share of the total sampled traffic attributed to the top app, 0..1.
-    readonly property real topShare: {
-        if (!topApp) return 0
-        let total = 0
-        for (const a of apps) total += a.down + a.up
-        return total > 0 ? (topApp.down + topApp.up) / total : 0
-    }
+    // Bumped whenever accounting changes so bindings can recompute ranking().
+    property int acctRevision: 0
 
     readonly property int nethogsSeconds: Math.max(1, Math.round(updateInterval / 1000))
+
+    // name -> {dk, drx, dtx, mk, mrx, mtx, brx, btx}  (bytes; d=day m=month b=boot)
+    property var acct: ({})
+    property bool acctLoaded: false
+    property string bootId: ""
+
+    // Sentinel for pruned long-tail apps; translated at display time.
+    readonly property string otherKey: "__other"
+    readonly property int maxTrackedApps: 30
 
     onActiveChanged: {
         if (active) {
             source = "starting"
             nethogsBatch = []
             nethogsSawSnapshot = false
+            lastCum = {}
+            lastBatchTime = 0
             nethogs.running = true
             startupTimeout.restart()
         } else {
@@ -50,19 +63,127 @@ Item {
             ssProc.running = false
             apps = []
             ssPrevious = null
+            flushAcct()
         }
     }
+
+    // --- persisted accounting --------------------------------------------
+
+    FileView {
+        id: bootIdFile
+        path: "/proc/sys/kernel/random/boot_id"
+        onLoaded: {
+            root.bootId = text().trim()
+            root.tryInitAcct()
+        }
+    }
+
+    onStoreReadyChanged: tryInitAcct()
+
+    function tryInitAcct() {
+        if (acctLoaded || !store || !storeReady || bootId === "") return
+        const map = {}
+        for (const e of store.appAcct) {
+            map[e.n] = { dk: e.dk, drx: e.drx, dtx: e.dtx,
+                         mk: e.mk, mrx: e.mrx, mtx: e.mtx,
+                         brx: e.brx, btx: e.btx }
+        }
+        if (store.appAcctBootId !== bootId) {
+            for (const n in map) {
+                map[n].brx = 0
+                map[n].btx = 0
+            }
+            store.appAcctBootId = bootId
+        }
+        acct = map
+        acctLoaded = true
+        acctRevision++
+    }
+
+    function dayKey(now) {
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+    }
+
+    function monthKey(now) {
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    }
+
+    function accumulate(name, drx, dtx) {
+        if (!acctLoaded || (drx <= 0 && dtx <= 0)) return
+        const now = new Date()
+        const dk = dayKey(now)
+        const mk = monthKey(now)
+        const a = acct[name] ?? { dk, drx: 0, dtx: 0, mk, mrx: 0, mtx: 0, brx: 0, btx: 0 }
+        if (a.dk !== dk) { a.dk = dk; a.drx = 0; a.dtx = 0 }
+        if (a.mk !== mk) { a.mk = mk; a.mrx = 0; a.mtx = 0 }
+        a.drx += drx; a.dtx += dtx
+        a.mrx += drx; a.mtx += dtx
+        a.brx += drx; a.btx += dtx
+        acct[name] = a
+    }
+
+    // Ranking for a period: [{name, rx, tx}] sorted by rx+tx descending.
+    // Callers reference acctRevision in the binding for reactivity.
+    function ranking(period) {
+        const rows = []
+        for (const n in acct) {
+            const a = acct[n]
+            const rx = period === "today" ? a.drx : period === "month" ? a.mrx : a.brx
+            const tx = period === "today" ? a.dtx : period === "month" ? a.mtx : a.btx
+            if (rx + tx > 0) rows.push({ name: n, rx, tx })
+        }
+        return rows.sort((x, y) => (y.rx + y.tx) - (x.rx + x.tx))
+    }
+
+    function flushAcct() {
+        if (!store || !acctLoaded) return
+        // Prune the long tail so the config file stays bounded: keep the top
+        // N by month volume, fold the rest into a single "other" bucket.
+        const names = Object.keys(acct)
+            .filter(n => n !== otherKey)
+            .sort((x, y) => (acct[y].mrx + acct[y].mtx) - (acct[x].mrx + acct[x].mtx))
+        if (names.length > maxTrackedApps) {
+            const now = new Date()
+            const other = acct[otherKey] ?? { dk: dayKey(now), drx: 0, dtx: 0,
+                                              mk: monthKey(now), mrx: 0, mtx: 0, brx: 0, btx: 0 }
+            for (const n of names.slice(maxTrackedApps)) {
+                const a = acct[n]
+                other.drx += a.drx; other.dtx += a.dtx
+                other.mrx += a.mrx; other.mtx += a.mtx
+                other.brx += a.brx; other.btx += a.btx
+                delete acct[n]
+            }
+            acct[otherKey] = other
+        }
+        const out = []
+        for (const n in acct) {
+            const a = acct[n]
+            out.push({ n, dk: a.dk, drx: a.drx, dtx: a.dtx,
+                       mk: a.mk, mrx: a.mrx, mtx: a.mtx, brx: a.brx, btx: a.btx })
+        }
+        store.appAcct = out
+    }
+
+    // Each JsonAdapter assignment is a config-file write; flush sparsely.
+    Timer {
+        interval: 60000
+        running: root.active && root.acctLoaded
+        repeat: true
+        onTriggered: root.flushAcct()
+    }
+
+    Component.onDestruction: flushAcct()
 
     // --- name prettifying --------------------------------------------------
 
     property var commByPid: ({})
+    // entryId -> {pid, rx, tx}: deltas held back until the name resolves, so
+    // Electron apps reporting /proc/self/exe aren't misfiled under "exe".
+    property var pendingDelta: ({})
 
     function prettyName(cmdline, pid) {
-        // nethogs prints "<cmdline>/<pid>/<uid>"; cmdline itself may hold
-        // spaces and arguments. First token, basename of it.
         const exe = cmdline.split(" ")[0]
         const base = exe.substring(exe.lastIndexOf("/") + 1)
-        // Electron apps often resolve to /proc/self/exe; fall back to comm.
         if (base === "exe" || base === "") {
             return root.commByPid[pid] ?? null // null -> needs ps resolution
         }
@@ -96,6 +217,10 @@ Item {
 
     property var nethogsBatch: []
     property bool nethogsSawSnapshot: false
+    // entryId -> {rx, tx}: last cumulative reading, for deltas. In-memory
+    // only; a nethogs restart resets its counters, so baselines restart too.
+    property var lastCum: ({})
+    property real lastBatchTime: 0
 
     // If nethogs produced nothing usable in time (missing caps, pcap refused),
     // fall back. Its "cannot open netlink/pcap" chatter goes to stderr, so
@@ -113,8 +238,10 @@ Item {
 
     Process {
         id: nethogs
-        // nethogs block-buffers stdout when piped; stdbuf keeps it line-based.
-        command: ["stdbuf", "-oL", "nethogs", "-t", "-d", String(root.nethogsSeconds)]
+        // -v 2: cumulative bytes since nethogs start — deltas survive UI
+        // pauses, unlike the KB/s view. nethogs block-buffers stdout when
+        // piped; stdbuf keeps it line-based.
+        command: ["stdbuf", "-oL", "nethogs", "-t", "-v", "2", "-d", String(root.nethogsSeconds)]
         stdout: SplitParser {
             onRead: data => {
                 const line = data.trim()
@@ -122,15 +249,15 @@ Item {
                     root.commitNethogsBatch()
                     return
                 }
-                // "<prog>/<pid>/<uid>\t<sentKB/s>\t<recvKB/s>"
+                // "<prog>/<pid>/<uid>\t<sent bytes>\t<recv bytes>"
                 const parts = line.split("\t")
                 if (parts.length < 3) return
-                const up = parseFloat(parts[parts.length - 2])
-                const down = parseFloat(parts[parts.length - 1])
+                const tx = parseFloat(parts[parts.length - 2])
+                const rx = parseFloat(parts[parts.length - 1])
                 const idPart = parts.slice(0, parts.length - 2).join("\t")
                 const m = idPart.match(/^(.*)\/(\d+)\/(\d+)$/)
-                if (!m || m[2] === "0" || isNaN(up) || isNaN(down)) return
-                root.nethogsBatch.push({ cmdline: m[1], pid: m[2], up: up * 1024, down: down * 1024 })
+                if (!m || m[2] === "0" || isNaN(tx) || isNaN(rx)) return
+                root.nethogsBatch.push({ cmdline: m[1], pid: m[2], rx, tx })
             }
         }
         onExited: (exitCode, exitStatus) => {
@@ -148,22 +275,56 @@ Item {
             root.source = "nethogs"
             startupTimeout.stop()
         }
-        const byName = {}
+
+        const now = Date.now()
+        const elapsed = root.lastBatchTime > 0 ? (now - root.lastBatchTime) / 1000 : 0
+        root.lastBatchTime = now
+
+        const rates = {}
         const unresolved = []
         for (const e of batch) {
+            const entryId = `${e.cmdline}/${e.pid}`
+            const prev = root.lastCum[entryId]
+            root.lastCum[entryId] = { rx: e.rx, tx: e.tx }
+            // First sighting or counter shrink (restart): baseline only.
+            if (!prev || e.rx < prev.rx || e.tx < prev.tx) continue
+            const drx = e.rx - prev.rx
+            const dtx = e.tx - prev.tx
+            if (drx === 0 && dtx === 0) continue
+
             const name = root.prettyName(e.cmdline, e.pid)
             if (name === null) {
+                // Park the delta until ps tells us the real name.
+                const p = root.pendingDelta[entryId] ?? { pid: e.pid, rx: 0, tx: 0 }
+                p.rx += drx
+                p.tx += dtx
+                root.pendingDelta[entryId] = p
                 unresolved.push(e.pid)
                 continue
             }
-            byName[name] = byName[name] ?? { name, down: 0, up: 0 }
-            byName[name].down += e.down
-            byName[name].up += e.up
+            root.accumulate(name, drx, dtx)
+            if (elapsed > 0) {
+                rates[name] = rates[name] ?? { name, down: 0, up: 0 }
+                rates[name].down += drx / elapsed
+                rates[name].up += dtx / elapsed
+            }
+        }
+
+        // Drain parked deltas whose names have resolved since.
+        for (const entryId in root.pendingDelta) {
+            const p = root.pendingDelta[entryId]
+            const name = root.commByPid[p.pid]
+            if (name !== undefined) {
+                root.accumulate(name, p.rx, p.tx)
+                delete root.pendingDelta[entryId]
+            }
         }
         if (unresolved.length > 0) root.resolveComms(unresolved)
-        root.apps = Object.values(byName)
+
+        root.apps = Object.values(rates)
             .filter(a => a.down + a.up >= 1)
             .sort((a, b) => (b.down + b.up) - (a.down + a.up))
+        root.acctRevision++
     }
 
     // --- ss fallback (TCP only) --------------------------------------------
@@ -201,8 +362,9 @@ Item {
 
     function commitSsSample(text) {
         // Per-socket cumulative bytes, summed per process name. Two samples
-        // give rates. Sockets vanish when closed; per-app sums can therefore
-        // shrink, so negative deltas are clamped.
+        // give deltas. Sockets vanish when closed; per-app sums can therefore
+        // shrink, so negative deltas are clamped — traffic on sockets that
+        // opened and closed between polls is lost (pcap has no such gap).
         const now = Date.now()
         const totals = {}
         let name = null
@@ -229,10 +391,15 @@ Item {
         const out = []
         for (const n in totals) {
             const p = prev.totals[n] ?? { rx: 0, tx: 0 }
-            const down = Math.max(0, totals[n].rx - p.rx) / elapsed
-            const up = Math.max(0, totals[n].tx - p.tx) / elapsed
+            const drx = Math.max(0, totals[n].rx - p.rx)
+            const dtx = Math.max(0, totals[n].tx - p.tx)
+            if (drx + dtx === 0) continue
+            root.accumulate(n, drx, dtx)
+            const down = drx / elapsed
+            const up = dtx / elapsed
             if (down + up >= 1) out.push({ name: n, down, up })
         }
         root.apps = out.sort((a, b) => (b.down + b.up) - (a.down + a.up))
+        root.acctRevision++
     }
 }

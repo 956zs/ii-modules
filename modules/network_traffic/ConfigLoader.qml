@@ -53,6 +53,10 @@ FileView {
         // Which totals the popup shows; left-click on the bar widget cycles it.
         property string statsPeriod: "boot" // "boot" | "today" | "month"
 
+        // Per-app accounting (continuous nethogs/ss sampling). Off hides the
+        // popup's app section and spawns nothing.
+        property bool appMonitoring: true
+
         // Persisted accounting state (managed by TrafficLogic, flushed at most
         // once a minute — not user settings). rx/tx are bytes accumulated for
         // the key's period; sample* is the last /proc/net/dev reading so a
@@ -66,5 +70,11 @@ FileView {
         property real acctMonthTx: 0
         property real acctSampleRx: 0
         property real acctSampleTx: 0
+
+        // Per-app accounting state (managed by AppTraffic, same flush cadence).
+        // One record per app: n=name, dk/drx/dtx=day, mk/mrx/mtx=month,
+        // brx/btx=boot. Boot buckets reset when appAcctBootId changes.
+        property string appAcctBootId: ""
+        property list<var> appAcct: []
     }
 }
