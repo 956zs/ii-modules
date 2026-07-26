@@ -60,6 +60,19 @@ FileView {
         // anything older than today.
         property bool keepHistory: true
 
+        // AI agent work time: samples /proc every 10s for processes whose
+        // comm matches this regex; a session counts as "working" in a window
+        // where its process tree burned more CPU than the threshold below.
+        // Keeps counting while the screen is locked — an agent working while
+        // you are away is exactly what this dimension measures.
+        property bool aiTracking: true
+        property string aiProcessRegex: "^(claude|codex)$"
+
+        // Working threshold, percent of one core over the sample window.
+        // Calibrated on real sessions: a claude CLI idle at its prompt is
+        // 0%, a working one 20%+, so 1% separates them with margin.
+        property int aiActiveCpuPct: 1
+
         // Usage history blob, managed by ScreentimeLogic in the window slot,
         // flushed at most once a minute — not a user setting.
         // {v, day:{k,apps:{id:sec},hours:[24]}, days:[{k,total,apps:[{n,s}]}]}

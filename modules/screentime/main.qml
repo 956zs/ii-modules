@@ -26,6 +26,13 @@ Scope {
         storeReady: cfg.ready
     }
 
+    // Feeds the separate "AI agents working" dimension into the same
+    // accountant; lives here for the same single-instance reason.
+    AgentMonitor {
+        store: cfg.options
+        logic: logic
+    }
+
     DetailsPanel {
         id: panel
         logic: logic

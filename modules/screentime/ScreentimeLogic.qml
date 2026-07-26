@@ -55,6 +55,17 @@ Item {
     property int revision: 0
     property bool dirty: false
 
+    // --- AI agent work time (separate dimension, fed by AgentMonitor) -------
+    // Never mixed into the focus numbers above: focus time answers "how long
+    // did I look at the screen", these answer "how long were agents working",
+    // including while unfocused or locked.
+    property real aiUnion: 0     // today, seconds where ≥1 session was working
+    property real aiSum: 0       // today, Σ seconds × working sessions
+    property int aiPeak: 0       // today, max concurrently working sessions
+    // Live sampler state for the UI, not persisted.
+    property int aiActiveNow: 0
+    property int aiSessionsNow: 0
+
     // --- focus tracking -----------------------------------------------------
     readonly property string focusedApp: {
         if (GlobalStates.screenLocked) return ""
@@ -95,6 +106,9 @@ Item {
             root.todayApps = ({})
             root.hours = new Array(24).fill(0)
             root.todayTotal = 0
+            root.aiUnion = 0
+            root.aiSum = 0
+            root.aiPeak = 0
             root.flush() // keys and values travel together; no torn window
         }
 
@@ -112,16 +126,30 @@ Item {
         root.revision++
     }
 
+    // Close out the window the sampler just measured. Rollover is owned by
+    // accrue(); force it here so post-midnight agent seconds land in the new
+    // day even if no focus event has fired yet.
+    function accrueAi(elapsed, activeCount) {
+        if (!root.ready || elapsed <= 0 || activeCount <= 0) return
+        if (root.curDayKey !== root.dayKeyOf(new Date())) root.accrue()
+        root.aiUnion += elapsed
+        root.aiSum += elapsed * activeCount
+        if (activeCount > root.aiPeak) root.aiPeak = activeCount
+        root.dirty = true
+        root.revision++
+    }
+
     // Fold the in-memory day into the daily history: top N apps by seconds,
     // the tail summed into "other".
     function foldToday() {
         if (!root.keepHistory) return
-        if (root.curDayKey === "" || root.todayTotal <= 0) return
-        root.days = root.trimmedDays(root.days.concat([root.foldedDay(root.curDayKey, root.todayApps)]))
+        if (root.curDayKey === "" || (root.todayTotal <= 0 && root.aiUnion <= 0)) return
+        root.days = root.trimmedDays(root.days.concat(
+            [root.foldedDay(root.curDayKey, root.todayApps, root.aiUnion, root.aiSum, root.aiPeak)]))
         root.dirty = true
     }
 
-    function foldedDay(key, appsMap) {
+    function foldedDay(key, appsMap, aiU, aiS, aiP) {
         const sorted = Object.entries(appsMap)
             .map(([n, s]) => ({ n, s: Math.round(s) }))
             .filter(a => a.s > 0)
@@ -129,7 +157,8 @@ Item {
         const top = sorted.slice(0, root.maxAppsPerDay)
         const rest = sorted.slice(root.maxAppsPerDay).reduce((acc, a) => acc + a.s, 0)
         if (rest > 0) top.push({ n: root.otherKey, s: rest })
-        return { k: key, total: sorted.reduce((acc, a) => acc + a.s, 0), apps: top }
+        return { k: key, total: sorted.reduce((acc, a) => acc + a.s, 0), apps: top,
+                 aiU: Math.round(aiU ?? 0), aiS: Math.round(aiS ?? 0), aiP: aiP ?? 0 }
     }
 
     function trimmedDays(list) {
@@ -150,20 +179,29 @@ Item {
         }
         let apps = ({})
         let hrs = new Array(24).fill(0)
+        let aiU = 0, aiS = 0, aiP = 0
         let past = Array.isArray(s?.days) ? s.days.filter(d => d && typeof d.k === "string") : []
         const day = s?.day
         if (day && typeof day.apps === "object" && day.apps !== null) {
+            const dayAi = (day.ai && typeof day.ai === "object") ? day.ai : ({})
             if (day.k === root.curDayKey) {
                 apps = day.apps
                 if (Array.isArray(day.hours) && day.hours.length === 24)
                     hrs = day.hours.map(v => Number(v) || 0)
+                aiU = Number(dayAi.u) || 0
+                aiS = Number(dayAi.s) || 0
+                aiP = Number(dayAi.p) || 0
             } else if (day.k < root.curDayKey) {
                 // The shell was last running on an earlier day: that day is
                 // over, fold it into history before starting today from zero.
-                past = past.concat([root.foldedDay(day.k, day.apps)])
+                past = past.concat([root.foldedDay(day.k, day.apps,
+                    Number(dayAi.u) || 0, Number(dayAi.s) || 0, Number(dayAi.p) || 0)])
             }
         }
         root.todayApps = apps
+        root.aiUnion = aiU
+        root.aiSum = aiS
+        root.aiPeak = aiP
         root.hours = hrs
         root.todayTotal = Object.values(apps).reduce((acc, v) => acc + (Number(v) || 0), 0)
         root.days = root.keepHistory ? root.trimmedDays(past) : []
@@ -181,7 +219,8 @@ Item {
             rounded[n] = Math.round(s)
         store.histState = JSON.stringify({
             v: 1,
-            day: { k: root.curDayKey, apps: rounded, hours: root.hours.map(v => Math.round(v)) },
+            day: { k: root.curDayKey, apps: rounded, hours: root.hours.map(v => Math.round(v)),
+                   ai: { u: Math.round(root.aiUnion), s: Math.round(root.aiSum), p: root.aiPeak } },
             days: root.keepHistory ? root.days : []
         })
         root.dirty = false
@@ -249,10 +288,10 @@ Item {
             const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
             const k = root.dayKeyOf(d)
             if (i === 0) {
-                out.push({ k, total: root.todayTotal, dow: d.getDay(), isToday: true })
+                out.push({ k, total: root.todayTotal, ai: root.aiUnion, dow: d.getDay(), isToday: true })
             } else {
                 const rec = root.days.find(x => x.k === k)
-                out.push({ k, total: rec?.total ?? 0, dow: d.getDay(), isToday: false })
+                out.push({ k, total: rec?.total ?? 0, ai: Number(rec?.aiU) || 0, dow: d.getDay(), isToday: false })
             }
         }
         return out
