@@ -30,6 +30,21 @@ BarGroup {
         implicitWidth: content.implicitWidth + root.hPadding * 2
         implicitHeight: Appearance.sizes.baseBarHeight
         hoverEnabled: !Config.options.bar.tooltips.clickToShow
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+        // Left-click cycles the popup's totals period, right-click expands the
+        // per-app ranking — the popup itself is a hover tooltip and can't take
+        // clicks.
+        property bool appsExpanded: false
+        onPressed: event => {
+            if (event.button === Qt.LeftButton) {
+                const order = ["boot", "today", "month"]
+                const i = order.indexOf(cfg.options.statsPeriod)
+                cfg.options.statsPeriod = order[(i + 1) % order.length]
+            } else if (event.button === Qt.RightButton) {
+                root.appsExpanded = !root.appsExpanded
+            }
+        }
 
         ConfigLoader { id: cfg }
 
@@ -64,15 +79,20 @@ BarGroup {
         readonly property int iconSize: root.stacked ? Math.max(8, root.textSize - 1) : Appearance.font.pixelSize.normal
         readonly property int hPadding: root.stacked ? 4 : 10
 
-        // Without arrows the direction has to read from colour, matching the
-        // two trend graphs in the popup.
-        readonly property color downColor: root.showIcons ? Appearance.colors.colOnLayer1 : Appearance.colors.colPrimary
-        readonly property color upColor: root.showIcons ? Appearance.colors.colOnLayer1 : Appearance.colors.colTertiary
+        // Values follow the Material You scheme (regenerated from the
+        // wallpaper): download primary, upload tertiary — same coding as the
+        // popup's two graphs.
+        readonly property color downColor: Appearance.colors.colPrimary
+        readonly property color upColor: Appearance.colors.colTertiary
+        // Breathing arrows above this rate ("high traffic").
+        readonly property real breatheThreshold: 1024 * 1024 // 1 MiB/s
 
         TrafficLogic {
             id: logic
             updateInterval: cfg.options.updateInterval
             excludeRegex: cfg.options.excludeRegex
+            store: cfg.options
+            storeReady: cfg.ready
         }
 
         TextMetrics {
@@ -83,6 +103,25 @@ BarGroup {
             text: root.stacked ? "888M" : "888.8M"
             font.family: Appearance.font.family.main
             font.pixelSize: root.textSize
+        }
+
+        // Direction arrow that "breathes" while its rate is high. Dim when the
+        // direction is quiet, like before.
+        component BreathingArrow: MaterialSymbol {
+            id: arrow
+            property real speed: 0
+            fill: 0
+            iconSize: root.iconSize
+            color: speed >= 1024 ? Appearance.colors.colOnLayer1 : Appearance.colors.colOnLayer1Inactive
+            Layout.alignment: Qt.AlignVCenter
+
+            SequentialAnimation {
+                running: arrow.visible && arrow.speed >= root.breatheThreshold
+                loops: Animation.Infinite
+                onStopped: arrow.opacity = 1
+                NumberAnimation { target: arrow; property: "opacity"; to: 0.3; duration: 600; easing.type: Easing.InOutSine }
+                NumberAnimation { target: arrow; property: "opacity"; to: 1; duration: 600; easing.type: Easing.InOutSine }
+            }
         }
 
         // One self-contained row per direction. `columns` flips them between
@@ -104,13 +143,10 @@ BarGroup {
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.stacked ? root.rowHeight : implicitHeight
 
-                MaterialSymbol {
+                BreathingArrow {
                     visible: root.showIcons
-                    fill: 0
                     text: "arrow_downward"
-                    iconSize: root.iconSize
-                    color: logic.downSpeed >= 1024 ? Appearance.colors.colOnLayer1 : Appearance.colors.colOnLayer1Inactive
-                    Layout.alignment: Qt.AlignVCenter
+                    speed: logic.downSpeed
                 }
 
                 StyledText {
@@ -128,13 +164,10 @@ BarGroup {
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.stacked ? root.rowHeight : implicitHeight
 
-                MaterialSymbol {
+                BreathingArrow {
                     visible: root.showIcons
-                    fill: 0
                     text: "arrow_upward"
-                    iconSize: root.iconSize
-                    color: logic.upSpeed >= 1024 ? Appearance.colors.colOnLayer1 : Appearance.colors.colOnLayer1Inactive
-                    Layout.alignment: Qt.AlignVCenter
+                    speed: logic.upSpeed
                 }
 
                 StyledText {
@@ -151,6 +184,10 @@ BarGroup {
         TrafficPopup {
             hoverTarget: root
             logic: logic
+            statsPeriod: cfg.options.statsPeriod === "today" || cfg.options.statsPeriod === "month"
+                         ? cfg.options.statsPeriod : "boot"
+            appsExpanded: root.appsExpanded
+            appUpdateInterval: cfg.options.updateInterval
         }
     }
 }
