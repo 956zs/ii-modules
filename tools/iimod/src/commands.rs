@@ -191,16 +191,23 @@ pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
             }
         }
     }
+    // Tier B state changes move patches in or out of the composition; Tier A
+    // flips are config-list-only and reload live without this. Recompose
+    // BEFORE persisting the registry: recomposition is the step that can fail
+    // (anchors, permissions), and failing after the save would strand a
+    // "disabled but still patched" inconsistency. recompose_all dry-runs
+    // every target before writing any, so a failure here leaves the stock
+    // tree untouched too.
+    let tier_b_flip = to_flip
+        .iter()
+        .any(|t| registry.get(t).is_some_and(|m| m.manifest.is_tier_b()));
+    if tier_b_flip {
+        crate::ops::recompose_all(&registry, true)?;
+    }
     registry::save(&registry)?;
     write_index_projection(&registry)?;
     project_enabled(&registry)?;
-    // Tier B state changes move patches in or out of the composition;
-    // Tier A flips are config-list-only and reload live without this.
-    if to_flip
-        .iter()
-        .any(|t| registry.get(t).is_some_and(|m| m.manifest.is_tier_b()))
-    {
-        crate::ops::recompose_all(&registry, true)?;
+    if tier_b_flip {
         let _ = crate::qs::trigger_reload();
     }
     println!(
