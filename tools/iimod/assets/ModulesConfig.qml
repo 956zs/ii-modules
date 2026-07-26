@@ -48,31 +48,6 @@ ContentPage {
     }
 
     ContentSection {
-        icon: "swap_vert"
-        title: Translation.tr("Bar placement")
-
-        StyledText {
-            Layout.fillWidth: true
-            font.pixelSize: Appearance.font.pixelSize.smaller
-            color: Appearance.colors.colOnSurfaceVariant
-            wrapMode: Text.WordWrap
-            text: Translation.tr("Where bar modules sit on a vertical (left/right) bar. Top uses the empty stretch and can never collide with the centred widgets; bottom sits above the tray but may overlap the clock on busy bars.")
-        }
-
-        ConfigSelectionArray {
-            Layout.fillWidth: false
-            currentValue: Config.options.iimp?.verticalPlacement === "bottom" ? "bottom" : "top"
-            onSelected: newValue => {
-                Config.options.iimp.verticalPlacement = newValue;
-            }
-            options: [
-                { displayName: Translation.tr("Top"), icon: "vertical_align_top", value: "top" },
-                { displayName: Translation.tr("Above tray"), icon: "vertical_align_bottom", value: "bottom" },
-            ]
-        }
-    }
-
-    ContentSection {
         icon: "extension"
         title: Translation.tr("Installed modules")
 
@@ -296,6 +271,40 @@ ContentPage {
                             color: Appearance.m3colors.m3error
                             wrapMode: Text.WordWrap
                             text: card.lastFlipError
+                        }
+                    }
+
+                    // Per-module placement on vertical (left/right) bars.
+                    // Host-level concern, so it lives here, not in the
+                    // module's own settings fragment. Reassign the whole map:
+                    // mutating a key inside a var property emits no change
+                    // signal, so the bar would never react.
+                    RowLayout {
+                        visible: (card.modelData.slots ?? []).indexOf("bar") !== -1
+                        spacing: 8
+
+                        MaterialSymbol {
+                            text: "swap_vert"
+                            iconSize: Appearance.font.pixelSize.large
+                            color: Appearance.colors.colOnSurfaceVariant
+                        }
+                        StyledText {
+                            font.pixelSize: Appearance.font.pixelSize.smaller
+                            color: Appearance.colors.colOnSurfaceVariant
+                            text: Translation.tr("Vertical bar position")
+                        }
+                        ConfigSelectionArray {
+                            Layout.fillWidth: false
+                            currentValue: ((Config.options.iimp?.barPlacements ?? ({}))[card.modelData.id] ?? "top")
+                            onSelected: newValue => {
+                                const next = Object.assign({}, Config.options.iimp.barPlacements ?? ({}));
+                                next[card.modelData.id] = newValue;
+                                Config.options.iimp.barPlacements = next;
+                            }
+                            options: [
+                                { displayName: Translation.tr("Top"), icon: "vertical_align_top", value: "top" },
+                                { displayName: Translation.tr("Above tray"), icon: "vertical_align_bottom", value: "bottom" },
+                            ]
                         }
                     }
 
