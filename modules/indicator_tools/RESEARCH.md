@@ -28,3 +28,11 @@ D-Bus、為繞開 iwd 後端 vs dots-hyprland nmcli 存儲衝突而裝、非 cms
   SSID 去重取最強訊號）——資料層可直接復用
 - `PanelShell.qml`：四種 bar 位置錨定＋focus grab＋Esc 的窗框
 - 補丁＋IPC 橋（右鍵 → 模塊面板）架構
+
+## 補遺（本機實測，2026-07-27）
+- **gnome-control-center 在本機 Hyprland 下無法渲染**：行程存活、真的在掃
+  WiFi，但視窗永不合成畫面，3-5 秒後靜默退出（8 次嘗試皆然；疑缺
+  xdg-desktop-portal-gnome / GNOME Shell IPC）。朋友同為 Hyprland rice，
+  此候選的實用性存疑 → **天平倒向 iwgtk＋Overskride**。
+- 比對截圖（重寫時可給朋友指認）：/tmp/candidate-gcc-wifi.png（僅 app
+  外殼風格）、/tmp/candidate-blueberry.png、/tmp/candidate-nmce.png。
