@@ -55,8 +55,11 @@ function VersionBadge({ version }: { version: VersionState }) {
 }
 
 function ModuleDetailDialog({ module: mod, version }: ModuleCardProps) {
+  // Wide enough that the install command rarely wraps on desktop (w-fit would
+  // break here: shrink-to-fit of a fixed element with left:50% caps available
+  // width at half the viewport).
   return (
-    <DialogContent className="max-h-[85svh] grid-cols-1 overflow-x-hidden overflow-y-auto *:min-w-0 sm:max-w-lg">
+    <DialogContent className="max-h-[85svh] grid-cols-1 overflow-x-hidden overflow-y-auto *:min-w-0 sm:max-w-[min(92vw,60rem)]">
       <DialogHeader>
         <DialogTitle className="flex flex-wrap items-center gap-2 pr-8 text-lg">
           {mod.name.zh_TW}

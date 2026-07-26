@@ -9,14 +9,21 @@ export function CommandBlock({ command, label }: CommandBlockProps) {
   return (
     <div className="min-w-0 flex flex-col gap-1.5">
       {label ? <span className="text-xs text-muted-foreground">{label}</span> : null}
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-card/60 py-2 pr-1.5 pl-3.5">
-        <span aria-hidden="true" className="font-mono text-xs text-brand select-none sm:text-sm">
+      {/* The pill hugs the command's natural width on wide screens (sm:w-fit);
+          when the container is narrower than the command, the text wraps —
+          never truncates, never scrolls. */}
+      <div className="flex w-full max-w-full items-start gap-2 rounded-lg border border-border bg-card/60 py-2 pr-1.5 pl-3.5 sm:w-fit">
+        <span
+          aria-hidden="true"
+          className="font-mono text-xs leading-5 text-brand select-none"
+        >
           $
         </span>
-        <code className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain font-mono text-xs whitespace-pre text-foreground/90 sm:text-sm">
+        <code className="min-w-0 flex-1 font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/90">
           {command}
         </code>
-        <CopyButton value={command} label="複製指令" />
+        {/* -my-1 centers the 28px button on the 20px first text line. */}
+        <CopyButton value={command} label="複製指令" className="-my-1" />
       </div>
     </div>
   )
