@@ -70,6 +70,7 @@ jobs:
           gh release create "$RELEASE_TAG" \
             "dist/release/$RELEASE_TAG/$LINUX_BIN_NAME" \
             "dist/release/$RELEASE_TAG"/*.iimod \
+            "dist/release/$RELEASE_TAG/index.json" \
             "dist/release/$RELEASE_TAG/ii-modules-starter-$RELEASE_TAG.zip" \
             "dist/release/$RELEASE_TAG/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" \
