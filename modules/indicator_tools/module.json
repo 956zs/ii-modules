@@ -7,10 +7,10 @@
     "zh_CN": "指示器工具"
   },
   "description": {
-    "en_US": "Right-click the bar's WiFi / Bluetooth indicator icons to launch their D-Bus GUI tools (nm-connection-editor / blueberry, with fallbacks). Left-click behaviour is untouched.",
-    "zh_TW": "右鍵 bar 上的 WiFi／藍牙指示圖示，直接開啟對應的 D-Bus 圖形工具（nm-connection-editor／blueberry，含備援鏈）。左鍵行為不變。"
+    "en_US": "Right-click the bar's WiFi / Bluetooth indicator icons to launch their backend-native D-Bus GUI tools (iwgtk/overskride for iwd+BlueZ setups, falling back to nm-connection-editor/blueberry on NetworkManager stacks). Born from the iwd-backend vs dots-hyprland nmcli storage mismatch. Left-click behaviour is untouched.",
+    "zh_TW": "右鍵 bar 上的 WiFi／藍牙指示圖示，開啟後端原生的 D-Bus 圖形工具（iwd 環境命中 iwgtk／overskride，NM 環境自動落到 nm-connection-editor／blueberry）。起源於 iwd 後端與 dots-hyprland nmcli 存儲方式的衝突。左鍵行為不變。"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "authors": [
     "nlcat"
   ],
@@ -49,25 +49,25 @@
       "file": "modules/ii/bar/BarContent.qml",
       "op": "insert-after",
       "anchor": "text: Network.materialSymbol",
-      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in nm-connection-editor iwgtk; do command -v $t >/dev/null && exec $t; done; exec better-control --wifi\"])\n                        }\n"
+      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in iwgtk nm-connection-editor; do command -v $t >/dev/null && exec $t; done; exec better-control --wifi\"])\n                        }\n"
     },
     {
       "file": "modules/ii/bar/BarContent.qml",
       "op": "insert-after",
       "anchor": "text: BluetoothStatus.connected",
-      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in blueberry overskride blueman-manager; do command -v $t >/dev/null && exec $t; done\"])\n                        }\n"
+      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in overskride blueberry blueman-manager; do command -v $t >/dev/null && exec $t; done\"])\n                        }\n"
     },
     {
       "file": "modules/ii/verticalBar/VerticalBarContent.qml",
       "op": "insert-after",
       "anchor": "text: Network.materialSymbol",
-      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in nm-connection-editor iwgtk; do command -v $t >/dev/null && exec $t; done; exec better-control --wifi\"])\n                        }\n"
+      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in iwgtk nm-connection-editor; do command -v $t >/dev/null && exec $t; done; exec better-control --wifi\"])\n                        }\n"
     },
     {
       "file": "modules/ii/verticalBar/VerticalBarContent.qml",
       "op": "insert-after",
       "anchor": "text: BluetoothStatus.connected",
-      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in blueberry overskride blueman-manager; do command -v $t >/dev/null && exec $t; done\"])\n                        }\n"
+      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"sh\", \"-c\", \"for t in overskride blueberry blueman-manager; do command -v $t >/dev/null && exec $t; done\"])\n                        }\n"
     }
   ]
 }
