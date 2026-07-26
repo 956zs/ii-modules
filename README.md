@@ -1,6 +1,6 @@
 # ii-modules — IIMP（illogical-impulse Module Protocol）
 
-給 end-4/dots-hyprland「illogical-impulse」Quickshell 桌面的**嚴謹社群模塊協議**：
+給 [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland)「illogical-impulse」Quickshell 桌面的**嚴謹社群模塊協議**：
 愛好者可以安全地製作、分享、安裝彼此的 shell 模塊（bar 元件、懸浮視窗面板），
 帶完整的版本控制、相容性檢測、依賴管理與交易性安裝。
 
