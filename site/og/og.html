@@ -1,0 +1,147 @@
+<!doctype html>
+<!--
+  OG card template (1200x630). Regenerate the asset after edits:
+    npx playwright screenshot --viewport-size=1200,630 og/og.html public/og.png
+  Fonts resolve from node_modules, so run it from site/.
+-->
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face {
+        font-family: 'Geist Variable';
+        src: url('../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2') format('woff2-variations');
+        font-weight: 100 900;
+      }
+      @font-face {
+        font-family: 'JetBrains Mono Variable';
+        src: url('../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+        font-weight: 100 800;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: #09090b;
+        color: #fafafa;
+        font-family: 'Geist Variable', 'Noto Sans TC', sans-serif;
+        position: relative;
+      }
+      /* brand glow, top-right */
+      .glow {
+        position: absolute;
+        top: -260px;
+        right: -180px;
+        width: 780px;
+        height: 780px;
+        border-radius: 50%;
+        background: radial-gradient(closest-side, rgba(139, 92, 246, 0.28), transparent 70%);
+      }
+      .glow2 {
+        position: absolute;
+        bottom: -320px;
+        left: -220px;
+        width: 720px;
+        height: 720px;
+        border-radius: 50%;
+        background: radial-gradient(closest-side, rgba(52, 211, 153, 0.10), transparent 70%);
+      }
+      /* faint grid */
+      .grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(250, 250, 250, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(250, 250, 250, 0.035) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, black 40%, transparent 100%);
+      }
+      .wrap {
+        position: relative;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 64px 72px 56px;
+      }
+      .pill {
+        align-self: flex-start;
+        border: 1px solid rgba(250, 250, 250, 0.16);
+        background: rgba(24, 24, 27, 0.6);
+        border-radius: 999px;
+        padding: 10px 22px;
+        font-family: 'JetBrains Mono Variable', monospace;
+        font-size: 20px;
+        letter-spacing: 0.12em;
+        color: #a1a1aa;
+      }
+      h1 {
+        font-size: 118px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        line-height: 1.06;
+      }
+      h1 .accent { color: #a78bfa; }
+      .sub {
+        margin-top: 22px;
+        font-size: 40px;
+        font-weight: 450;
+        color: #d4d4d8;
+        letter-spacing: 0.01em;
+      }
+      .cmd {
+        display: inline-flex;
+        align-items: center;
+        gap: 16px;
+        align-self: flex-start;
+        border: 1px solid rgba(250, 250, 250, 0.14);
+        background: rgba(24, 24, 27, 0.72);
+        border-radius: 14px;
+        padding: 18px 26px;
+        font-family: 'JetBrains Mono Variable', monospace;
+        font-size: 25px;
+        color: rgba(250, 250, 250, 0.92);
+      }
+      .cmd .dollar { color: #a78bfa; }
+      .cmd .live {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #34d399;
+        box-shadow: 0 0 14px rgba(52, 211, 153, 0.9);
+      }
+      .footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 24px;
+        color: #71717a;
+      }
+      .footer .domain {
+        font-family: 'JetBrains Mono Variable', monospace;
+        color: #a1a1aa;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="glow"></div>
+    <div class="glow2"></div>
+    <div class="grid"></div>
+    <div class="wrap">
+      <span class="pill">IIMP · ILLOGICAL-IMPULSE MODULE PROTOCOL</span>
+      <div>
+        <h1>模塊，像套件一樣<br /><span class="accent">安裝、更新、分享</span></h1>
+        <p class="sub">給 illogical-impulse 桌面的社群模塊協議</p>
+      </div>
+      <div class="cmd">
+        <span class="live"></span>
+        <span><span class="dollar">$</span> iimod install network_traffic.iimod</span>
+      </div>
+      <div class="footer">
+        <span>探針相容檢測 · 交易性安裝 · 聯邦式更新</span>
+        <span class="domain">ii.n1cat.xyz</span>
+      </div>
+    </div>
+  </body>
+</html>
