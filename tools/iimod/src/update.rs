@@ -244,6 +244,7 @@ pub fn cmd_update(
                 no_enable: false,
                 max_size,
                 origin: None, // preserve the recorded origin
+                derived_origin: None,
             },
         )?;
     }

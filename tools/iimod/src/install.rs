@@ -36,6 +36,8 @@ pub struct InstallOpts {
     pub max_size: u64,
     /// Update index URL to record; None preserves an existing record's origin.
     pub origin: Option<String>,
+    /// Sibling-index guess from a URL install; weakest precedence.
+    pub derived_origin: Option<String>,
 }
 
 struct InstallCandidate {
@@ -83,12 +85,10 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
             std::fs::create_dir_all(&dir)?;
             let file = dir.join(name);
             crate::update::curl_fetch(url, &file, opts.max_size)?;
-            if opts.origin.is_none() {
-                if let Some(i) = url.rfind('/') {
-                    let origin = format!("{}/index.json", &url[..i]);
-                    println!("recording update origin: {origin}");
-                    opts.origin = Some(origin);
-                }
+            // Sibling-index guess; outranked by --origin and by an origin
+            // embedded in the package (the publisher's canonical statement).
+            if let Some(i) = url.rfind('/') {
+                opts.derived_origin = Some(format!("{}/index.json", &url[..i]));
             }
             downloaded = Some(file);
             downloaded.as_deref().unwrap()
@@ -135,7 +135,16 @@ fn prepare_install(
         InstallReadiness::AlreadyCurrent => return Ok(None),
         InstallReadiness::Proceed { upgrading } => upgrading,
     };
-    let next = registry_with_candidate(&registry, &candidate, opts.origin.as_deref())?;
+    // Origin precedence: --origin > embedded in the package > URL-sibling guess.
+    let origin = opts
+        .origin
+        .clone()
+        .or_else(|| candidate.payload.embedded_origin.clone())
+        .or_else(|| opts.derived_origin.clone());
+    if let Some(o) = &origin {
+        println!("update origin: {o}");
+    }
+    let next = registry_with_candidate(&registry, &candidate, origin.as_deref())?;
     dry_run_stock_composition(&next)?;
     let module_dicts = translations::load_module_dicts(&candidate.payload.dir)?;
     let stock_targets = all_stock_targets(&next, &[]);

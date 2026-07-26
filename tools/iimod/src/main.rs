@@ -106,6 +106,10 @@ enum Command {
         payload: PathBuf,
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Embed an update index URL: installers of this package get
+        /// `iimod update` support with nothing typed
+        #[arg(long)]
+        origin: Option<String>,
     },
     /// Analyze a payload and suggest compat.probes + capabilities for its manifest
     Suggest {
@@ -151,6 +155,7 @@ fn run() -> anyhow::Result<()> {
                 no_enable,
                 max_size,
                 origin,
+                derived_origin: None,
             },
         ),
         Command::Update {
@@ -164,7 +169,11 @@ fn run() -> anyhow::Result<()> {
         Command::Disable { id } => commands::cmd_set_state(&id, false),
         Command::List => commands::cmd_list(),
         Command::Info { id } => commands::cmd_info(&id),
-        Command::Pack { payload, out } => commands::cmd_pack(&payload, out),
+        Command::Pack {
+            payload,
+            out,
+            origin,
+        } => commands::cmd_pack(&payload, out, origin.as_deref()),
         Command::Suggest { source, max_size } => commands::cmd_suggest(&source, max_size),
         Command::Verify => verify::cmd_verify(),
         Command::Repair { id } => recovery::cmd_repair(id.as_deref()),

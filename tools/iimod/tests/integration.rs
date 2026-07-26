@@ -574,7 +574,7 @@ fn url_install_auto_records_sibling_origin() {
     let url = format!("file://{}", pkg.display());
     let out = w.expect(&["install", &url], 0);
     assert!(
-        String::from_utf8_lossy(&out.stdout).contains("recording update origin:"),
+        String::from_utf8_lossy(&out.stdout).contains("update origin:"),
         "auto-origin message"
     );
     let out = w.expect(&["info", "url_widget"], 0);
@@ -618,4 +618,33 @@ fn url_install_auto_records_sibling_origin() {
     w.expect(&["update"], 0);
     let out = w.expect(&["info", "url_widget"], 0);
     assert!(String::from_utf8_lossy(&out.stdout).contains("1.1.0"));
+}
+
+#[test]
+fn embedded_origin_beats_sibling_guess() {
+    let w = World::new("emborigin");
+    let payload = w.make_module("emb_widget", serde_json::json!({}));
+    let mirror = w.root.join("mirror");
+    std::fs::create_dir_all(&mirror).unwrap();
+    let pkg = mirror.join("emb_widget-1.0.0.iimod");
+    // Publisher embeds the canonical origin; the user installs from a mirror.
+    w.expect(
+        &[
+            "pack",
+            payload.to_str().unwrap(),
+            "--out",
+            pkg.to_str().unwrap(),
+            "--origin",
+            "file:///canonical/repo/index.json",
+        ],
+        0,
+    );
+    let url = format!("file://{}", pkg.display());
+    w.expect(&["install", &url], 0);
+    let out = w.expect(&["info", "emb_widget"], 0);
+    let info = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        info.contains("file:///canonical/repo/index.json"),
+        "embedded canonical origin wins over the mirror sibling: {info}"
+    );
 }

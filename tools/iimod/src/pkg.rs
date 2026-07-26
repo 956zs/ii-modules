@@ -16,16 +16,24 @@ use crate::store;
 
 pub const DEFAULT_MAX_UNPACKED: u64 = 20 * 1024 * 1024;
 
+// No deny_unknown_fields: integrity.json is tool-to-tool data and future
+// tools may add optional fields (as `origin` was) — consumers must tolerate
+// unknowns so old packages and new tools stay mutually compatible.
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct Integrity {
     pub spec_version: u32,
     pub manifest_sha256: String,
     pub files: BTreeMap<String, String>,
+    /// Update index URL embedded at pack time (`iimod pack --origin`): the
+    /// publisher's canonical source, so a hand-copied .iimod still knows
+    /// where its updates live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 /// Build `<id>.iimod` from a payload directory. Returns the integrity data.
-pub fn pack(payload: &Path, id: &str, out_path: &Path) -> Result<Integrity> {
+pub fn pack(payload: &Path, id: &str, out_path: &Path, origin: Option<&str>) -> Result<Integrity> {
     let files = store::hash_tree(payload)?;
     let manifest_sha = files
         .get("module.json")
@@ -35,6 +43,7 @@ pub fn pack(payload: &Path, id: &str, out_path: &Path) -> Result<Integrity> {
         spec_version: 1,
         manifest_sha256: manifest_sha,
         files: files.clone(),
+        origin: origin.map(str::to_string),
     };
 
     let file = std::fs::File::create(out_path)
@@ -224,11 +233,21 @@ mod tests {
         let dir = base("roundtrip");
         let payload = make_payload(&dir);
         let archive = dir.join("hello_bar.iimod");
-        pack(&payload, "hello_bar", &archive).unwrap();
+        pack(
+            &payload,
+            "hello_bar",
+            &archive,
+            Some("https://example.com/mods/index.json"),
+        )
+        .unwrap();
 
         let out = dir.join("extract");
         let unpacked = unpack(&archive, &out, DEFAULT_MAX_UNPACKED).unwrap();
         assert_eq!(unpacked.id, "hello_bar");
+        assert_eq!(
+            unpacked.integrity.origin.as_deref(),
+            Some("https://example.com/mods/index.json")
+        );
         assert_eq!(
             store::hash_tree(&payload).unwrap(),
             store::hash_tree(&unpacked.payload).unwrap()
@@ -240,7 +259,7 @@ mod tests {
         let dir = base("tamper");
         let payload = make_payload(&dir);
         let archive = dir.join("x.iimod");
-        pack(&payload, "hello_bar", &archive).unwrap();
+        pack(&payload, "hello_bar", &archive, None).unwrap();
 
         // Repack with mutated file but original integrity.json.
         let out = dir.join("mutate");

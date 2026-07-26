@@ -252,14 +252,22 @@ pub fn cmd_info(id: &str) -> Result<()> {
 // pack / init
 // ---------------------------------------------------------------------------
 
-pub fn cmd_pack(payload: &Path, out: Option<PathBuf>) -> Result<()> {
+pub fn cmd_pack(payload: &Path, out: Option<PathBuf>, origin: Option<&str>) -> Result<()> {
     let (m, warnings) = validate_payload(payload)?;
     for w in warnings {
         eprintln!("warning: {w}");
     }
     let out = out.unwrap_or_else(|| PathBuf::from(format!("{}-{}.iimod", m.id, m.version)));
-    pkg::pack(payload, &m.id, &out)?;
-    println!("✓ packed {} v{} → {}", m.id, m.version, out.display());
+    pkg::pack(payload, &m.id, &out, origin)?;
+    println!(
+        "✓ packed {} v{} → {}{}",
+        m.id,
+        m.version,
+        out.display(),
+        origin
+            .map(|o| format!("  (origin: {o})"))
+            .unwrap_or_default()
+    );
     Ok(())
 }
 

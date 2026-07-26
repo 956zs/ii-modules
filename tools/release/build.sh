@@ -151,13 +151,34 @@ build_iimod() {
     install -Dm755 "$IIMOD_BIN" "$(release_dir)/$LINUX_BIN_NAME"
 }
 
+# Canonical update origin derived from the GitHub remote:
+# https://github.com/<owner>/<repo>/releases/latest/download/index.json
+# Empty when there is no recognizable remote (local dry-runs).
+canonical_origin() {
+    local remote
+    remote="$(git -C "$ROOT_DIR" remote get-url origin 2>/dev/null || true)"
+    case "$remote" in
+        git@github.com:*) remote="https://github.com/${remote#git@github.com:}" ;;
+        https://github.com/*) ;;
+        *) return 0 ;;
+    esac
+    remote="${remote%.git}"
+    printf '%s/releases/latest/download/index.json\n' "$remote"
+}
+
 pack_module() {
-    local package_path
+    local package_path origin
     package_path="$(release_dir)/$(module_package_name)"
+    origin="$(canonical_origin)"
 
     "$IIMOD_BIN" validate "$MODULE_DIR"
     run_with_fixture "module-dir-check" "$IIMOD_BIN" check "$MODULE_DIR"
-    "$IIMOD_BIN" pack --out "$package_path" "$MODULE_DIR"
+    if [[ -n "$origin" ]]; then
+        "$IIMOD_BIN" pack --out "$package_path" --origin "$origin" "$MODULE_DIR"
+    else
+        echo "note: no GitHub remote — packing without an embedded origin" >&2
+        "$IIMOD_BIN" pack --out "$package_path" "$MODULE_DIR"
+    fi
     "$IIMOD_BIN" validate "$package_path"
     run_with_fixture "module-package-check" "$IIMOD_BIN" check "$package_path"
     write_update_index "$package_path"

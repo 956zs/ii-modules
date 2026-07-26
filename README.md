@@ -86,8 +86,10 @@ GitHub Actions 會自動跑 `tools/release/build.sh` 和 `tools/release/verify.s
 ## 模塊更新（`iimod update`）
 
 去中心化設計——沒有中央倉庫，每個模塊在安裝時記住自己的來源
-（存在 registry v2，協議零改動）。**從 URL 安裝時 origin 自動記為同目錄的
-`index.json`**，使用者不必手打；`--origin` 可顯式覆寫。來源是一個靜態 `index.json`，掛在任何
+（存在 registry v2，協議零改動）。**正式發佈的 `.iimod` 內嵌自己的 origin**
+（`pack --origin`，release 管線自動填 GitHub Releases 位址）——拿到檔案就能裝、
+裝了就能 `iimod update`。沒內嵌時，從 URL 安裝自動記同目錄的 `index.json`；
+`--origin` 永遠可顯式覆寫（優先序：flag ＞ 內嵌 ＞ URL 同目錄）。來源是一個靜態 `index.json`，掛在任何
 HTTPS 位置（GitHub raw / Releases / 自架皆可）：
 
 ```json

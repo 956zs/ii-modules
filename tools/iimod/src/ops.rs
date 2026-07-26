@@ -20,6 +20,8 @@ use crate::translations;
 pub(crate) struct Payload {
     pub(crate) dir: PathBuf,
     pub(crate) from_package: bool,
+    /// Update origin embedded in the package's integrity.json, if any.
+    pub(crate) embedded_origin: Option<String>,
     /// Temp extraction dir to clean up on drop (packages only).
     _tmp: Option<PathBuf>,
 }
@@ -29,6 +31,7 @@ pub(crate) fn load_payload(source: &Path, max_size: u64) -> Result<Payload> {
         return Ok(Payload {
             dir: source.to_path_buf(),
             from_package: false,
+            embedded_origin: None,
             _tmp: None,
         });
     }
@@ -42,6 +45,7 @@ pub(crate) fn load_payload(source: &Path, max_size: u64) -> Result<Payload> {
         return Ok(Payload {
             dir: unpacked.payload,
             from_package: true,
+            embedded_origin: unpacked.integrity.origin.clone(),
             _tmp: Some(tmp),
         });
     }
