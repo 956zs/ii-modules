@@ -52,8 +52,11 @@ iimod install network_traffic/     # 或先 iimod pack 再裝 .iimod
 | `stackedShowIcons` | `true` | 雙行時是否顯示方向箭頭 |
 | `statsPeriod` | `boot` | 彈窗統計範圍（左鍵點 bar 元件循環切換，自動持久化） |
 
-`acct*` 開頭的 key 是模塊自管的統計狀態（今日/本月累計、上次取樣點），
-每分鐘至多寫回一次，不是使用者設定。
+`acctState` / `appAcctState` 是模塊自管的統計狀態（今日/本月累計、上次取樣點、
+per-app 記帳），各自是**單一 JSON 字串**、單次賦值寫入——分欄位儲存曾在熱重載
+時被讀到撕裂快照，造成「本月 < 今日」；單 blob 讓撕裂在結構上不可能。
+每分鐘至多寫回一次，不是使用者設定。月 ≥ 日不變量在載入與累加時強制鉗制，
+壞掉的舊資料會自我修復。
 
 全部選項在設定 app 的 **Modules → Network Traffic** 頁有對應控件。
 
