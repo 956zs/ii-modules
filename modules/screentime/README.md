@@ -2,7 +2,8 @@
 
 手機風格的螢幕使用時間統計（Tier B：一個側欄磁貼補丁）。以 Quickshell 原生
 `ToplevelManager` 做前台焦點記帳：今日各應用時長、每小時直方圖、7 天趨勢、
-30 天每日曲線。
+30 天每日曲線。另有獨立的「AI 工作時長」維度：agent（claude/codex）在背景
+真正工作的時間，即使視窗未聚焦、甚至已鎖屏。
 
 ## 互動
 
@@ -12,10 +13,32 @@
 | 側欄快速開關磁貼（沙漏圖示，見下方設定） | 點擊：關閉側欄並開啟詳情面板 |
 | `qs -c ii ipc --any-display call screentime toggleDetails` | 切換詳情面板 |
 
-詳情面板：今日總時長與昨日比較、今日 24 小時直方圖（當前小時高亮）、
-最近 7 天趨勢（今日高亮、其餘用同色淺階）、應用排行（時長＋比例條）、
-30 天每日曲線。圖表全部單色（Material You `colPrimary`，換壁紙自動變），
-hover 任一柱/點會在圖上方讀出該時段數值。Esc 或點擊外部關閉。
+詳情面板：今日總時長與昨日比較、AI 工作時長區塊（今日聯集時長、
+「N 個工作中」即時狀態、並行峰值與合計、7 天 AI 柱狀圖）、今日 24 小時
+直方圖（當前小時高亮）、最近 7 天趨勢（今日高亮、其餘用同色淺階）、
+應用排行（時長＋比例條）、30 天每日曲線。圖表全部單色（Material You
+`colPrimary`，換壁紙自動變），hover 任一柱/點會在圖上方讀出該時段數值。
+Esc 或點擊外部關閉。
+
+## AI 工作時長（獨立維度）
+
+焦點記帳只回答「我看著螢幕多久」；這個維度回答「我的 agent 們工作了多久」——
+把任務丟給 claude 之後切去別的視窗，那個未聚焦終端裡的工作照樣被算到。
+兩者**永不相加、永不混算**。
+
+- **偵測**：每 10 秒掃一次 `/proc`，程序名（comm）符合正則（預設
+  `^(claude|codex)$`，可改）者為一個 session，CPU 計入整棵子程序樹——
+  agent 開的 bash/工具子程序也是它的工作。單一取樣窗內 CPU 超過門檻
+  （預設單核 1%）→ 該 session 記為工作中。本機實測：閒置在提示符的
+  claude 是 **0** ticks/10s，工作中 200+，codex 約 30——1% 門檻兩側
+  裕度都很大。
+- **主數字是牆鐘聯集**：≥1 個 session 工作中的時間。並行的故事另外講：
+  「峰值 2 並行 · 合計 4h 05m」（合計＝Σ 秒 × 並行數；只有出現過並行
+  才顯示，否則合計＝聯集，無資訊量）。
+- **鎖屏照計**：agent 趁你離開時工作正是要量的東西。suspend 造成的取樣
+  斷層（間隔遠超取樣週期）重新取基線、不入帳。
+- 資料進同一個 `histState` blob（`day.ai` 與每日紀錄的 `aiU`/`aiS`/`aiP`），
+  舊 blob 自動視為 0。設定頁可整個關閉（關閉即停止取樣程序）。
 
 ## 側欄磁貼（必讀：需手動加一行設定）
 
@@ -64,6 +87,9 @@ iimod install screentime/ --allow-patches   # 磁貼補丁需要 --allow-patches
 | `excludedApps` | `""` | 逗號分隔的 appId/class 子字串，命中者不入帳（不分大小寫） |
 | `idleGapSec` | `90` | 閒置間隔門檻（秒）；事件間牆鐘跳躍超過此值視為離開 |
 | `keepHistory` | `true` | 保留 30 天每日歷史；關閉即清除並只記今日 |
+| `aiTracking` | `true` | 統計 AI agent 工作時長；關閉即停止取樣 |
+| `aiProcessRegex` | `^(claude\|codex)$` | agent 程序名（comm）正則 |
+| `aiActiveCpuPct` | `1` | 工作判定門檻：取樣窗內程序樹 CPU 佔單核百分比 |
 
 `histState` 是模塊自管的統計狀態（今日各應用秒數＋今日各小時直方圖＋
 30 天每日紀錄，每日紀錄含 Top 20 應用、長尾摺疊進「其他」）。整個歷史是
@@ -79,6 +105,11 @@ iimod install screentime/ --allow-patches   # 磁貼補丁需要 --allow-patches
   Singleton），由 `main.qml` 建立；`focusedApp` 一個 binding 同時折疊
   焦點切換、鎖屏、排除清單三種來源，`onFocusedAppChanged` 先結算舊區間
   再換人
+- `AgentMonitor.qml`：AI 取樣器，同樣只活在 window slot；一次 `sh` 掃
+  `/proc/[pid]/stat`（awk，session root＝無符合祖先的符合程序，子樹 CPU
+  歸給最近的 root），QML 端對每個 root pid 記上次累計值算增量。使用者可改
+  的正則以 argv 傳入（`sh -c '…' name "$re"`），不做字串內插。取樣結果經
+  `logic.accrueAi()` 進同一套 blob/flush 管線
 - `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔；`owner` 旗標
   讓唯一實例負責 materialise 預設值；**絕不**在 JsonAdapter 裡宣告
   `property var`（quickshell 反序列化會 segfault），map 一律 JSON 字串
