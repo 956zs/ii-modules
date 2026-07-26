@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { DOCS_URL, REPO_URL } from '@/lib/urls'
 import { cn } from '@/lib/utils'
-
-const REPO_URL = 'https://github.com/956zs/ii-modules'
 
 /** Official GitHub mark (Simple Icons); lucide 1.x no longer ships brand icons. */
 export function GitHubIcon({ className }: { className?: string }) {
@@ -39,11 +38,16 @@ export function SiteHeader() {
         >
           IIMP<span className="text-brand">.</span>
         </a>
-        <Button asChild variant="ghost" size="icon-sm" className="text-muted-foreground">
-          <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub Repo">
-            <GitHubIcon className="size-4" />
-          </a>
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+            <a href={DOCS_URL}>文件</a>
+          </Button>
+          <Button asChild variant="ghost" size="icon-sm" className="text-muted-foreground">
+            <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub Repo">
+              <GitHubIcon className="size-4" />
+            </a>
+          </Button>
+        </div>
       </div>
     </header>
   )

@@ -1,8 +1,8 @@
-import { FileText, GitPullRequest, ScrollText } from 'lucide-react'
+import { BookOpen, FileText, GitPullRequest, ScrollText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { GitHubIcon } from '@/components/site-header'
-import { ADD_MODULE_URL, REGISTRY_URL, REPO_URL, SPEC_URL } from '@/lib/urls'
+import { ADD_MODULE_URL, DOCS_URL, REGISTRY_URL, REPO_URL, SPEC_URL } from '@/lib/urls'
 
 export function SiteFooter() {
   return (
@@ -28,7 +28,14 @@ export function SiteFooter() {
         <Separator />
 
         <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
-          <nav aria-label="站外連結" className="flex flex-wrap items-center gap-4">
+          <nav aria-label="網站連結" className="flex flex-wrap items-center gap-4">
+            <a
+              href={DOCS_URL}
+              className="flex items-center gap-1.5 transition-colors duration-150 hover:text-foreground"
+            >
+              <BookOpen className="size-3.5" />
+              文件
+            </a>
             <a
               href={REPO_URL}
               target="_blank"

@@ -1,5 +1,7 @@
+import { ArrowRight, BookOpen } from 'lucide-react'
 import { CommandBlock } from '@/components/command-block'
 import { Skeleton } from '@/components/ui/skeleton'
+import { DOCS_URL } from '@/lib/urls'
 import type { RegistryModule, VersionState } from '@/lib/types'
 
 const INSTALL_IIMOD_COMMAND =
@@ -39,7 +41,7 @@ export function Hero({ firstModule, firstModuleVersion, registryFailed }: HeroPr
     !registryFailed && (!firstModule || firstModuleVersion?.status === 'loading')
 
   return (
-    <section className="mx-auto flex max-w-4xl flex-col items-center gap-6 px-4 pt-12 pb-12 text-center sm:px-6 sm:pt-20 sm:pb-16">
+    <section className="mx-auto flex max-w-[96rem] flex-col items-center gap-6 px-4 pt-12 pb-12 text-center sm:px-6 sm:pt-20 sm:pb-16">
       <span className="rounded-full border border-border bg-card/60 px-3 py-1 font-mono text-xs tracking-wide text-muted-foreground uppercase">
         IIMP · illogical-impulse Module Protocol
       </span>
@@ -53,7 +55,9 @@ export function Hero({ firstModule, firstModuleVersion, registryFailed }: HeroPr
         清單只負責索引，版本永遠即時。
       </p>
 
-      <div className="mt-4 w-full max-w-2xl rounded-xl border border-border bg-card/40 p-4 text-left backdrop-blur-sm sm:p-5">
+      {/* Hugs the widest command on desktop so width follows the viewport
+          instead of a fixed column; full-width on mobile. */}
+      <div className="mt-4 w-full max-w-full rounded-xl border border-border bg-card/40 p-4 text-left backdrop-blur-sm sm:w-fit sm:p-5">
         <h2 className="mb-4 font-mono text-xs tracking-wide text-muted-foreground uppercase">
           快速安裝
         </h2>
@@ -79,6 +83,15 @@ export function Hero({ firstModule, firstModuleVersion, registryFailed }: HeroPr
           </InstallStep>
         </ol>
       </div>
+
+      <a
+        href={DOCS_URL}
+        className="group flex items-center gap-1.5 rounded-md text-sm text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+      >
+        <BookOpen className="size-4" />
+        閱讀完整教學與文件
+        <ArrowRight className="size-3.5 transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none" />
+      </a>
     </section>
   )
 }
