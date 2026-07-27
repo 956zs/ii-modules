@@ -42,20 +42,22 @@ test('CLI install command presents each safe installation stage in order', async
   }
 
   assert.equal(spawnSync('sh', ['-n'], { input: INSTALL_IIMOD_COMMAND }).status, 0)
-  assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /[\r\n]/)
+  assert.match(INSTALL_IIMOD_COMMAND, /\n/)
+  assert.match(INSTALL_IIMOD_COMMAND, /^\(\n\s+set -eu/)
+  assert.match(INSTALL_IIMOD_COMMAND, /\n\)$/)
+  assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /^sh -c /)
   assert.match(INSTALL_IIMOD_COMMAND, /curl .*--fail.*--location.*--progress-bar/)
   assert.match(INSTALL_IIMOD_COMMAND, /https:\/\/ii\.n1cat\.xyz\/downloads\/iimod\/linux-x86_64/)
   assert.match(INSTALL_IIMOD_COMMAND, /linux-x86_64\.sha256/)
   assert.match(INSTALL_IIMOD_COMMAND, /\^\[0-9a-fA-F\]\{64\}\$/)
   assert.match(INSTALL_IIMOD_COMMAND, /sha256sum --check --status/)
   assert.match(INSTALL_IIMOD_COMMAND, /\$\(mktemp\)/)
-  assert.match(INSTALL_IIMOD_COMMAND, /^sh -c /)
   assert.match(INSTALL_IIMOD_COMMAND, /trap .*rm -f .* EXIT HUP INT TERM/)
   assert.match(INSTALL_IIMOD_COMMAND, /sudo install .* \/usr\/local\/bin\/iimod/)
-  assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /curl[^&|]*\|\s*sudo/)
+  assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /curl[^&|\n]*\|\s*sudo/)
   assert.ok(
-    INSTALL_IIMOD_COMMAND.split(' && ').length >= stages.length,
-    'stages must retain fail-fast && chaining',
+    INSTALL_IIMOD_COMMAND.split('\n').length >= stages.length,
+    'safe stages must remain visually separated',
   )
 })
 

@@ -73,8 +73,11 @@ jobs:
           set -euo pipefail
           npm --prefix site run releases:project -- \
             --releases "$RELEASE_PAGES" \
-            --index-output site/dist/index.json \
-            --cli-output site/dist/downloads/iimod/linux-x86_64
+            --index-output dist/index.json \
+            --cli-output dist/downloads/iimod/linux-x86_64
+          test -s site/dist/index.json
+          test -s site/dist/downloads/iimod/linux-x86_64
+          test -s site/dist/downloads/iimod/linux-x86_64.sha256
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
