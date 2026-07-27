@@ -1,4 +1,5 @@
 import { CopyButton } from '@/components/copy-button'
+import { useI18n } from '@/lib/i18n'
 
 interface CommandBlockProps {
   command: string
@@ -6,6 +7,7 @@ interface CommandBlockProps {
 }
 
 export function CommandBlock({ command, label }: CommandBlockProps) {
+  const { t } = useI18n()
   return (
     <div className="min-w-0 flex flex-col gap-1.5">
       {label ? <span className="text-xs text-muted-foreground">{label}</span> : null}
@@ -23,7 +25,7 @@ export function CommandBlock({ command, label }: CommandBlockProps) {
           {command}
         </code>
         {/* -my-1 centers the 28px button on the 20px first text line. */}
-        <CopyButton value={command} label="複製指令" className="-my-1" />
+        <CopyButton value={command} label={t.copyCommand} className="-my-1" />
       </div>
     </div>
   )
