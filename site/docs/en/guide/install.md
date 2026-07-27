@@ -13,14 +13,27 @@ This page walks you through it from scratch: get the `iimod` CLI installed, then
 
 ## Install the iimod CLI
 
-Download the official binary from GitHub Releases:
+Download the official binary from the stable endpoint and verify its SHA256:
 
 ```bash
-curl -fsSL -o iimod https://github.com/956zs/ii-modules/releases/latest/download/iimod-linux-x86_64 && chmod +x iimod && sudo install iimod /usr/local/bin/iimod
+set -eu
+iimod_tmp="$(mktemp)"
+iimod_sum_tmp="$(mktemp)"
+trap 'rm -f "$iimod_tmp" "$iimod_sum_tmp"' EXIT HUP INT TERM
+curl --fail --location --progress-bar --output "$iimod_tmp" \
+  https://ii.n1cat.xyz/downloads/iimod/linux-x86_64
+curl --fail --location --progress-bar --output "$iimod_sum_tmp" \
+  https://ii.n1cat.xyz/downloads/iimod/linux-x86_64.sha256
+iimod_sha="$(cat "$iimod_sum_tmp")"
+printf '%s\n' "$iimod_sha" | grep --extended-regexp --quiet '^[0-9a-fA-F]{64}$'
+(cd "$(dirname "$iimod_tmp")" && \
+  printf '%s  %s\n' "$iimod_sha" "$(basename "$iimod_tmp")" | sha256sum --check --status -)
+sudo install -m 0755 "$iimod_tmp" /usr/local/bin/iimod
+iimod --version
 ```
 
-::: tip Verify the sha256
-Every release ships a `SHA256SUMS` file. After downloading, verify with `sha256sum -c` to confirm the binary hasn't been tampered with.
+::: tip Stable endpoint
+The site projects the binary and `.sha256` from the highest-versioned `iimod/v<version>` release. The CLI and every module release independently; neither depends on the repository-wide Latest Release.
 :::
 
 ### Building from Source
@@ -34,10 +47,10 @@ install -Dm755 tools/iimod/target/release/iimod ~/.local/bin/iimod
 
 ## Install your first module
 
-Find a module you want from the [module listing](https://ii.n1cat.xyz/), open its card, and copy the install command — for example:
+The install command uses the immutable GitHub Release asset URL selected by the site's aggregate index, for example:
 
 ```bash
-iimod install https://github.com/956zs/ii-modules/releases/latest/download/network_traffic-1.4.0.iimod
+iimod install https://github.com/956zs/ii-modules/releases/download/module%2Fnetwork_traffic%2Fv1.5.0/network_traffic-1.5.0.iimod
 ```
 
 `iimod install` is **transactional**: if any step during installation fails (probe mismatch, hash mismatch, anchor failure, ...), it automatically rolls back, so the desktop never ends up in a half-broken state.

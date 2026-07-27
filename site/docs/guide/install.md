@@ -13,14 +13,27 @@ description: 從零開始:安裝 iimod CLI,然後裝上你的第一個 IIMP 模�
 
 ## 安裝 iimod CLI
 
-從 GitHub Releases 下載官方 binary:
+從穩定下載端點取得官方 binary 並核對 SHA256：
 
 ```bash
-curl -fsSL -o iimod https://github.com/956zs/ii-modules/releases/latest/download/iimod-linux-x86_64 && chmod +x iimod && sudo install iimod /usr/local/bin/iimod
+set -eu
+iimod_tmp="$(mktemp)"
+iimod_sum_tmp="$(mktemp)"
+trap 'rm -f "$iimod_tmp" "$iimod_sum_tmp"' EXIT HUP INT TERM
+curl --fail --location --progress-bar --output "$iimod_tmp" \
+  https://ii.n1cat.xyz/downloads/iimod/linux-x86_64
+curl --fail --location --progress-bar --output "$iimod_sum_tmp" \
+  https://ii.n1cat.xyz/downloads/iimod/linux-x86_64.sha256
+iimod_sha="$(cat "$iimod_sum_tmp")"
+printf '%s\n' "$iimod_sha" | grep --extended-regexp --quiet '^[0-9a-fA-F]{64}$'
+(cd "$(dirname "$iimod_tmp")" && \
+  printf '%s  %s\n' "$iimod_sha" "$(basename "$iimod_tmp")" | sha256sum --check --status -)
+sudo install -m 0755 "$iimod_tmp" /usr/local/bin/iimod
+iimod --version
 ```
 
-::: tip 核對 sha256
-每個 Release 都附 `SHA256SUMS`。下載後可用 `sha256sum -c` 核對,確認 binary 未被竄改。
+::: tip 穩定端點
+網站會從最高版本的 `iimod/v<version>` Release 投影 binary 與 `.sha256`。CLI 與各模塊獨立發版，不依賴 repository-wide Latest Release。
 :::
 
 ### 從原始碼建置
@@ -34,10 +47,10 @@ install -Dm755 tools/iimod/target/release/iimod ~/.local/bin/iimod
 
 ## 安裝第一個模塊
 
-從 [模塊清單](https://ii.n1cat.xyz/) 找到想裝的模塊,點開卡片複製安裝指令,例如:
+安裝指令會使用網站聚合索引中該版本的不可變 GitHub Release 資產 URL，例如：
 
 ```bash
-iimod install https://github.com/956zs/ii-modules/releases/latest/download/network_traffic-1.4.0.iimod
+iimod install https://github.com/956zs/ii-modules/releases/download/module%2Fnetwork_traffic%2Fv1.5.0/network_traffic-1.5.0.iimod
 ```
 
 `iimod install` 是**交易性**的:安裝過程中任何一步失敗(探針不符、雜湊不符、錨點失敗……)都會自動回滾,桌面不會處於半壞狀態。

@@ -1,0 +1,89 @@
+name: Release module
+
+on:
+  push:
+    tags:
+      - 'module/*/v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing module tag, for example module/network_traffic/v1.5.0.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Validate module release contract
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" == module/*/v* ]]
+          module_id="${RELEASE_TAG#module/}"
+          module_id="${module_id%%/*}"
+          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
+          tools/release/contract.sh module "modules/$module_id" "$RELEASE_TAG"
+
+      - name: Install module check dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y blueman nethogs network-manager-gnome policykit-1
+
+      - name: Prepare Rust
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            tools/iimod/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('tools/iimod/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build module release
+        run: tools/release/build.sh "$RELEASE_TAG"
+
+      - name: Verify module release
+        run: tools/release/verify.sh "dist/release/$RELEASE_TAG" "$RELEASE_TAG"
+
+      - name: Publish module release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          release_dir="dist/release/$RELEASE_TAG"
+          artifact="$(find "$release_dir" -maxdepth 1 -type f -name '*.iimod' -print -quit)"
+          test -n "$artifact"
+          release_flags=(--latest=false)
+          version="${RELEASE_TAG##*/v}"
+          precedence_version="${version%%+*}"
+          [[ "$precedence_version" != *-* ]] || release_flags+=(--prerelease)
+          gh release create "$RELEASE_TAG" \
+            "$artifact" \
+            "$release_dir/SHA256SUMS" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            "${release_flags[@]}" \
+            --title "$RELEASE_TAG" \
+            --notes-file "$release_dir/RELEASE_NOTES.md"

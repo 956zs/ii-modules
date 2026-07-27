@@ -19,7 +19,7 @@
       "capabilities": [],
       "requires": {},
       "tierB": true,
-      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "origin": "https://ii.n1cat.xyz/index.json",
       "repo": "https://github.com/956zs/ii-modules/tree/main/modules/activewindow_fix",
       "docs": {
         "zh_TW": "/docs/modules/activewindow_fix",
@@ -48,7 +48,7 @@
       ],
       "requires": {},
       "tierB": true,
-      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "origin": "https://ii.n1cat.xyz/index.json",
       "repo": "https://github.com/956zs/ii-modules/tree/main/modules/battery_trend",
       "docs": {
         "zh_TW": "/docs/modules/battery_trend",
@@ -74,7 +74,7 @@
       "capabilities": [],
       "requires": {},
       "tierB": true,
-      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "origin": "https://ii.n1cat.xyz/index.json",
       "repo": "https://github.com/956zs/ii-modules/tree/main/modules/clock_popup_slim",
       "docs": {
         "zh_TW": "/docs/modules/clock_popup_slim",
@@ -115,7 +115,7 @@
         ]
       },
       "tierB": true,
-      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "origin": "https://ii.n1cat.xyz/index.json",
       "repo": "https://github.com/956zs/ii-modules/tree/main/modules/indicator_tools",
       "docs": {
         "zh_TW": "/docs/modules/indicator_tools",
@@ -155,7 +155,7 @@
         ]
       },
       "tierB": true,
-      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "origin": "https://ii.n1cat.xyz/index.json",
       "repo": "https://github.com/956zs/ii-modules/tree/main/modules/memory_center",
       "docs": {
         "zh_TW": "/docs/modules/memory_center",
@@ -190,7 +190,7 @@
         ]
       },
       "tierB": false,
-      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "origin": "https://ii.n1cat.xyz/index.json",
       "repo": "https://github.com/956zs/ii-modules/tree/main/modules/network_traffic",
       "docs": {
         "zh_TW": "/docs/modules/network_traffic",
@@ -218,7 +218,7 @@
       ],
       "requires": {},
       "tierB": true,
-      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "origin": "https://ii.n1cat.xyz/index.json",
       "repo": "https://github.com/956zs/ii-modules/tree/main/modules/screentime",
       "docs": {
         "zh_TW": "/docs/modules/screentime",

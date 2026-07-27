@@ -7,7 +7,7 @@ const REPO_DIR = path.resolve(SITE_DIR, '..')
 const MODULES_DIR = path.join(REPO_DIR, 'modules')
 const REGISTRY_FILE = path.join(SITE_DIR, 'public', 'registry.json')
 const REPO_URL = 'https://github.com/956zs/ii-modules'
-const RELEASE_INDEX = `${REPO_URL}/releases/latest/download/index.json`
+const RELEASE_INDEX = 'https://ii.n1cat.xyz/index.json'
 const REQUIRED_LOCALES = ['en_US', 'zh_TW']
 
 function assertNonEmptyString(value, field, source) {

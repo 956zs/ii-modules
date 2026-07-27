@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import ts from 'typescript'
 import { readFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
 import vm from 'node:vm'
 
 async function loadInstallExports() {
@@ -21,8 +22,11 @@ async function loadInstallExports() {
 test('CLI install command presents each safe installation stage in order', async () => {
   const { INSTALL_IIMOD_COMMAND } = await loadInstallExports()
   const stages = [
-    'Downloading iimod',
+    'Downloading iimod and checksum',
     'curl ',
+    'grep --extended-regexp',
+    'sha256sum --check',
+    'Checksum verified',
     'Installing iimod to /usr/local/bin/iimod',
     'sudo install ',
     'iimod --version',
@@ -37,9 +41,16 @@ test('CLI install command presents each safe installation stage in order', async
     previousIndex = stageIndex
   }
 
+  assert.equal(spawnSync('sh', ['-n'], { input: INSTALL_IIMOD_COMMAND }).status, 0)
   assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /[\r\n]/)
   assert.match(INSTALL_IIMOD_COMMAND, /curl .*--fail.*--location.*--progress-bar/)
+  assert.match(INSTALL_IIMOD_COMMAND, /https:\/\/ii\.n1cat\.xyz\/downloads\/iimod\/linux-x86_64/)
+  assert.match(INSTALL_IIMOD_COMMAND, /linux-x86_64\.sha256/)
+  assert.match(INSTALL_IIMOD_COMMAND, /\^\[0-9a-fA-F\]\{64\}\$/)
+  assert.match(INSTALL_IIMOD_COMMAND, /sha256sum --check --status/)
   assert.match(INSTALL_IIMOD_COMMAND, /\$\(mktemp\)/)
+  assert.match(INSTALL_IIMOD_COMMAND, /^sh -c /)
+  assert.match(INSTALL_IIMOD_COMMAND, /trap .*rm -f .* EXIT HUP INT TERM/)
   assert.match(INSTALL_IIMOD_COMMAND, /sudo install .* \/usr\/local\/bin\/iimod/)
   assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /curl[^&|]*\|\s*sudo/)
   assert.ok(

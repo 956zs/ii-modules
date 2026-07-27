@@ -1,13 +1,13 @@
-name: Release
+name: Release iimod CLI
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'iimod/v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to release, for example v1.0.2.
+        description: Existing CLI tag, for example iimod/v1.1.0.
         required: true
         type: string
 
@@ -28,17 +28,13 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
-      - name: Validate release tag
+      - name: Validate CLI release contract
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+){2}([-.][0-9A-Za-z.-]+)?$ ]]
+          [[ "$RELEASE_TAG" == iimod/v* ]]
           test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
-
-      - name: Install system tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y zip unzip nethogs
+          cargo_version="$(cargo metadata --no-deps --manifest-path tools/iimod/Cargo.toml --format-version=1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          tools/release/contract.sh cli "$RELEASE_TAG" "$cargo_version"
 
       - name: Prepare Rust
         run: |
@@ -58,25 +54,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Build release artifacts
+      - name: Build CLI release
         run: tools/release/build.sh "$RELEASE_TAG"
 
-      - name: Verify release artifacts
-        run: tools/release/verify.sh "dist/release/$RELEASE_TAG"
+      - name: Verify CLI release
+        run: tools/release/verify.sh "dist/release/$RELEASE_TAG" "$RELEASE_TAG"
 
-      - name: Publish GitHub Release
-        run: |
-          set -euo pipefail
-          gh release create "$RELEASE_TAG" \
-            "dist/release/$RELEASE_TAG/$LINUX_BIN_NAME" \
-            "dist/release/$RELEASE_TAG"/*.iimod \
-            "dist/release/$RELEASE_TAG/index.json" \
-            "dist/release/$RELEASE_TAG/ii-modules-starter-$RELEASE_TAG.zip" \
-            "dist/release/$RELEASE_TAG/SHA256SUMS" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "$RELEASE_TAG" \
-            --notes-file "dist/release/$RELEASE_TAG/RELEASE_NOTES.md"
+      - name: Publish CLI release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LINUX_BIN_NAME: iimod-linux-x86_64
+        run: |
+          set -euo pipefail
+          release_dir="dist/release/$RELEASE_TAG"
+          release_flags=(--latest=false)
+          version="${RELEASE_TAG##*/v}"
+          precedence_version="${version%%+*}"
+          [[ "$precedence_version" != *-* ]] || release_flags+=(--prerelease)
+          gh release create "$RELEASE_TAG" \
+            "$release_dir/iimod-linux-x86_64" \
+            "$release_dir/SHA256SUMS" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            "${release_flags[@]}" \
+            --title "$RELEASE_TAG" \
+            --notes-file "$release_dir/RELEASE_NOTES.md"
