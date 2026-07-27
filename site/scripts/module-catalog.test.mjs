@@ -37,6 +37,7 @@ test('moduleFromManifest derives Tier B and repository docs metadata', () => {
   const result = moduleFromManifest(manifest({ patches: [{ file: 'stock.qml' }] }), 'sample')
   assert.equal(result.tierB, true)
   assert.equal(result.sourceVersion, '1.0.0')
+  assert.equal(result.origin, 'https://ii.n1cat.xyz/index.json')
   assert.equal(result.docs.en_US, '/docs/en/modules/sample')
   assert.match(result.repo, /modules\/sample$/)
 })

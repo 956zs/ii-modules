@@ -26,8 +26,7 @@ export interface Registry {
 export interface ModuleVersionInfo {
   version: string
   url: string
-  /** Unobtainable via the GitHub-API metadata-only fallback (no CORS-readable asset content). */
-  sha256: string | null
+  sha256: string
 }
 
 export type VersionResolution =
