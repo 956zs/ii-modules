@@ -271,6 +271,15 @@ function runScript(args, env = {}) {
   })
 }
 
+test('Pages workflow projects into the site dist directory that it uploads', async () => {
+  const workflow = await readFile(new URL('../../.github/workflows/pages.yml', import.meta.url), 'utf8')
+  assert.match(workflow, /npm --prefix site run releases:project/)
+  assert.match(workflow, /--index-output dist\/index\.json/)
+  assert.match(workflow, /--cli-output dist\/downloads\/iimod\/linux-x86_64/)
+  assert.match(workflow, /path: site\/dist/)
+  assert.doesNotMatch(workflow, /--(?:index|cli)-output site\/dist\//)
+})
+
 test('CLI accepts comma-separated paginated API fixtures with offline HTTPS downloads', async () => {
   const outputs = await outputFixture()
   const moduleUrl = 'https://github.com/example/repo/releases/download/module%2Fsample%2Fv1.0.0/sample-1.0.0.iimod'
