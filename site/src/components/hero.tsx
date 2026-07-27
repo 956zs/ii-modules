@@ -2,11 +2,8 @@ import { ArrowRight, BookOpen } from 'lucide-react'
 import { CommandBlock } from '@/components/command-block'
 import { Skeleton } from '@/components/ui/skeleton'
 import { docsUrl, useI18n } from '@/lib/i18n'
-import { installCommand } from '@/lib/install'
+import { INSTALL_IIMOD_COMMAND, installCommand } from '@/lib/install'
 import type { RegistryModule, VersionState } from '@/lib/types'
-
-const INSTALL_IIMOD_COMMAND =
-  'curl -fsSL -o iimod https://github.com/956zs/ii-modules/releases/latest/download/iimod-linux-x86_64 && chmod +x iimod && sudo install iimod /usr/local/bin/iimod'
 
 interface HeroProps {
   firstModule?: RegistryModule
