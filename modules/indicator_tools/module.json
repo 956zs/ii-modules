@@ -2,82 +2,96 @@
   "protocolVersion": 1,
   "id": "indicator_tools",
   "name": {
-    "en_US": "Indicator Tools",
-    "zh_TW": "指示器工具",
-    "zh_CN": "指示器工具"
+    "en_US": "Indicator Applet Menus",
+    "zh_TW": "指示器 Applet 選單",
+    "zh_CN": "指示器 Applet 菜单"
   },
   "description": {
-    "en_US": "Right-click the bar's WiFi / Bluetooth indicator icons to open the module's own QML panels: a multi-adapter networks list (own nmcli parsing — every wifi adapter gets its own section, plus bluetooth-tethered PAN/NAP and ethernet sections) with connect + inline password + inline error, and a Bluetooth devices panel with pair/connect/forget (Quickshell's native Bluetooth service). No external tools.",
-    "zh_TW": "右鍵 bar 上的 WiFi／藍牙指示圖示，開啟模塊自製的 QML 面板：多介面卡網路列表（自行解析 nmcli——每張 WiFi 網卡各自成段，外加藍牙網路共享 PAN/NAP 與乙太網路分段）＋連線＋行內密碼＋行內錯誤訊息、藍牙裝置面板配對/連線/移除（Quickshell 原生 Bluetooth 服務）。不依賴外部工具。"
+    "en_US": "Purpose-built Material panels for the stock Wi-Fi and Bluetooth indicators. The panels render nm-applet and Blueman D-Bus menus without taking ownership of network or Bluetooth state. Duplicate tray icons are hidden; stock status icons and left-click behavior remain unchanged.",
+    "zh_TW": "為 stock Wi-Fi 與藍牙指示圖示提供 Material 面板，直接呈現 nm-applet 與 Blueman 的 D-Bus 選單，不接管網路或藍牙狀態。重複托盤圖示會隱藏；stock 狀態圖示與左鍵行為維持不變。",
+    "zh_CN": "为 stock Wi-Fi 与蓝牙指示图标提供 Material 面板，直接呈现 nm-applet 与 Blueman 的 D-Bus 菜单，不接管网络或蓝牙状态。重复托盘图标会隐藏；stock 状态图标与左键行为保持不变。"
   },
-  "version": "2.1.0",
-  "authors": [
-    "nlcat"
-  ],
+  "version": "3.4.1",
+  "authors": ["nlcat"],
   "license": "MIT",
-  "slots": [
-    "window"
-  ],
+  "slots": ["window"],
   "entries": {
     "window": "main.qml"
   },
   "compat": {
     "probes": [
-      {
-        "type": "file-contains",
-        "path": "modules/ii/bar/BarContent.qml",
-        "pattern": "text: Network.materialSymbol",
-        "reason": "wifi indicator icon being patched"
-      },
-      {
-        "type": "file-contains",
-        "path": "modules/ii/bar/BarContent.qml",
-        "pattern": "text: BluetoothStatus.connected",
-        "reason": "bluetooth indicator icon being patched"
-      },
-      {
-        "type": "file-exists",
-        "path": "services/BluetoothStatus.qml",
-        "reason": "bluetooth panel device lists"
-      },
-      {
-        "type": "file-exists",
-        "path": "modules/common/widgets/StyledListView.qml",
-        "reason": "panel lists"
-      }
+      {"type": "file-contains", "path": "modules/ii/bar/BarContent.qml", "pattern": "text: Network.materialSymbol", "reason": "horizontal stock Wi-Fi indicator anchor"},
+      {"type": "file-contains", "path": "modules/ii/bar/BarContent.qml", "pattern": "text: BluetoothStatus.connected", "reason": "horizontal stock Bluetooth indicator anchor"},
+      {"type": "file-contains", "path": "modules/ii/verticalBar/VerticalBarContent.qml", "pattern": "text: Network.materialSymbol", "reason": "vertical stock Wi-Fi indicator anchor"},
+      {"type": "file-contains", "path": "modules/ii/verticalBar/VerticalBarContent.qml", "pattern": "text: BluetoothStatus.connected", "reason": "vertical stock Bluetooth indicator anchor"},
+      {"type": "file-contains", "path": "modules/ii/bar/SysTray.qml", "pattern": "property list<var> pinnedItems: TrayService.pinnedItems", "reason": "duplicate applet tray-item filtering anchor"},
+      {"type": "file-contains", "path": "modules/ii/bar/SysTray.qml", "pattern": "property list<var> unpinnedItems: TrayService.unpinnedItems", "reason": "duplicate applet overflow filtering anchor"},
+      {"type": "file-contains", "path": "modules/ii/bar/SysTray.qml", "pattern": "text: \"•\"", "reason": "stable separator id anchor"},
+      {"type": "file-contains", "path": "modules/ii/bar/SysTray.qml", "pattern": "visible: root.showSeparator && SystemTray.items.values.length > 0", "reason": "separator must follow the filtered visible tray model"},
+      {"type": "file-contains", "path": "shell.qml", "pattern": "//@ pragma UseQApplication", "reason": "SystemTrayItem.display requires QApplication-backed platform menus"},
+      {"type": "file-contains", "path": "modules/ii/bar/SysTrayMenu.qml", "pattern": "QsMenuOpener {", "reason": "copied D-Bus menu opening contract"},
+      {"type": "file-contains", "path": "modules/ii/bar/SysTrayMenuEntry.qml", "pattern": "required property QsMenuEntry menuEntry", "reason": "copied menu-entry trigger and submenu contract"},
+      {"type": "file-contains", "path": "modules/ii/bar/SysTrayItem.qml", "pattern": "window: root.QsWindow.window", "reason": "window-relative menu anchor contract"},
+      {"type": "file-exists", "path": "services/TrayService.qml", "reason": "source tray models retained for the menu bridge"}
     ],
-    "testedOn": {
-      "dotsCommit": "446504ad42",
-      "qsVersion": "0.2.1"
-    }
+    "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
   },
-  "capabilities": [
-    "exec"
-  ],
+  "requires": {
+    "modules": [],
+    "system": [
+      {"bin": "nm-applet", "hint": "sudo pacman -S network-manager-applet"},
+      {"bin": "blueman-applet", "hint": "sudo pacman -S blueman"}
+    ]
+  },
+  "capabilities": ["dbus"],
   "patches": [
     {
       "file": "modules/ii/bar/BarContent.qml",
       "op": "insert-after",
       "anchor": "text: Network.materialSymbol",
-      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"qs\", \"-c\", \"ii\", \"ipc\", \"--any-display\", \"call\", \"indicator_tools\", \"toggleWifi\"])\n                        }\n"
+      "content": "                        Loader {\n                            anchors.fill: parent\n                            Component.onCompleted: setSource(Quickshell.shellPath(\"mod/indicator_tools/AppletMenuBridge.qml\"), { \"appletId\": \"nm-applet\", \"styledMenu\": true })\n                        }\n"
     },
     {
       "file": "modules/ii/bar/BarContent.qml",
       "op": "insert-after",
       "anchor": "text: BluetoothStatus.connected",
-      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"qs\", \"-c\", \"ii\", \"ipc\", \"--any-display\", \"call\", \"indicator_tools\", \"toggleBt\"])\n                        }\n"
+      "content": "                        Loader {\n                            anchors.fill: parent\n                            Component.onCompleted: setSource(Quickshell.shellPath(\"mod/indicator_tools/AppletMenuBridge.qml\"), { \"appletId\": \"blueman\", \"styledMenu\": true })\n                        }\n"
     },
     {
       "file": "modules/ii/verticalBar/VerticalBarContent.qml",
       "op": "insert-after",
       "anchor": "text: Network.materialSymbol",
-      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"qs\", \"-c\", \"ii\", \"ipc\", \"--any-display\", \"call\", \"indicator_tools\", \"toggleWifi\"])\n                        }\n"
+      "content": "                        Loader {\n                            anchors.fill: parent\n                            Component.onCompleted: setSource(Quickshell.shellPath(\"mod/indicator_tools/AppletMenuBridge.qml\"), { \"appletId\": \"nm-applet\", \"styledMenu\": true })\n                        }\n"
     },
     {
       "file": "modules/ii/verticalBar/VerticalBarContent.qml",
       "op": "insert-after",
       "anchor": "text: BluetoothStatus.connected",
-      "content": "                        MouseArea {\n                            anchors.fill: parent\n                            acceptedButtons: Qt.RightButton\n                            onPressed: Quickshell.execDetached([\"qs\", \"-c\", \"ii\", \"ipc\", \"--any-display\", \"call\", \"indicator_tools\", \"toggleBt\"])\n                        }\n"
+      "content": "                        Loader {\n                            anchors.fill: parent\n                            Component.onCompleted: setSource(Quickshell.shellPath(\"mod/indicator_tools/AppletMenuBridge.qml\"), { \"appletId\": \"blueman\", \"styledMenu\": true })\n                        }\n"
+    },
+    {
+      "file": "modules/ii/bar/SysTray.qml",
+      "op": "insert-after",
+      "anchor": "property list<var> pinnedItems: TrayService.pinnedItems",
+      "content": "    Binding {\n        target: root\n        property: \"pinnedItems\"\n        value: TrayService.pinnedItems.filter(item => item.id !== \"nm-applet\" && item.id !== \"blueman\")\n    }\n"
+    },
+    {
+      "file": "modules/ii/bar/SysTray.qml",
+      "op": "insert-after",
+      "anchor": "property list<var> unpinnedItems: TrayService.unpinnedItems",
+      "content": "    Binding {\n        target: root\n        property: \"unpinnedItems\"\n        value: TrayService.unpinnedItems.filter(item => item.id !== \"nm-applet\" && item.id !== \"blueman\")\n    }\n"
+    },
+    {
+      "file": "modules/ii/bar/SysTray.qml",
+      "op": "insert-after",
+      "anchor": "            text: \"•\"",
+      "content": "            id: traySeparator\n"
+    },
+    {
+      "file": "modules/ii/bar/SysTray.qml",
+      "op": "insert-after",
+      "anchor": "visible: root.showSeparator && SystemTray.items.values.length > 0",
+      "content": "            Binding {\n                target: traySeparator\n                property: \"visible\"\n                value: root.showSeparator && (root.pinnedItems.length > 0 || root.unpinnedItems.length > 0)\n            }\n"
     }
   ]
 }

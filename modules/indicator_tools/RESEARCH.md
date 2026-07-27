@@ -1,38 +1,32 @@
-# 封存：朋友的「現成工具」搜索結果（2026-07-27）
+# 研究結論：原始補丁架構（2026-07-27）
 
-此工作線已擱置，待重寫。兩路並行搜索的結論歸檔於此。
+朋友的右鍵選單已由本機運行態重新確認：
 
-## 指紋
-現成、圓角漂亮 UI、多網卡各自獨立分區、識別藍牙網路共享（PAN）、
-D-Bus、為繞開 iwd 後端 vs dots-hyprland nmcli 存儲衝突而裝、非 cmst。
+- Wi-Fi：NetworkManager Applet（`nm-applet --indicator`）
+- 藍牙：Blueman Applet（`blueman-applet`）
+- 兩者以 StatusNotifierItem／D-Bus Menu 提供內容；Wi-Fi 由橋接層呼叫 `SystemTrayItem.display()`，Blueman 則交給模塊自有 end4 面板呈現
 
-## 兩路搜索的首選（意見分歧，皆未獲直接引文證實）
+本機套件與 SNI 證據：
 
-1. **iwgtk（WiFi）＋ Overskride（藍牙）** — 網路掃描路線的首選。
-   iwgtk 是 Hyprland 官方 wiki 對 iwd 場景的指名推薦、直連 iwd D-Bus
-   完全繞開 NM（正面解決存儲衝突）、GTK4；Overskride 確認 GTK4+libadwaita
-   圓角、多介面卡支援。弱點：Overskride **無 PAN**（README 證實）——
-   「藍牙連的 WiFi」可能其實是 bar/NM 層的表現而非工具內功能。
-2. **gnome-control-center 的 wifi + bluetooth 兩個面板** — iwd/社群角度
-   路線的首選。唯一每項指紋都有文件直證的候選（2017 重設計明文支援
-   多 WiFi 網卡分區、Network 面板原生顯示 BT tethering、libadwaita
-   圓角、`gnome-control-center wifi` / `bluetooth` 正好是「兩個」可獨立
-   啟動的面板、dots 的 settings 備援鏈本來就含它）。弱點：重量級依賴，
-   與「輕量 rice」氣質不合。
+| Applet | 套件 | `Id` | `Status` | Menu |
+|---|---|---|---|---|
+| NetworkManager Applet | `network-manager-applet 1.36.0-2` | `nm-applet` | Active | `/org/ayatana/NotificationItem/nm_applet/Menu` |
+| Blueman | `blueman 2.4.6-2` | `blueman` | Active | `/org/blueman/sni/menu` |
 
-已排除：cmst（使用者證實不是）、Overskride-as-PAN、Deepin 控制中心
-（維護者證實無 PAN）。
+因此 1.x／2.x 搜尋 iwgtk、Overskride、gnome-control-center 或自行解析 nmcli 的
+方向全部封存。3.0.0 用 SNI 作唯一動作來源：stock Wi-Fi 圖示右鍵呼叫
+`SystemTrayItem.display()`；Blueman D-Bus Menu 依 end4 模塊風格分組呈現；通用 tray
+顯示模型隱藏兩個 applet 的重複 delegate。
 
-## 重寫時可撿的既有資產
-- `NetworksLogic.qml`：nmcli -t 解析器（跳脫冒號、多網卡、BT 型連線、
-  SSID 去重取最強訊號）——資料層可直接復用
-- `PanelShell.qml`：四種 bar 位置錨定＋focus grab＋Esc 的窗框
-- 補丁＋IPC 橋（右鍵 → 模塊面板）架構
+舊資產的處理：
 
-## 補遺（本機實測，2026-07-27）
-- **gnome-control-center 在本機 Hyprland 下無法渲染**：行程存活、真的在掃
-  WiFi，但視窗永不合成畫面，3-5 秒後靜默退出（8 次嘗試皆然；疑缺
-  xdg-desktop-portal-gnome / GNOME Shell IPC）。朋友同為 Hyprland rice，
-  此候選的實用性存疑 → **天平倒向 iwgtk＋Overskride**。
-- 比對截圖（重寫時可給朋友指認）：/tmp/candidate-gcc-wifi.png（僅 app
-  外殼風格）、/tmp/candidate-blueberry.png、/tmp/candidate-nmce.png。
+- `WifiPanel.qml`、`BtPanel.qml`、`NetworksLogic.qml`、`PanelShell.qml`、IPC 面板：刪除
+- `splitNmcli` 等解析器：若未來需要多網卡診斷模塊，應另行遷移並補單元測試；
+  不屬於 indicator_tools
+- 四個 stock 指示器 anchor：沿用，但內容改為 SNI 選單橋
+
+安全與生命週期：
+
+- 模塊不 spawn applet；session 各啟動一次，避免熱重載重複程序
+- 不處理 Wi-Fi 密碼、不呼叫 nmcli、不把 secret 放進 argv
+- 托盤去重只比對 `nm-applet`、`blueman`，不使用 title 或 substring
