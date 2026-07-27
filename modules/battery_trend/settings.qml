@@ -102,16 +102,9 @@ ColumnLayout {
         color: Appearance.colors.colOnSurfaceVariant
         font.pixelSize: Appearance.font.pixelSize.smaller
         wrapMode: Text.WordWrap
-        text: Translation.tr("Sidebar tile: the trends panel opens from a quick-toggle tile in the right sidebar (or `qs -c ii ipc --any-display call battery_trend toggle`). To show the tile, add this entry to sidebar.quickToggles.android.toggles in the shell's config.json (the tile editor only offers stock types):")
+        text: Translation.tr("The stock battery ring is the primary entry: hover shows Battery Trend's replacement popup, and click opens the detail panel. The sidebar tile can also be added directly in quick-toggle edit mode.")
     }
 
-    MaterialTextField {
-        Layout.fillWidth: true
-        Layout.leftMargin: 8
-        Layout.rightMargin: 8
-        readOnly: true
-        text: "{\"type\": \"battery_trend\", \"size\": 1}"
-    }
 
     StyledText {
         Layout.fillWidth: true
@@ -145,7 +138,7 @@ ColumnLayout {
         color: Appearance.colors.colOnSurfaceVariant
         font.pixelSize: Appearance.font.pixelSize.smaller
         wrapMode: Text.WordWrap
-        text: Translation.tr("The bar already shows battery % — enable only if you want the trend sparkline there. Off or on, sampling and history keep running.")
+        text: Translation.tr("The optional Battery Trend bar sparkline is separate from the stock battery ring. Off or on, sampling and history keep running.")
     }
 
     StyledText {
