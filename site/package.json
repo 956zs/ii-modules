@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run catalog:check && npm test && tsc -b && vite build && vitepress build docs",
+    "build": "npm run catalog:generate && npm test && tsc -b && vite build && vitepress build docs",
     "catalog:generate": "node scripts/module-catalog.mjs",
     "catalog:check": "node scripts/module-catalog.mjs --check",
     "lint": "oxlint",
