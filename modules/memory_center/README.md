@@ -31,15 +31,20 @@ Bar 元件顏色跟隨 Material You：正常為文字色，使用率超過警示
 `memory`），點擊經 `execDetached` 呼叫本模塊 IPC 開啟面板——manifest 宣告
 `exec` 的另一個原因。多個模塊可在同一錨點並存（依模塊 id 排序）。
 
-內建磁貼編輯器只提供原生類型，**不會**列出本模塊的磁貼。安裝後請手動把
-下列項目加入 `~/.config/illogical-impulse/config.json` 的
+1.2 起，加入或重新加入磁貼的主要方式是進入快速開關的**編輯模式**。當
+`memory_center` 尚未設定時，記憶體磁貼會出現在分隔線下方的「未使用」區；
+點一下即透過 stock `AndroidQuickToggleButton` 流程加入，並立刻從未使用區消失。
+停用後也可用同一路徑加回，不需手改設定檔。
+
+若舊版 shell 的編輯器無法使用，可退回手動把下列項目加入
+`~/.config/illogical-impulse/config.json` 的
 `sidebar.quickToggles.android.toggles` 陣列（`size: 2` 可換寬版，顯示名稱）：
 
 ```json
 {"type": "memory_center", "size": 1}
 ```
 
-設定 app 的 **Modules → Memory Center** 頁也有這行可直接複製。移除磁貼即從
+設定 app 的 **Modules → Memory Center** 頁也保留這行作為手動備援。移除磁貼即從
 陣列刪掉該項；`iimod uninstall` 後殘留的該項只會被 DelegateChooser 靜默略過。
 
 ## 誠實的組成分類

@@ -105,7 +105,16 @@ ColumnLayout {
         color: Appearance.colors.colOnSurfaceVariant
         font.pixelSize: Appearance.font.pixelSize.smaller
         wrapMode: Text.WordWrap
-        text: Translation.tr("Sidebar tile: to show a Memory tile in the right sidebar's quick toggles, add this entry to sidebar.quickToggles.android.toggles in the shell's config.json (the tile editor only offers stock types):")
+        text: Translation.tr("Sidebar tile: enter quick-toggle edit mode. When Memory is not configured, it appears in the unused section; click it to add or re-add the tile. The editor writes the stock config entry automatically.")
+    }
+
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        color: Appearance.colors.colOnSurfaceVariant
+        font.pixelSize: Appearance.font.pixelSize.smaller
+        wrapMode: Text.WordWrap
+        text: Translation.tr("Manual fallback for the shell's sidebar.quickToggles.android.toggles array:")
     }
 
     MaterialTextField {
