@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Registry, RegistryModule } from '@/lib/types'
+import type { RegistryModule } from '@/lib/types'
+import { parseRegistry } from '@/lib/registry'
 
 export type RegistryState =
   | { status: 'loading' }
@@ -12,11 +13,12 @@ export function useRegistry(): RegistryState {
 
   useEffect(() => {
     let cancelled = false
-    fetch(`${import.meta.env.BASE_URL}registry.json`)
+    fetch(`${import.meta.env.BASE_URL}registry.json`, { cache: 'no-store' })
       .then((res) => {
         if (!res.ok) throw new Error(`registry.json ${res.status}`)
-        return res.json() as Promise<Registry>
+        return res.json() as Promise<unknown>
       })
+      .then(parseRegistry)
       .then((data) => {
         if (!cancelled) setState({ status: 'success', modules: data.modules })
       })
