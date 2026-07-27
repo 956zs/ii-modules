@@ -8,10 +8,15 @@ export interface RegistryModule {
   id: string
   name: LocalizedString
   description: LocalizedString
+  sourceVersion: string
+  authors: string[]
+  license: string
   tierB: boolean
   capabilities: string[]
+  requires: Record<string, unknown>
   origin: string
   repo: string
+  docs: Pick<LocalizedString, 'en_US' | 'zh_TW'>
 }
 
 export interface Registry {
@@ -25,7 +30,13 @@ export interface ModuleVersionInfo {
   sha256: string | null
 }
 
+export type VersionResolution =
+  | { status: 'released'; data: ModuleVersionInfo }
+  | { status: 'unreleased' }
+  | { status: 'error' }
+
 export type VersionState =
   | { status: 'loading' }
   | { status: 'success'; data: ModuleVersionInfo }
+  | { status: 'waiting'; data?: ModuleVersionInfo }
   | { status: 'error' }

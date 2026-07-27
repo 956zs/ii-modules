@@ -18,10 +18,19 @@ export function useModuleVersions(modules: RegistryModule[]): Record<string, Ver
 
       setVersions((prev) => ({ ...prev, [mod.id]: { status: 'loading' } }))
       resolveModuleVersion(mod)
-        .then((data) => {
+        .then((resolution) => {
           setVersions((prev) => ({
             ...prev,
-            [mod.id]: data ? { status: 'success', data } : { status: 'error' },
+            [mod.id]:
+              resolution.status === 'released'
+                ? {
+                    status:
+                      resolution.data.version === mod.sourceVersion ? 'success' : 'waiting',
+                    data: resolution.data,
+                  }
+                : resolution.status === 'unreleased'
+                  ? { status: 'waiting' }
+                  : { status: 'error' },
           }))
         })
         .catch(() => {
