@@ -6,8 +6,9 @@ import qs.modules.common.functions
  * 24 h battery curve for the detail panel. Fixed 0..100 axis (the reference
  * frame matters here — "was I above half all day?"), recessive gridlines,
  * hour labels, charging stretches stroked+filled with the accent colour,
- * discharging in neutral ink. Suspend/off gaps get a faint hatch band and no
- * line — a flat connector would claim knowledge the sampler does not have.
+ * discharging in neutral ink. Suspend/off gaps get a faint band plus a dashed
+ * endpoint connector: the curve stays traceable while the dash makes clear
+ * that intermediate values were not sampled.
  *
  * Hover shows a crosshair with time · % · W of the nearest sample.
  */
@@ -87,15 +88,25 @@ Item {
             if (!s || s.length < 2)
                 return
 
-            // Gap bands first (under the line).
+            // Gap bands and dashed endpoint connectors first (under the sampled
+            // line). The connector keeps the curve visually traceable without
+            // pretending that unsampled intermediate values are known.
             ctx.fillStyle = ColorUtils.transparentize(Appearance.colors.colOnLayer1Inactive, 0.88)
+            ctx.strokeStyle = ColorUtils.transparentize(Appearance.colors.colOnSurfaceVariant, 0.45)
+            ctx.lineWidth = 1
+            ctx.setLineDash([4, 4])
             for (let i = 1; i < s.length; i++) {
                 if (s[i][0] - s[i - 1][0] > root.gapSec) {
                     const x0 = root.xOf(s[i - 1][0])
                     const x1 = root.xOf(s[i][0])
                     ctx.fillRect(x0, 1, Math.max(1, x1 - x0), ph - 2)
+                    ctx.beginPath()
+                    ctx.moveTo(x0, root.yOf(s[i - 1][1]))
+                    ctx.lineTo(x1, root.yOf(s[i][1]))
+                    ctx.stroke()
                 }
             }
+            ctx.setLineDash([])
 
             ctx.lineWidth = 2
             ctx.lineJoin = "round"
