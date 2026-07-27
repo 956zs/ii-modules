@@ -4,7 +4,7 @@ The IIMP (illogical-impulse Module Protocol) module listing site. Built with Vit
 
 - `scripts/module-catalog.mjs` — validates every `modules/*/module.json` plus README and derives the landing catalog, module docs routes, and VitePress navigation from that single source.
 - `public/registry.json` — generated deploy artifact. `npm run build` regenerates it automatically from the current checkout; `npm run catalog:check` remains available for CI/review jobs that want to detect an unrefreshed committed artifact.
-- `src/lib/version.ts` — release resolution is separate from source metadata: it reads `index.json.modules[id]`, falls back to the matching GitHub release asset, and only enables downloads when the released version matches the manifest version.
+- `src/lib/version.ts` — release resolution is separate from source metadata: it reads the canonical Pages `index.json.modules[id]` contract and only enables downloads when the released version matches the manifest version.
 
 ## Development
 

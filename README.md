@@ -92,36 +92,80 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 > [!TIP]
 > 若要帶到別的模塊專案，複製到該專案的 `.claude/skills/`，不要裝進全域 `~/.claude/skills/`。
 
-## Release workflow（多人協作）
+## Release workflow（獨立產品版本）
 
-正式 release 只從 git tag 產生。maintainer 合併版本 bump PR 後，建立並推送 tag：
+CLI 與每個模塊都是獨立產品，不共用版本號或 GitHub Release：
+
+| 產品 | Tag | Release 內容 |
+|---|---|---|
+| 模塊 | `module/<id>/v<semver>` | `<id>-<semver>.iimod`、`SHA256SUMS` |
+| iimod CLI | `iimod/v<semver>` | `iimod-linux-x86_64`、`SHA256SUMS` |
+
+每個 namespaced tag 只建置並發布對應產品，Release 一律不取代 repository-wide Latest。正式 release 只從已存在且指向目前 commit 的 tag 產生，例如：
 
 ```bash
-git tag v1.0.2
-git push origin v1.0.2
+git tag module/network_traffic/v1.5.0
+git push origin module/network_traffic/v1.5.0
+
+# CLI 有自己的版本生命週期
+git tag iimod/v0.2.0
+git push origin iimod/v0.2.0
 ```
 
-GitHub Actions 會自動跑 `tools/release/build.sh` 和 `tools/release/verify.sh`，
-產出 Linux binary、`.iimod`、starter zip、`SHA256SUMS`，再發布 GitHub Release。
+Pages 會在 Release 變更後掃描所有 namespaced Releases，驗證精確資產名稱並重算 SHA256，再輸出：
+
+- `https://ii.n1cat.xyz/index.json`：所有模塊各自最高 semver 的 `indexVersion: 1` 聚合索引
+- `https://ii.n1cat.xyz/downloads/iimod/linux-x86_64`：最高 CLI semver 的穩定下載
+- `https://ii.n1cat.xyz/downloads/iimod/linux-x86_64.sha256`：對應 checksum
+
+因此合併模塊版本 bump 只會更新原始碼 catalog；對應的 `module/<id>/v<version>` Release 成功後，網站才會啟用下載。
+
+首次啟用此流程時，建議先發布目前 Cargo 版本的 CLI，再發布模塊。Pages projection 會按目前存在的穩定 Releases 完整重建輸出：尚無 CLI 時不提供穩定 binary，尚無模塊時則輸出合法的空索引；刪除 Release 也會在下一次部署移除對應產品。以目前版本為例：
+
+```bash
+git tag iimod/v1.1.0
+git push origin iimod/v1.1.0
+git tag module/network_traffic/v1.5.0
+git push origin module/network_traffic/v1.5.0
+```
+
+### Legacy `v1.4.0` 更新來源遷移
+
+既有 `network_traffic 1.4.0` 安裝記住的是 `v1.4.0/index.json`。新 `module/network_traffic/v1.5.0` 發布且 Pages index 更新後，產生一次性 bridge：
+
+```bash
+curl --fail --location --output /tmp/iimp-index.json https://ii.n1cat.xyz/index.json
+npm --prefix site run legacy:index -- \
+  --index /tmp/iimp-index.json \
+  --module network_traffic \
+  --output /tmp/network-traffic-legacy-index.json
+```
+
+核對輸出的 version、GitHub HTTPS 資產 URL 與 SHA256 後，將它**取代**舊 `v1.4.0` Release 的 `index.json` 資產。不要向 legacy Release 加入新產品 artifact；它只作為舊 origin 到新不可變模塊資產的相容橋。
 
 <details>
 <summary>本機 dry-run（開發用）</summary>
 
 ```bash
-tools/release/build.sh --allow-dirty v1.0.2
-tools/release/verify.sh dist/release/v1.0.2
+# 模塊
+tools/release/build-module.sh --allow-dirty modules/network_traffic module/network_traffic/v1.5.0
+tools/release/verify-module.sh dist/release/module/network_traffic/v1.5.0
+
+# CLI
+tools/release/build-cli.sh --allow-dirty iimod/v1.1.0
+tools/release/verify-cli.sh dist/release/iimod/v1.1.0
 ```
 
-`build.sh` 預設要求 git tree 乾淨；`--allow-dirty` 只給本機試包用，正式 CI 不使用。
+建置腳本預設要求 git tree 乾淨；`--allow-dirty` 只給本機試包用，正式 CI 不使用。
 
 </details>
 
 ## 模塊更新（`iimod update`）
 
 去中心化設計——沒有中央倉庫，每個模塊在安裝時記住自己的來源
-（存在 registry v2，協議零改動）。**正式發佈的 `.iimod` 內嵌自己的 origin**
-（`pack --origin`，release 管線自動填 GitHub Releases 位址）——拿到檔案就能裝、
-裝了就能 `iimod update`。沒內嵌時，從 URL 安裝自動記同目錄的 `index.json`；
+（存在 registry v2，協議零改動）。**本 repository 發佈的 `.iimod` 內嵌穩定的 Pages origin**
+（`https://ii.n1cat.xyz/index.json`）；Pages 會從各自獨立的 namespaced Releases 投影最高 semver。拿到檔案就能裝、
+裝了就能 `iimod update`。其他發佈者仍可在 pack 時內嵌自己的 index；沒內嵌時，從 URL 安裝自動記同目錄的 `index.json`；
 `--origin` 永遠可顯式覆寫（優先序：flag ＞ 內嵌 ＞ URL 同目錄）。來源是一個靜態 `index.json`，掛在任何
 HTTPS 位置（GitHub raw / Releases / 自架皆可）：
 
@@ -166,8 +210,8 @@ HTTPS 位置（GitHub raw / Releases / 自架皆可）：
 ```text
 spec/            SPEC-1.0.md＋fixtures（規範與測試語料）
 tools/iimod/     Rust CLI（50 tests：單元＋對迷你 stock 樹的整合矩陣）
-tools/release/   release build/verify 腳本
-.github/         tag-triggered release workflow
+tools/release/   獨立 module / iimod CLI release build、verify 腳本
+.github/         namespaced tag release workflows 與 Pages release projection
 .claude/skills/  Claude Code project skills ×2
 skills/          portable skill copies ×2
 modules/         參考模塊（network_traffic）

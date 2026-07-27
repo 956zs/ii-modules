@@ -57,9 +57,15 @@ After merge, the landing catalog, both module documentation routes, and document
 
 ## Hosting via GitHub Releases (recommended)
 
-Following this repo's reference modules as an example: a tag-triggered release workflow automatically runs `tools/release/build.sh`, producing the `.iimod`, `index.json`, and `SHA256SUMS` and publishing them together to a GitHub Release, with the origin automatically pointing at the Releases `latest/download` location. You can copy this same pattern for your own module repo:
+Every product in this repository releases independently: modules use `module/<id>/v<version>` tags, while the CLI uses `iimod/v<version>` tags. Each GitHub Release contains only that product's artifact, `SHA256SUMS`, and release notes, and does not replace the repository-wide Latest release.
+
+Before releasing a module, its manifest `id` and `version` must exactly match the tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag module/my_widget/v0.1.0
+git push origin module/my_widget/v0.1.0
 ```
+
+The workflow embeds `https://ii.n1cat.xyz/index.json` as the package origin. Pages rescans every namespaced release, validates exact asset names, recomputes SHA256, and projects the highest semver for each module into a compatible aggregate `indexVersion: 1` index.
+
+Merging `modules/<id>` source only updates the catalog. The website enables downloads only after the matching namespaced release succeeds. The CLI releases separately through `iimod/v<version>` and never shares a version number or Release with a module.

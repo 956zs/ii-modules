@@ -57,9 +57,15 @@ PR 合併後,首頁清單、雙語模塊文件頁與文件導覽會一起更新�
 
 ## 用 GitHub Releases 託管(建議做法)
 
-以本 repo 的參考模塊為例:tag 觸發的 release workflow 自動跑 `tools/release/build.sh`,產出 `.iimod`、`index.json` 與 `SHA256SUMS` 一起發佈到 GitHub Release,origin 自動指向 Releases 的 `latest/download` 位址。自己的模塊 repo 可以照抄這個模式:
+本 repository 的每個產品獨立發版：模塊使用 `module/<id>/v<version>` tag，CLI 使用 `iimod/v<version>` tag。每個 GitHub Release 只包含該產品自己的 artifact、`SHA256SUMS` 與 release notes，且不會改動 repository-wide Latest。
+
+發布模塊前，manifest 的 `id`／`version` 必須與 tag 完全一致：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag module/my_widget/v0.1.0
+git push origin module/my_widget/v0.1.0
 ```
+
+workflow 會將套件 origin 內嵌為 `https://ii.n1cat.xyz/index.json`。Pages 重新掃描所有 namespaced Releases、驗證資產名稱並重算 SHA256，再把每個模塊的最高 semver 投影到相容的 `indexVersion: 1` 聚合索引。
+
+合併 `modules/<id>` 的原始碼只會更新 catalog；只有對應版本的 namespaced Release 成功發布後，網站下載按鈕才會啟用。CLI 另以 `iimod/v<version>` 發布，不會與模塊共用版本號或 Release。
