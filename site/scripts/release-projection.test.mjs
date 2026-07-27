@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
-import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -17,7 +16,10 @@ function release(tagName, assetName, url, overrides = {}) {
     tag_name: tagName,
     draft: false,
     prerelease: false,
-    assets: [{ name: assetName, browser_download_url: url }],
+    assets: [
+      { name: assetName, browser_download_url: url },
+      { name: 'SHA256SUMS', browser_download_url: `${url}.sums` },
+    ],
     ...overrides,
   }
 }
@@ -33,14 +35,14 @@ async function outputFixture() {
 
 test('projects highest stable namespaced releases and hashes downloaded bytes', async () => {
   const outputs = await outputFixture()
-  const moduleUrl = 'https://downloads.example/sample-2.0.0.iimod'
-  const cliUrl = 'https://downloads.example/iimod-linux-x86_64'
+  const moduleUrl = 'https://github.com/example/repo/releases/download/module%2Fsample%2Fv2.0.0/sample-2.0.0.iimod'
+  const cliUrl = 'https://github.com/example/repo/releases/download/iimod%2Fv3.1.0/iimod-linux-x86_64'
   const downloads = new Map([
     [moduleUrl, Buffer.from('abc')],
     [cliUrl, Buffer.from('hello')],
   ])
   const releases = [
-    release('module/sample/v1.9.0', 'sample-1.9.0.iimod', 'https://downloads.example/old'),
+    release('module/sample/v1.9.0', 'sample-1.9.0.iimod', 'https://github.com/example/repo/releases/download/old/sample.iimod'),
     release('module/sample/v2.0.0', 'sample-2.0.0.iimod', moduleUrl),
     release('module/sample/v9.0.0', 'sample-9.0.0.iimod', 'https://downloads.example/draft', {
       draft: true,
@@ -77,26 +79,30 @@ function validPair(overrides = {}) {
     release(
       overrides.moduleTag ?? 'module/sample/v1.0.0',
       overrides.moduleAsset ?? 'sample-1.0.0.iimod',
-      overrides.moduleUrl ?? 'https://downloads.example/sample-1.0.0.iimod',
+      overrides.moduleUrl ?? 'https://github.com/example/repo/releases/download/module%2Fsample%2Fv1.0.0/sample-1.0.0.iimod',
       overrides.moduleOverrides,
     ),
     release(
       overrides.cliTag ?? 'iimod/v1.0.0',
       overrides.cliAsset ?? 'iimod-linux-x86_64',
-      overrides.cliUrl ?? 'https://downloads.example/iimod-linux-x86_64',
+      overrides.cliUrl ?? 'https://github.com/example/repo/releases/download/iimod%2Fv1.0.0/iimod-linux-x86_64',
       overrides.cliOverrides,
     ),
   ]
 }
 
-async function assertProjectionRejects(releases, pattern) {
+async function assertProjectionRejects(
+  releases,
+  pattern,
+  download = async () => Buffer.from('bytes'),
+) {
   const outputs = await outputFixture()
   await writeFile(outputs.indexOutput, 'existing index')
   await assert.rejects(
     projectReleases({
       releases,
       ...outputs,
-      download: async () => Buffer.from('bytes'),
+      download,
     }),
     pattern,
   )
@@ -106,11 +112,11 @@ async function assertProjectionRejects(releases, pattern) {
 
 test('rejects duplicate releases, ambiguous precedence, and invalid stable tags', async () => {
   await assertProjectionRejects(
-    [...validPair(), release('module/sample/v1.0.0', 'sample-1.0.0.iimod', 'https://other.example/a')],
+    [...validPair(), release('module/sample/v1.0.0', 'sample-1.0.0.iimod', 'https://github.com/example/repo/releases/download/duplicate/sample-1.0.0.iimod')],
     /duplicate release/,
   )
   await assertProjectionRejects(
-    [...validPair(), release('module/sample/v1.0.0+build2', 'sample-1.0.0+build2.iimod', 'https://other.example/b')],
+    [...validPair(), release('module/sample/v1.0.0+build2', 'sample-1.0.0+build2.iimod', 'https://github.com/example/repo/releases/download/build2/sample-1.0.0+build2.iimod')],
     /ambiguous semver precedence/,
   )
   await assertProjectionRejects(
@@ -125,8 +131,16 @@ test('rejects malformed product tags instead of treating them as unrelated relea
     /invalid namespaced release tag/,
   )
   await assertProjectionRejects(
-    [...validPair(), release('iimod/latest', 'iimod-linux-x86_64', 'https://other.example/b')],
+    [...validPair(), release('iimod/latest', 'iimod-linux-x86_64', 'https://github.com/example/repo/releases/download/a/b')],
     /invalid namespaced release tag/,
+  )
+  await assertProjectionRejects(
+    [...validPair(), release('module/sample_/v1.0.0', 'sample_-1.0.0.iimod', 'https://github.com/example/repo/releases/download/a/b')],
+    /invalid IIMP module id/,
+  )
+  await assertProjectionRejects(
+    [...validPair(), release('module/sample__bad/v1.0.0', 'sample__bad-1.0.0.iimod', 'https://github.com/example/repo/releases/download/a/b')],
+    /invalid IIMP module id/,
   )
 })
 
@@ -150,22 +164,70 @@ test('requires API asset digests to be canonical and match recomputed bytes', as
   await assertProjectionRejects(ambiguous, /invalid digest/)
 })
 
-test('requires exactly one precisely named asset with an absolute download URL', async () => {
-  await assertProjectionRejects(validPair({ moduleAsset: 'sample.iimod' }), /expected exactly one asset/)
+test('requires the release to contain only its product artifact and SHA256SUMS', async () => {
+  await assertProjectionRejects(
+    validPair({ moduleAsset: 'sample.iimod' }),
+    /release assets must be exactly/,
+  )
   const duplicate = validPair()
   duplicate[0].assets.push({ ...duplicate[0].assets[0] })
-  await assertProjectionRejects(duplicate, /expected exactly one asset.*found 2/)
-  await assertProjectionRejects(validPair({ moduleUrl: '/sample-1.0.0.iimod' }), /absolute HTTP\(S\)/)
+  await assertProjectionRejects(duplicate, /release assets must be exactly/)
+  const mixed = validPair()
+  mixed[0].assets.push({
+    name: 'iimod-linux-x86_64',
+    browser_download_url: 'https://github.com/example/repo/releases/download/mixed/iimod-linux-x86_64',
+  })
+  await assertProjectionRejects(mixed, /release assets must be exactly/)
+  const missingChecksums = validPair()
+  missingChecksums[0].assets = [missingChecksums[0].assets[0]]
+  await assertProjectionRejects(missingChecksums, /release assets must be exactly/)
 })
 
-test('ignores drafts and prereleases but requires both stable product types', async () => {
+test('requires an absolute GitHub HTTPS product download URL', async () => {
   await assertProjectionRejects(
-    validPair({ cliOverrides: { draft: true } }),
-    /no stable iimod release/,
+    validPair({ moduleUrl: '/sample-1.0.0.iimod' }),
+    /absolute GitHub HTTPS/,
   )
   await assertProjectionRejects(
-    validPair({ moduleOverrides: { prerelease: true } }),
-    /no stable module releases/,
+    validPair({ moduleUrl: 'http://github.com/example/repo/releases/download/tag/sample.iimod' }),
+    /absolute GitHub HTTPS/,
+  )
+  await assertProjectionRejects(
+    validPair({ moduleUrl: 'https://downloads.example/sample-1.0.0.iimod' }),
+    /absolute GitHub HTTPS/,
+  )
+})
+
+test('ignores drafts and prereleases and projects the remaining product set', async () => {
+  const noCli = await outputFixture()
+  await mkdir(path.dirname(noCli.cliOutput), { recursive: true })
+  await writeFile(noCli.cliOutput, 'stale binary')
+  await writeFile(`${noCli.cliOutput}.sha256`, 'stale checksum')
+  const moduleOnly = await projectReleases({
+    releases: validPair({ cliOverrides: { draft: true } }),
+    ...noCli,
+    download: async () => Buffer.from('module bytes'),
+  })
+  assert.deepEqual(Object.keys(moduleOnly.modules), ['sample'])
+  await assert.rejects(readFile(noCli.cliOutput), { code: 'ENOENT' })
+  await assert.rejects(readFile(`${noCli.cliOutput}.sha256`), { code: 'ENOENT' })
+
+  const noModules = await outputFixture()
+  const cliOnly = await projectReleases({
+    releases: validPair({ moduleOverrides: { prerelease: true } }),
+    ...noModules,
+    download: async () => Buffer.from('cli bytes'),
+  })
+  assert.deepEqual(cliOnly, { indexVersion: 1, modules: {} })
+  assert.equal((await readFile(noModules.cliOutput)).toString(), 'cli bytes')
+})
+
+test('rejects empty and oversized downloaded assets without changing outputs', async () => {
+  await assertProjectionRejects(validPair(), /asset size 0 is outside/, async () => Buffer.alloc(0))
+  await assertProjectionRejects(
+    validPair(),
+    /asset size 20971521 is outside/,
+    async () => Buffer.alloc(20 * 1024 * 1024 + 1),
   )
 })
 
@@ -193,9 +255,13 @@ test('download failure leaves all existing outputs untouched', async () => {
   assert.equal(await readFile(`${outputs.cliOutput}.sha256`, 'utf8'), 'old checksum')
 })
 
-function runScript(args) {
+function runScript(args, env = {}) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./release-projection.mjs', import.meta.url)), ...args])
+    const child = spawn(
+      process.execPath,
+      [fileURLToPath(new URL('./release-projection.mjs', import.meta.url)), ...args],
+      { env: { ...process.env, ...env } },
+    )
     let stderr = ''
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', (chunk) => {
@@ -205,28 +271,31 @@ function runScript(args) {
   })
 }
 
-test('CLI accepts comma-separated paginated API fixtures and downloads through HTTP', async (t) => {
+test('CLI accepts comma-separated paginated API fixtures with offline HTTPS downloads', async () => {
   const outputs = await outputFixture()
-  const server = http.createServer((request, response) => {
-    response.end(request.url === '/module' ? 'module bytes' : 'cli bytes')
-  })
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
-  t.after(() => server.close())
-  const address = server.address()
-  const base = `http://127.0.0.1:${address.port}`
+  const moduleUrl = 'https://github.com/example/repo/releases/download/module%2Fsample%2Fv1.0.0/sample-1.0.0.iimod'
+  const cliUrl = 'https://github.com/example/repo/releases/download/iimod%2Fv1.0.0/iimod-linux-x86_64'
   const pageOne = path.join(outputs.root, 'page-1.json')
   const pageTwo = path.join(outputs.root, 'page-2.json')
-  await writeFile(pageOne, JSON.stringify([release('module/sample/v1.0.0', 'sample-1.0.0.iimod', `${base}/module`)]))
-  await writeFile(pageTwo, JSON.stringify([release('iimod/v1.0.0', 'iimod-linux-x86_64', `${base}/cli`)]))
+  const preload = path.join(outputs.root, 'fetch-stub.mjs')
+  await writeFile(pageOne, JSON.stringify([release('module/sample/v1.0.0', 'sample-1.0.0.iimod', moduleUrl)]))
+  await writeFile(pageTwo, JSON.stringify([release('iimod/v1.0.0', 'iimod-linux-x86_64', cliUrl)]))
+  await writeFile(
+    preload,
+    `globalThis.fetch = async (url) => new Response(url.endsWith('iimod-linux-x86_64') ? 'cli bytes' : 'module bytes')\n`,
+  )
 
-  const result = await runScript([
-    '--releases',
-    `${pageOne},${pageTwo}`,
-    '--index-output',
-    outputs.indexOutput,
-    '--cli-output',
-    outputs.cliOutput,
-  ])
+  const result = await runScript(
+    [
+      '--releases',
+      `${pageOne},${pageTwo}`,
+      '--index-output',
+      outputs.indexOutput,
+      '--cli-output',
+      outputs.cliOutput,
+    ],
+    { NODE_OPTIONS: `--import=${preload}` },
+  )
   assert.equal(result.code, 0, result.stderr)
   assert.equal((await readFile(outputs.cliOutput)).toString(), 'cli bytes')
 })

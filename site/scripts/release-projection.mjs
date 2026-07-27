@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 const MODULE_TAG = /^module\/([a-z][a-z0-9_]{1,30})\/v(.+)$/
 const CLI_TAG = /^iimod\/v(.+)$/
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+const MODULE_MAX_BYTES = 20 * 1024 * 1024
+const CLI_MAX_BYTES = 64 * 1024 * 1024
 
 function parseSemver(version) {
   const match = SEMVER.exec(version)
@@ -65,13 +67,33 @@ function releaseCandidate(release) {
 
   const product = moduleMatch ? `module/${moduleMatch[1]}` : 'iimod'
   const id = moduleMatch?.[1] ?? null
+  if (id !== null && (id.endsWith('_') || id.includes('__'))) {
+    throw new Error(`${tag}: invalid IIMP module id`)
+  }
   const version = moduleMatch?.[2] ?? cliMatch[1]
   const semver = parseSemver(version)
   if (!semver) throw new Error(`${tag}: version is not valid semver`)
   if (semver.prerelease.length > 0) return null
   const expectedAsset = id ? `${id}-${version}.iimod` : 'iimod-linux-x86_64'
   if (!Array.isArray(release.assets)) throw new Error(`${tag}: assets must be an array`)
-  const matches = release.assets.filter((asset) => asset?.name === expectedAsset)
+  if (release.assets.some((asset) => !asset || typeof asset !== 'object' || Array.isArray(asset))) {
+    throw new Error(`${tag}: assets must contain objects`)
+  }
+  const assetNames = release.assets.map((asset) => asset.name)
+  if (assetNames.some((name) => typeof name !== 'string')) {
+    throw new Error(`${tag}: asset names must be strings`)
+  }
+  const expectedNames = new Set([expectedAsset, 'SHA256SUMS'])
+  if (
+    assetNames.length !== expectedNames.size
+    || new Set(assetNames).size !== assetNames.length
+    || assetNames.some((name) => !expectedNames.has(name))
+  ) {
+    throw new Error(
+      `${tag}: release assets must be exactly ${[...expectedNames].join(' and ')}`,
+    )
+  }
+  const matches = release.assets.filter((asset) => asset.name === expectedAsset)
   if (matches.length !== 1) {
     throw new Error(`${tag}: expected exactly one asset named ${expectedAsset}, found ${matches.length}`)
   }
@@ -82,11 +104,21 @@ function releaseCandidate(release) {
   }
   try {
     const parsed = new URL(url)
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('unsupported protocol')
+    if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com') {
+      throw new Error('unsupported release asset URL')
+    }
   } catch {
-    throw new Error(`${tag}: ${expectedAsset} must have an absolute HTTP(S) browser_download_url`)
+    throw new Error(`${tag}: ${expectedAsset} must have an absolute GitHub HTTPS browser_download_url`)
   }
-  return { product, id, version, semver, url, apiDigest: apiDigest?.slice('sha256:'.length) ?? null }
+  return {
+    product,
+    id,
+    version,
+    semver,
+    url,
+    apiDigest: apiDigest?.slice('sha256:'.length) ?? null,
+    maxBytes: id === null ? CLI_MAX_BYTES : MODULE_MAX_BYTES,
+  }
 }
 
 function selectReleases(releases) {
@@ -114,10 +146,24 @@ function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
-async function defaultDownload(url) {
+async function defaultDownload(url, maxBytes) {
   const response = await fetch(url, { redirect: 'follow' })
   if (!response.ok) throw new Error(`download failed (${response.status}) for ${url}`)
-  return Buffer.from(await response.arrayBuffer())
+  const contentLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new Error(`asset exceeds ${maxBytes} bytes`)
+  }
+  if (!response.body) throw new Error(`download returned no body for ${url}`)
+
+  const chunks = []
+  let length = 0
+  for await (const chunk of response.body) {
+    length += chunk.byteLength
+    if (length > maxBytes) throw new Error(`asset exceeds ${maxBytes} bytes`)
+    chunks.push(Buffer.from(chunk))
+  }
+  if (length === 0) throw new Error('asset is empty')
+  return Buffer.concat(chunks, length)
 }
 
 async function replaceFile(output, contents, mode) {
@@ -136,26 +182,33 @@ export async function projectReleases({ releases, indexOutput, cliOutput, downlo
   if (typeof cliOutput !== 'string' || !cliOutput) throw new Error('cliOutput is required')
   const selected = selectReleases(releases)
   const cli = selected.get('iimod')
-  if (!cli) throw new Error('no stable iimod release found')
 
   const moduleCandidates = [...selected.values()]
     .filter((candidate) => candidate.id !== null)
     .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
-  if (moduleCandidates.length === 0) throw new Error('no stable module releases found')
 
   const downloaded = new Map()
-  for (const candidate of [...moduleCandidates, cli]) {
+  const candidates = cli ? [...moduleCandidates, cli] : moduleCandidates
+  for (const candidate of candidates) {
     let bytes
     try {
-      bytes = Buffer.from(await download(candidate.url))
+      bytes = Buffer.from(await download(candidate.url, candidate.maxBytes))
     } catch (error) {
       throw new Error(`failed to download ${candidate.url}: ${error.message}`)
+    }
+    if (bytes.length === 0 || bytes.length > candidate.maxBytes) {
+      throw new Error(
+        `${candidate.product} v${candidate.version}: asset size ${bytes.length} is outside 1-${candidate.maxBytes} bytes`,
+      )
     }
     const digest = sha256(bytes)
     if (candidate.apiDigest !== null && candidate.apiDigest !== digest) {
       throw new Error(`${candidate.product} v${candidate.version}: asset digest mismatch`)
     }
-    downloaded.set(candidate.product, { bytes, digest })
+    downloaded.set(candidate.product, {
+      bytes: candidate.id === null ? bytes : null,
+      digest,
+    })
   }
 
   const modules = Object.fromEntries(
@@ -169,11 +222,16 @@ export async function projectReleases({ releases, indexOutput, cliOutput, downlo
     ]),
   )
   const index = { indexVersion: 1, modules }
-  const cliDownload = downloaded.get('iimod')
 
   await replaceFile(indexOutput, `${JSON.stringify(index, null, 2)}\n`)
-  await replaceFile(cliOutput, cliDownload.bytes, 0o755)
-  await replaceFile(`${cliOutput}.sha256`, `${cliDownload.digest}\n`)
+  if (cli) {
+    const cliDownload = downloaded.get('iimod')
+    await replaceFile(cliOutput, cliDownload.bytes, 0o755)
+    await replaceFile(`${cliOutput}.sha256`, `${cliDownload.digest}\n`)
+  } else {
+    await rm(cliOutput, { force: true })
+    await rm(`${cliOutput}.sha256`, { force: true })
+  }
   return index
 }
 
