@@ -11,7 +11,7 @@
     "zh_TW": "視覺化 RAM/swap 檢視與清理工具：壓力變色百分比 bar 元件（可隱藏以節省 bar 空間）、hover 彈窗含誠實的組成迷你條（應用程式／可回收快取／可用，總和恆等於 MemTotal）、詳細面板——動畫組成條、treemap 式程序方塊（面積＝RSS，點兩下可結束自己的程序）、整理 swap 與清除快取（polkit/sudo 認證後執行並回報實測釋放量）。可選側欄快速開關磁貼（Tier B 補丁），點擊開啟面板。",
     "zh_CN": "可视化 RAM/swap 查看与清理工具：压力变色百分比 bar 组件（可隐藏以节省 bar 空间）、悬停弹窗含诚实的组成迷你条（应用程序／可回收缓存／可用，总和恒等于 MemTotal）、详细面板——动画组成条、treemap 式进程方块（面积＝RSS，双击可结束自己的进程）、整理 swap 与清除缓存（polkit/sudo 认证后执行并回报实测释放量）。可选侧栏快速开关磁贴（Tier B 补丁），点击打开面板。"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["bar"],
@@ -36,7 +36,8 @@
       {"type": "file-exists", "path": "modules/common/widgets/MaterialTextField.qml", "reason": "copyable sidebar-tile config line in the settings fragment"},
       {"type": "file-exists", "path": "modules/ii/polkit/Polkit.qml", "reason": "the shell's built-in polkit agent answers this module's pkexec prompts"},
       {"type": "file-contains", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidToggleDelegateChooser.qml", "pattern": "roleValue: \"antiFlashbang\"", "reason": "patch anchor for the sidebar tile delegate"},
-      {"type": "file-exists", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidQuickToggleButton.qml", "reason": "stock component the sidebar tile patch instantiates"}
+      {"type": "file-exists", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidQuickToggleButton.qml", "reason": "stock component the sidebar tile patch instantiates"},
+      {"type": "file-contains", "path": "modules/ii/sidebarRight/quickToggles/AndroidQuickPanel.qml", "pattern": "id: unusedRows", "reason": "patch anchor for the edit-mode add and re-add row"}
     ],
     "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
   },
@@ -47,6 +48,12 @@
       "op": "insert-before",
       "anchor": "roleValue: \"antiFlashbang\"",
       "content": "    DelegateChoice { roleValue: \"memory_center\"; AndroidQuickToggleButton {\n        required property int index\n        required property var modelData\n        buttonIndex: root.startingIndex + index\n        buttonData: modelData\n        editMode: root.editMode\n        expandedSize: modelData.size > 1\n        baseCellWidth: root.baseCellWidth\n        baseCellHeight: root.baseCellHeight\n        cellSpacing: root.spacing\n        cellSize: modelData.size\n        name: Translation.tr(\"Memory\")\n        tooltipText: Translation.tr(\"Memory\")\n        buttonIcon: \"memory\"\n        toggled: false\n        mainAction: () => Quickshell.execDetached([\"qs\", \"-c\", \"ii\", \"ipc\", \"--any-display\", \"call\", \"memory_center\", \"toggle\"])\n    } }\n\n"
+    },
+    {
+      "file": "modules/ii/sidebarRight/quickToggles/AndroidQuickPanel.qml",
+      "op": "insert-after",
+      "anchor": "id: unusedRows",
+      "content": "                // memory_center: the stock unused list is built from the hardcoded\n                // availableToggleTypes, so this module supplies its own add/re-add\n                // offer whenever the tile is absent from the current config.\n                ButtonGroup {\n                    visible: !root.toggles.some(t => t && t.type === \"memory_center\")\n                    spacing: root.spacing\n\n                    Repeater {\n                        model: ScriptModel {\n                            values: root.toggles.some(t => t && t.type === \"memory_center\") ? [] : [{ type: \"memory_center\", size: 1 }]\n                            objectProp: \"type\"\n                        }\n                        delegate: AndroidToggleDelegateChooser {\n                            startingIndex: -1\n                            editMode: root.editMode\n                            baseCellWidth: root.baseCellWidth\n                            baseCellHeight: root.baseCellHeight\n                            spacing: root.spacing\n                        }\n                    }\n                }\n"
     }
   ]
 }
