@@ -8,6 +8,7 @@
     "build": "npm run catalog:generate && npm test && tsc -b && vite build && vitepress build docs",
     "catalog:generate": "node scripts/module-catalog.mjs",
     "catalog:check": "node scripts/module-catalog.mjs --check",
+    "releases:project": "node scripts/release-projection.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "docs:dev": "vitepress dev docs",
