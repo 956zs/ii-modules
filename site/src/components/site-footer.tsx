@@ -2,9 +2,11 @@ import { BookOpen, FileText, GitPullRequest, ScrollText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { GitHubIcon } from '@/components/site-header'
-import { ADD_MODULE_URL, DOCS_URL, REGISTRY_URL, REPO_URL, SPEC_URL } from '@/lib/urls'
+import { docsUrl, useI18n } from '@/lib/i18n'
+import { ADD_MODULE_URL, REGISTRY_URL, REPO_URL, SPEC_URL } from '@/lib/urls'
 
 export function SiteFooter() {
+  const { t, locale } = useI18n()
   return (
     <footer className="border-t border-border/60">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:px-6">
@@ -13,14 +15,12 @@ export function SiteFooter() {
             <span className="font-mono text-sm font-semibold tracking-wide">
               IIMP<span className="text-brand">.</span>
             </span>
-            <p className="text-xs text-muted-foreground">
-              聯邦式模塊清單——每個模塊自帶更新來源，清單只負責索引。
-            </p>
+            <p className="text-xs text-muted-foreground">{t.footerTagline}</p>
           </div>
           <Button asChild variant="outline" size="sm">
             <a href={ADD_MODULE_URL} target="_blank" rel="noreferrer">
               <GitPullRequest data-icon="inline-start" />
-              新增模塊
+              {t.addModule}
             </a>
           </Button>
         </div>
@@ -28,13 +28,13 @@ export function SiteFooter() {
         <Separator />
 
         <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
-          <nav aria-label="網站連結" className="flex flex-wrap items-center gap-4">
+          <nav aria-label={t.siteLinks} className="flex flex-wrap items-center gap-4">
             <a
-              href={DOCS_URL}
+              href={docsUrl(locale)}
               className="flex items-center gap-1.5 transition-colors duration-150 hover:text-foreground"
             >
               <BookOpen className="size-3.5" />
-              文件
+              {t.docs}
             </a>
             <a
               href={REPO_URL}

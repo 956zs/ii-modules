@@ -7,11 +7,11 @@
     "zh_CN": "电量趋势"
   },
   "description": {
-    "en_US": "Long-term battery history and analytics — with zero bar footprint by default (the stock bar already has a battery gauge). Sampling runs invisibly; the detail panel opens from a sidebar quick-toggle tile (Tier B patch) or IPC: 24 h curve (charge segments tinted, suspend gaps annotated), 30-day daily min/max bands, a year of health snapshots, drain-rate/cycle statistics and charge-session records, plus a hover popup with smoothed power draw and a regression-based time estimate. Optional opt-in bar pill: 3 h sparkline (percentage text a further opt-in). Tiered retention (24 h raw / 30 d hourly / 365 d daily) keeps the history file bounded. Native data sources only: UPower service + sysfs reads.",
-    "zh_TW": "手機級的長期電量趨勢與分析——預設零 bar 佔位（stock bar 已有電池指示器）。取樣在背景進行；詳情面板由側欄快速開關磁貼（Tier B 補丁）或 IPC 開啟——24 小時曲線（充電段上色、休眠斷點標註）、30 天每日最高/最低區間、一年健康快照、耗電速率/循環統計與充放電段記錄，另有 hover 彈窗顯示平滑功耗與回歸法剩餘時間估計（與 UPower 對照）。可選開啟 bar 藥丸：3 小時迷你曲線（百分比文字再另行選開）。分層保留（原始 24 小時／小時級 30 天／日級 365 天）讓歷史檔案大小有界。純原生資料來源：UPower 服務＋sysfs 檔案讀取。",
-    "zh_CN": "手机级的长期电量趋势与分析——默认零 bar 占位（stock bar 已有电池指示器）。采样在后台进行；详情面板由侧栏快速开关磁贴（Tier B 补丁）或 IPC 打开——24 小时曲线（充电段上色、休眠断点标注）、30 天每日最高/最低区间、一年健康快照、耗电速率/循环统计与充放电段记录，另有悬停弹窗显示平滑功耗与回归法剩余时间估计（与 UPower 对照）。可选开启 bar 药丸：3 小时迷你曲线（百分比文字再另行选开）。分层保留（原始 24 小时／小时级 30 天／日级 365 天）让历史文件大小有界。纯原生数据来源：UPower 服务＋sysfs 文件读取。"
+    "en_US": "Long-term battery history and analytics integrated into the stock battery indicator. Its stock popup is replaced by Battery Trend's informational superset, and clicking the stock ring opens the detail panel. The sidebar tile is offered by edit mode; an optional bar sparkline remains off by default.",
+    "zh_TW": "整合進 stock 電池指示器的長期電量趨勢與分析。原生彈窗會被本模塊的資訊超集取代，點擊 stock 電量環直接開啟詳情面板；側欄磁貼可在編輯模式加入，可選 bar 趨勢線預設關閉。",
+    "zh_CN": "集成进 stock 电池指示器的长期电量趋势与分析。原生弹窗会被本模块的信息超集替代，点击 stock 电量环直接打开详情面板；侧栏磁贴可在编辑模式添加，可选 bar 趋势线默认关闭。"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["bar"],
@@ -21,26 +21,62 @@
   },
   "compat": {
     "probes": [
-      {"type": "file-exists", "path": "modules/ii/bar/BarGroup.qml", "reason": "bar group container for the pill look"},
-      {"type": "file-exists", "path": "modules/ii/bar/StyledPopup.qml", "reason": "hover popup component"},
-      {"type": "file-exists", "path": "modules/ii/bar/StyledPopupValueRow.qml", "reason": "popup value rows"},
+      {"type": "file-exists", "path": "modules/ii/bar/BarGroup.qml", "reason": "bar group container for the optional sparkline"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopup.qml", "reason": "module-owned replacement hover popup"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopupValueRow.qml", "reason": "replacement popup value rows"},
+      {"type": "file-contains", "path": "modules/ii/bar/BatteryIndicator.qml", "pattern": "import qs.services", "reason": "stable import anchor for the replacement popup alias"},
+      {"type": "file-contains", "path": "modules/ii/bar/BatteryIndicator.qml", "pattern": "property bool borderless: Config.options.bar.borderless", "reason": "stable stock indicator anchor for the single click action"},
+      {"type": "file-contains", "path": "modules/ii/bar/BatteryIndicator.qml", "pattern": "BatteryPopup {", "reason": "stable anchor for the module-owned replacement popup"},
+      {"type": "file-contains", "path": "modules/ii/bar/BatteryIndicator.qml", "pattern": "id: batteryPopup", "reason": "stable anchor used to neutralize the stock popup instance"},
+      {"type": "file-exists", "path": "modules/ii/bar/BatteryPopup.qml", "reason": "stock popup being replaced must remain available and untouched for transactional restoration"},
       {"type": "file-exists", "path": "modules/common/widgets/StyledRectangularShadow.qml", "reason": "detail panel drop shadow"},
-      {"type": "file-exists", "path": "modules/common/widgets/ConfigSpinBox.qml", "reason": "numeric options in the settings fragment"},
-      {"type": "file-exists", "path": "modules/common/widgets/ConfigSwitch.qml", "reason": "toggle options in the settings fragment"},
-      {"type": "file-exists", "path": "modules/common/widgets/MaterialTextField.qml", "reason": "battery name override in the settings fragment"},
-      {"type": "file-contains", "path": "GlobalStates.qml", "pattern": "property bool sidebarRightOpen", "reason": "the IPC toggle closes the sidebar the tile was clicked in"},
-      {"type": "file-contains", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidToggleDelegateChooser.qml", "pattern": "roleValue: \"antiFlashbang\"", "reason": "patch anchor for the sidebar tile delegate"},
-      {"type": "file-exists", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidQuickToggleButton.qml", "reason": "stock component the sidebar tile patch instantiates"}
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSpinBox.qml", "reason": "numeric settings control"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSwitch.qml", "reason": "boolean settings control"},
+      {"type": "file-exists", "path": "modules/common/widgets/MaterialTextField.qml", "reason": "battery name setting"},
+      {"type": "file-contains", "path": "GlobalStates.qml", "pattern": "property bool sidebarRightOpen", "reason": "IPC entry closes the sidebar before opening the panel"},
+      {"type": "file-contains", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidToggleDelegateChooser.qml", "pattern": "roleValue: \"antiFlashbang\"", "reason": "stable sidebar tile delegate anchor"},
+      {"type": "file-exists", "path": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidQuickToggleButton.qml", "reason": "stock component instantiated by the tile delegate"},
+      {"type": "file-contains", "path": "modules/ii/sidebarRight/quickToggles/AndroidQuickPanel.qml", "pattern": "id: unusedRows", "reason": "stable edit-mode re-add anchor"}
     ],
     "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
   },
   "capabilities": ["exec"],
   "patches": [
     {
+      "file": "modules/ii/bar/BatteryIndicator.qml",
+      "op": "insert-after",
+      "anchor": "import qs.services",
+      "content": "import qs.mod.battery_trend as BatteryTrend\n"
+    },
+    {
+      "file": "modules/ii/bar/BatteryIndicator.qml",
+      "op": "insert-after",
+      "anchor": "property bool borderless: Config.options.bar.borderless",
+      "content": "    acceptedButtons: Qt.LeftButton\n    onClicked: batteryTrendPopup.openDetails()\n"
+    },
+    {
+      "file": "modules/ii/bar/BatteryIndicator.qml",
+      "op": "insert-before",
+      "anchor": "BatteryPopup {",
+      "content": "    BatteryTrend.StockBatteryPopup {\n        id: batteryTrendPopup\n        hoverTarget: root\n    }\n\n"
+    },
+    {
+      "file": "modules/ii/bar/BatteryIndicator.qml",
+      "op": "insert-after",
+      "anchor": "id: batteryPopup",
+      "content": "        active: false\n"
+    },
+    {
       "file": "modules/ii/sidebarRight/quickToggles/androidStyle/AndroidToggleDelegateChooser.qml",
       "op": "insert-before",
       "anchor": "roleValue: \"antiFlashbang\"",
       "content": "    DelegateChoice { roleValue: \"battery_trend\"; AndroidQuickToggleButton {\n        required property int index\n        required property var modelData\n        buttonIndex: root.startingIndex + index\n        buttonData: modelData\n        editMode: root.editMode\n        expandedSize: modelData.size > 1\n        baseCellWidth: root.baseCellWidth\n        baseCellHeight: root.baseCellHeight\n        cellSpacing: root.spacing\n        cellSize: modelData.size\n        name: Translation.tr(\"Battery trends\")\n        tooltipText: Translation.tr(\"Battery trends\")\n        buttonIcon: \"battery_horiz_075\"\n        toggled: false\n        mainAction: () => Quickshell.execDetached([\"qs\", \"-c\", \"ii\", \"ipc\", \"--any-display\", \"call\", \"battery_trend\", \"toggle\"])\n    } }\n\n"
+    },
+    {
+      "file": "modules/ii/sidebarRight/quickToggles/AndroidQuickPanel.qml",
+      "op": "insert-after",
+      "anchor": "id: unusedRows",
+      "content": "                // battery_trend: offer the module tile in edit mode whenever\n                // it is absent from the configured toggle list.\n                ButtonGroup {\n                    visible: !root.toggles.some(t => t && t.type === \"battery_trend\")\n                    spacing: root.spacing\n\n                    Repeater {\n                        model: ScriptModel {\n                            values: root.toggles.some(t => t && t.type === \"battery_trend\") ? [] : [{ type: \"battery_trend\", size: 1 }]\n                            objectProp: \"type\"\n                        }\n                        delegate: AndroidToggleDelegateChooser {\n                            startingIndex: -1\n                            editMode: root.editMode\n                            baseCellWidth: root.baseCellWidth\n                            baseCellHeight: root.baseCellHeight\n                            spacing: root.spacing\n                        }\n                    }\n                }\n"
     }
   ]
 }

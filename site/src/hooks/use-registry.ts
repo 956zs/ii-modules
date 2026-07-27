@@ -6,7 +6,7 @@ export type RegistryState =
   | { status: 'success'; modules: RegistryModule[] }
   | { status: 'error' }
 
-/** Loads the curated, statically-served module list from public/registry.json. */
+/** Loads the manifest-derived module catalog generated into public/registry.json. */
 export function useRegistry(): RegistryState {
   const [state, setState] = useState<RegistryState>({ status: 'loading' })
 

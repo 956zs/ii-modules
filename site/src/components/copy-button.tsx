@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 interface CopyButtonProps {
@@ -11,8 +12,10 @@ interface CopyButtonProps {
   size?: 'icon' | 'icon-sm' | 'icon-xs'
 }
 
-export function CopyButton({ value, label = '複製', className, size = 'icon-sm' }: CopyButtonProps) {
+export function CopyButton({ value, label, className, size = 'icon-sm' }: CopyButtonProps) {
+  const { t } = useI18n()
   const [copied, setCopied] = useState(false)
+  const copyLabel = label ?? t.copy
 
   async function handleCopy() {
     try {
@@ -36,12 +39,12 @@ export function CopyButton({ value, label = '複製', className, size = 'icon-sm
             className,
           )}
           onClick={handleCopy}
-          aria-label={label}
+          aria-label={copyLabel}
         >
           {copied ? <Check className="text-live" /> : <Copy />}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{copied ? '已複製' : label}</TooltipContent>
+      <TooltipContent>{copied ? t.copied : copyLabel}</TooltipContent>
     </Tooltip>
   )
 }

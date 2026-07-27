@@ -234,6 +234,12 @@ Item {
             return
         const t = Math.floor(Date.now() / 1000)
         let p = readInstant()
+        // FileView.reload() is asynchronous. A transient sysfs read miss must
+        // not alternate the precise value with UPower's rounded percentage;
+        // retain the last coherent sysfs sample and only use UPower before the
+        // first successful sysfs read.
+        if (p < 0 && root.pctSys >= 0)
+            p = root.pctSys
         if (p < 0 && root.available)
             p = (root.dev.percentage ?? 0) * 100
         if (p < 0)

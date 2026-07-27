@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, ExternalLink } from 'lucide-react'
+import { AlertTriangle, BookOpen, Download, ExternalLink } from 'lucide-react'
 import {
   Card,
   CardAction,
@@ -24,18 +24,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandBlock } from '@/components/command-block'
 import { CopyButton } from '@/components/copy-button'
+import { useI18n } from '@/lib/i18n'
+import { installCommand } from '@/lib/install'
 import { cn } from '@/lib/utils'
 import type { RegistryModule, VersionState } from '@/lib/types'
 
-/** Plain-language explanations for the SPEC §6 capability declarations. */
-const CAPABILITY_INFO: Record<string, string> = {
-  exec: '會執行外部程式',
-  network: '會進行網路連線',
-  'filesystem-write': '會寫入自身設定以外的檔案',
-  dbus: '會存取 D-Bus 系統服務',
-}
-
 function VersionBadge({ version }: { version: VersionState }) {
+  const { t } = useI18n()
   if (version.status === 'loading') return <Skeleton className="h-5 w-14 rounded-full" />
   if (version.status === 'success') {
     return (
@@ -47,14 +42,23 @@ function VersionBadge({ version }: { version: VersionState }) {
       </Badge>
     )
   }
+  if (version.status === 'waiting') {
+    return (
+      <Badge variant="outline" className="text-[0.7rem] text-muted-foreground">
+        {t.waitingForRelease}
+      </Badge>
+    )
+  }
   return (
     <Badge variant="outline" className="text-[0.7rem] text-muted-foreground">
-      版本未知
+      {t.versionUnknown}
     </Badge>
   )
 }
 
 function ModuleDetailDialog({ module: mod, version }: ModuleCardProps) {
+  const { t, locale } = useI18n()
+  const otherLocale = locale === 'zh_TW' ? 'en_US' : 'zh_TW'
   // Wide enough that the install command rarely wraps on desktop (w-fit would
   // break here: shrink-to-fit of a fixed element with left:50% caps available
   // width at half the viewport).
@@ -62,25 +66,27 @@ function ModuleDetailDialog({ module: mod, version }: ModuleCardProps) {
     <DialogContent className="max-h-[85svh] grid-cols-1 overflow-x-hidden overflow-y-auto *:min-w-0 sm:max-w-[min(92vw,60rem)]">
       <DialogHeader>
         <DialogTitle className="flex flex-wrap items-center gap-2 pr-8 text-lg">
-          {mod.name.zh_TW}
+          {mod.name[locale]}
           <VersionBadge version={version} />
         </DialogTitle>
+        {/* zh title pairs with the English name; en title pairs with the module id
+            so the subtitle never duplicates the title. */}
         <DialogDescription className="font-mono text-xs tracking-wide uppercase">
-          {mod.name.en_US}
+          {locale === 'zh_TW' ? mod.name.en_US : mod.id}
         </DialogDescription>
       </DialogHeader>
 
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <p className="text-sm text-foreground/90">{mod.description.zh_TW}</p>
-          <p className="text-sm text-muted-foreground">{mod.description.en_US}</p>
+          <p className="text-sm text-foreground/90">{mod.description[locale]}</p>
+          <p className="text-sm text-muted-foreground">{mod.description[otherLocale]}</p>
         </div>
 
         <Separator />
 
         <section className="flex flex-col gap-2">
           <h3 className="font-mono text-xs tracking-wide text-muted-foreground uppercase">
-            權限與能力
+            {t.capabilitiesTitle}
           </h3>
           <ul className="flex flex-col gap-1.5">
             {mod.tierB ? (
@@ -89,7 +95,7 @@ function ModuleDetailDialog({ module: mod, version }: ModuleCardProps) {
                   <AlertTriangle data-icon="inline-start" />
                   Tier B
                 </Badge>
-                <span className="text-muted-foreground">會修改 stock 檔，安裝前請詳閱說明</span>
+                <span className="text-muted-foreground">{t.tierBInline}</span>
               </li>
             ) : null}
             {mod.capabilities.map((cap) => (
@@ -97,11 +103,13 @@ function ModuleDetailDialog({ module: mod, version }: ModuleCardProps) {
                 <Badge variant="outline" className="font-mono">
                   {cap}
                 </Badge>
-                <span className="text-muted-foreground">{CAPABILITY_INFO[cap] ?? '未知能力'}</span>
+                <span className="text-muted-foreground">
+                  {t.capabilityInfo[cap] ?? t.capabilityUnknown}
+                </span>
               </li>
             ))}
             {!mod.tierB && mod.capabilities.length === 0 ? (
-              <li className="text-sm text-muted-foreground">不需要任何特殊能力。</li>
+              <li className="text-sm text-muted-foreground">{t.noCapabilities}</li>
             ) : null}
           </ul>
         </section>
@@ -110,26 +118,33 @@ function ModuleDetailDialog({ module: mod, version }: ModuleCardProps) {
 
         <section className="flex min-w-0 flex-col gap-2">
           <h3 className="font-mono text-xs tracking-wide text-muted-foreground uppercase">
-            版本與安裝
+            {t.versionInstallTitle}
           </h3>
           {version.status === 'loading' ? (
             <Skeleton className="h-[38px] w-full rounded-lg" />
           ) : version.status === 'success' ? (
             <div className="flex min-w-0 flex-col gap-3">
-              <CommandBlock command={`iimod install ${version.data.url}`} />
+              <CommandBlock command={installCommand(version.data.url, mod.tierB)} />
               {version.data.sha256 ? (
                 <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                   <span className="min-w-0 truncate font-mono">
                     sha256:{version.data.sha256}
                   </span>
-                  <CopyButton value={version.data.sha256} label="複製 sha256" size="icon-xs" />
+                  <CopyButton value={version.data.sha256} label={t.copySha256} size="icon-xs" />
                 </div>
               ) : null}
             </div>
+          ) : version.status === 'waiting' ? (
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <AlertTriangle className="size-3.5 shrink-0" />
+              {version.data
+                ? t.waitingForReleaseDetail(mod.sourceVersion, version.data.version)
+                : t.waitingForRelease}
+            </p>
           ) : (
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <AlertTriangle className="size-3.5 shrink-0" />
-              版本資訊暫時無法取得，請稍後再試。
+              {t.versionUnavailable}
             </p>
           )}
         </section>
@@ -137,9 +152,15 @@ function ModuleDetailDialog({ module: mod, version }: ModuleCardProps) {
 
       <DialogFooter>
         <Button asChild variant="outline" size="sm">
+          <a href={mod.docs[locale]}>
+            <BookOpen data-icon="inline-start" />
+            {t.moduleDocs}
+          </a>
+        </Button>
+        <Button asChild variant="outline" size="sm">
           <a href={mod.repo} target="_blank" rel="noreferrer">
             <ExternalLink data-icon="inline-start" />
-            GitHub Repo
+            {t.githubRepo}
           </a>
         </Button>
         <Button
@@ -153,7 +174,7 @@ function ModuleDetailDialog({ module: mod, version }: ModuleCardProps) {
             tabIndex={version.status !== 'success' ? -1 : undefined}
           >
             <Download data-icon="inline-start" />
-            下載 .iimod
+            {t.download}
           </a>
         </Button>
       </DialogFooter>
@@ -167,6 +188,7 @@ interface ModuleCardProps {
 }
 
 export function ModuleCard({ module: mod, version }: ModuleCardProps) {
+  const { t, locale } = useI18n()
   return (
     <Dialog>
       <Card
@@ -180,16 +202,18 @@ export function ModuleCard({ module: mod, version }: ModuleCardProps) {
         {/* Stretched trigger: the whole card face opens the detail dialog. */}
         <DialogTrigger
           className="absolute inset-0 cursor-pointer rounded-xl outline-none"
-          aria-label={`查看「${mod.name.zh_TW}」詳細資訊`}
+          aria-label={t.viewDetails(mod.name[locale])}
         />
 
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
-            {mod.name.zh_TW}
+            {mod.name[locale]}
             <VersionBadge version={version} />
           </CardTitle>
+          {/* zh title pairs with the English name; en title pairs with the module id
+            so the subtitle never duplicates the title. */}
           <CardDescription className="font-mono text-xs tracking-wide uppercase">
-            {mod.name.en_US}
+            {locale === 'zh_TW' ? mod.name.en_US : mod.id}
           </CardDescription>
           {mod.tierB ? (
             <CardAction className="relative z-10">
@@ -200,17 +224,17 @@ export function ModuleCard({ module: mod, version }: ModuleCardProps) {
                     Tier B
                   </Badge>
                 </TooltipTrigger>
-                <TooltipContent>此模塊會修改 stock 檔，安裝前請詳閱說明</TooltipContent>
+                <TooltipContent>{t.tierBWarning}</TooltipContent>
               </Tooltip>
             </CardAction>
           ) : null}
         </CardHeader>
 
         <CardContent className="flex flex-1 flex-col gap-4">
-          <p className="text-sm text-muted-foreground">{mod.description.zh_TW}</p>
+          <p className="text-sm text-muted-foreground">{mod.description[locale]}</p>
 
           <div className="flex flex-wrap gap-1.5">
-            {mod.tierB ? <Badge variant="destructive">修改 stock 檔</Badge> : null}
+            {mod.tierB ? <Badge variant="destructive">{t.tierBBadge}</Badge> : null}
             {mod.capabilities.map((cap) => (
               <Badge key={cap} variant="outline" className="font-mono">
                 {cap}
@@ -218,19 +242,24 @@ export function ModuleCard({ module: mod, version }: ModuleCardProps) {
             ))}
           </div>
 
-          {version.status === 'error' ? (
+          {version.status === 'waiting' ? (
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <AlertTriangle className="size-3 shrink-0" />
-              版本資訊暫時無法取得
+              {t.waitingForRelease}
+            </p>
+          ) : version.status === 'error' ? (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <AlertTriangle className="size-3 shrink-0" />
+              {t.versionUnavailableShort}
             </p>
           ) : null}
         </CardContent>
 
         <CardFooter className="relative z-10 flex items-center justify-between gap-2">
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
-            <a href={mod.repo} target="_blank" rel="noreferrer">
-              <ExternalLink data-icon="inline-start" />
-              Repo
+            <a href={mod.docs[locale]}>
+              <BookOpen data-icon="inline-start" />
+              {t.moduleDocs}
             </a>
           </Button>
           <Button
@@ -244,7 +273,7 @@ export function ModuleCard({ module: mod, version }: ModuleCardProps) {
               tabIndex={version.status !== 'success' ? -1 : undefined}
             >
               <Download data-icon="inline-start" />
-              下載 .iimod
+              {t.download}
             </a>
           </Button>
         </CardFooter>

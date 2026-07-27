@@ -43,26 +43,17 @@ iimod pack my_widget/ --origin https://example.com/mods/index.json
 
 ## 上架到模塊清單(ii.n1cat.xyz)
 
-清單是聯邦式索引:**送一個 PR** 到 [`site/public/registry.json`](https://github.com/956zs/ii-modules/edit/main/site/public/registry.json),加一筆:
+本 repo 內的模塊清單、雙語名稱/描述、Tier、capabilities、文件頁與 VitePress 導覽都由 `modules/<id>/module.json` 與 `README.md` 自動建立。上架時請送 PR 新增完整的 `modules/my_widget/` 目錄,不要手動編輯 `site/public/registry.json`。
 
-```json
-{
-  "id": "my_widget",
-  "name": { "en_US": "My Widget", "zh_TW": "我的小工具" },
-  "description": {
-    "zh_TW": "一句話說明模塊做什麼。",
-    "en_US": "One-line description."
-  },
-  "tierB": false,
-  "capabilities": ["exec"],
-  "origin": "https://example.com/mods/index.json",
-  "repo": "https://github.com/you/my_widget"
-}
-```
+最低要求:
 
-- `origin` 指向你的 index.json——清單網站直接從這裡讀**即時版本**,你發新版不用再改 registry
-- `tierB` 與 `capabilities` 必須誠實填寫,與 manifest 一致
-- PR 合併後,模塊立即出現在清單上
+- 目錄名必須等於 manifest 的 `id`
+- `name` 與 `description` 必須同時提供 `zh_TW`、`en_US`
+- 必須有 `README.md`;可另加 `README.en.md`,缺少時英文文件頁會明確標示並顯示繁中 README
+- `tierB` 由非空 `patches` 自動推導,`capabilities` 與 `requires` 直接取自 manifest
+- 提交前在 `site/` 執行 `npm run catalog:generate`,再跑 `npm run build`;過期的生成 catalog 會讓建置失敗
+
+PR 合併後,首頁清單、雙語模塊文件頁與文件導覽會一起更新。下載按鈕只會在 release index 已包含相同版本的模塊時啟用。
 
 ## 用 GitHub Releases 託管(建議做法)
 
