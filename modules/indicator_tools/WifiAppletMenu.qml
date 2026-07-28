@@ -34,20 +34,6 @@ PopupWindow {
     implicitWidth: panelWidth + outerMargin * 2
     implicitHeight: settledPanelHeight + outerMargin * 2
     onTargetPanelHeightChanged: settleTimer.restart()
-    onVisibleChanged: {
-        if (visible)
-            GlobalFocusGrab.addDismissable(root)
-        else
-            GlobalFocusGrab.removeDismissable(root)
-    }
-    Component.onDestruction: GlobalFocusGrab.removeDismissable(root)
-
-    Connections {
-        target: GlobalFocusGrab
-        function onDismissed() {
-            root.close()
-        }
-    }
 
     function normalizedLabel(text) {
         const source = String(text ?? "")
@@ -252,7 +238,6 @@ PopupWindow {
 
         readonly property bool hasEntry: menuEntry !== null
         readonly property string label: root.displayLabel(menuEntry)
-        readonly property bool hasNativeIcon: String(menuEntry?.icon ?? "").length > 0
         readonly property bool hasSpecialInteraction:
             menuEntry?.buttonType !== QsMenuButtonType.None
         readonly property bool selected: menuEntry?.checkState === Qt.Checked
@@ -332,18 +317,8 @@ PopupWindow {
                 Layout.preferredWidth: 22
                 Layout.preferredHeight: 22
 
-                IconImage {
-                    anchors.centerIn: parent
-                    visible: entryButton.hasNativeIcon
-                    asynchronous: true
-                    source: entryButton.menuEntry?.icon ?? ""
-                    implicitSize: 21
-                    mipmap: true
-                }
-
                 MaterialSymbol {
                     anchors.centerIn: parent
-                    visible: !entryButton.hasNativeIcon
                     text: root.materialIcon(entryButton.menuEntry)
                     iconSize: 21
                     color: Appearance.colors.colOnSurfaceVariant

@@ -25,16 +25,19 @@ RippleButton {
     readonly property string nativeIconName: String(menuEntry.icon ?? "")
     readonly property bool nativeSelected: useSemanticStyle
         && nativeIconName.toLowerCase().includes("dialog-ok")
-    readonly property bool hasNativeIcon: nativeIconName.length > 0 && !nativeSelected
     readonly property string fallbackIcon: iconOverride !== "" ? iconOverride
         : useSemanticStyle ? bluemanIcon(menuEntry.text) : ""
-    readonly property bool hasIcon: hasNativeIcon || fallbackIcon !== ""
+    readonly property bool useMaterialIcon: fallbackIcon !== ""
+    readonly property bool hasNativeIcon: nativeIconName.length > 0 && !nativeSelected
+        && !useMaterialIcon
+    readonly property bool hasIcon: hasNativeIcon || useMaterialIcon
     readonly property bool hasSpecialInteraction: menuEntry.buttonType !== QsMenuButtonType.None
     readonly property string resolvedLabel: useSemanticStyle
         ? displayLabel(menuEntry.text) : String(menuEntry.text ?? "").trim()
     readonly property string labelText: labelOverride !== "" ? labelOverride
         : resolvedLabel !== "" ? resolvedLabel : Translation.tr("Bluetooth action")
     readonly property bool actionPresentation: presentation === "action" || presentation === "compact"
+    readonly property bool centerCompactContent: presentation === "compact"
     readonly property bool togglePresentation: presentation === "toggle"
     readonly property bool toggleChecked: normalizedLabel.startsWith("Turn Bluetooth Off")
         || normalizedLabel.startsWith("Make Undiscoverable")
@@ -123,101 +126,137 @@ RippleButton {
     }
     altAction: event => event.accepted = false
 
-    contentItem: RowLayout {
+    contentItem: Item {
         id: contentItem
-        anchors {
-            verticalCenter: parent.verticalCenter
-            left: parent.left
-            right: parent.right
-            leftMargin: root.horizontalPadding
-            rightMargin: root.horizontalPadding
-        }
-        spacing: 6
+        implicitWidth: root.centerCompactContent
+            ? compactContent.implicitWidth : standardContent.implicitWidth
+        implicitHeight: root.centerCompactContent
+            ? compactContent.implicitHeight : standardContent.implicitHeight
         visible: !root.menuEntry.isSeparator
 
-        Item {
-            visible: root.hasSpecialInteraction
-            implicitWidth: 20
+        RowLayout {
+            id: standardContent
+            visible: !root.centerCompactContent
+            anchors {
+                verticalCenter: parent.verticalCenter
+                left: parent.left
+                right: parent.right
+                leftMargin: root.horizontalPadding
+                rightMargin: root.horizontalPadding
+            }
+            spacing: 6
+
+            Item {
+                visible: root.hasSpecialInteraction
+                implicitWidth: 20
+                implicitHeight: 20
+
+                Loader {
+                    anchors.fill: parent
+                    active: root.menuEntry.buttonType === QsMenuButtonType.RadioButton
+                    sourceComponent: StyledRadioButton {
+                        enabled: false
+                        padding: 0
+                        checked: root.menuEntry.checkState === Qt.Checked
+                    }
+                }
+                Loader {
+                    anchors.fill: parent
+                    active: root.menuEntry.buttonType === QsMenuButtonType.CheckBox
+                        && root.menuEntry.checkState !== Qt.Unchecked
+                    sourceComponent: MaterialSymbol {
+                        text: root.menuEntry.checkState === Qt.PartiallyChecked
+                            ? "check_indeterminate_small" : "check"
+                        iconSize: 20
+                        color: root.actionPresentation ? Appearance.colors.colOnSecondaryContainer
+                            : Appearance.colors.colOnSurface
+                    }
+                }
+            }
+
+            Item {
+                visible: root.hasIcon
+                implicitWidth: 20
+                implicitHeight: 20
+
+                Loader {
+                    anchors.centerIn: parent
+                    active: root.hasNativeIcon
+                    sourceComponent: IconImage {
+                        asynchronous: true
+                        source: root.nativeIconName
+                        implicitSize: 20
+                        mipmap: true
+                    }
+                }
+                Loader {
+                    anchors.centerIn: parent
+                    active: root.useMaterialIcon
+                    sourceComponent: MaterialSymbol {
+                        text: root.fallbackIcon
+                        iconSize: 20
+                        color: root.actionPresentation ? Appearance.colors.colOnSecondaryContainer
+                            : Appearance.colors.colOnSurfaceVariant
+                    }
+                }
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: root.labelText
+                elide: Text.ElideRight
+                font.pixelSize: Appearance.font.pixelSize.smallie
+                color: root.actionPresentation ? Appearance.colors.colOnSecondaryContainer
+                    : Appearance.colors.colOnSurface
+            }
+
+            MaterialSymbol {
+                visible: root.menuEntry.hasChildren
+                text: "chevron_right"
+                iconSize: 20
+                color: root.actionPresentation ? Appearance.colors.colOnSecondaryContainer
+                    : Appearance.colors.colOnSurfaceVariant
+            }
+
+            MaterialSymbol {
+                visible: root.nativeSelected
+                text: "check"
+                iconSize: 20
+                color: Appearance.colors.colPrimary
+            }
+
+            StyledSwitch {
+                visible: root.togglePresentation
+                enabled: false
+                checked: root.toggleChecked
+            }
+        }
+
+        RowLayout {
+            id: compactContent
+            visible: root.centerCompactContent
+            anchors.centerIn: parent
+            spacing: 6
             implicitHeight: 20
 
-            Loader {
-                anchors.fill: parent
-                active: root.menuEntry.buttonType === QsMenuButtonType.RadioButton
-                sourceComponent: StyledRadioButton {
-                    enabled: false
-                    padding: 0
-                    checked: root.menuEntry.checkState === Qt.Checked
-                }
+            MaterialSymbol {
+                text: root.fallbackIcon
+                iconSize: 20
+                color: Appearance.colors.colOnSecondaryContainer
             }
-            Loader {
-                anchors.fill: parent
-                active: root.menuEntry.buttonType === QsMenuButtonType.CheckBox
-                    && root.menuEntry.checkState !== Qt.Unchecked
-                sourceComponent: MaterialSymbol {
-                    text: root.menuEntry.checkState === Qt.PartiallyChecked
-                        ? "check_indeterminate_small" : "check"
-                    iconSize: 20
-                    color: root.actionPresentation ? Appearance.colors.colOnSecondaryContainer
-                        : Appearance.colors.colOnSurface
-                }
+
+            StyledText {
+                text: root.labelText
+                font.pixelSize: Appearance.font.pixelSize.smallie
+                color: Appearance.colors.colOnSecondaryContainer
             }
-        }
 
-        Item {
-            visible: root.hasIcon
-            implicitWidth: 20
-            implicitHeight: 20
-
-            Loader {
-                anchors.centerIn: parent
-                active: root.hasNativeIcon
-                sourceComponent: IconImage {
-                    asynchronous: true
-                    source: root.nativeIconName
-                    implicitSize: 20
-                    mipmap: true
-                }
+            MaterialSymbol {
+                visible: root.menuEntry.hasChildren
+                text: "chevron_right"
+                iconSize: 20
+                color: Appearance.colors.colOnSecondaryContainer
             }
-            Loader {
-                anchors.centerIn: parent
-                active: !root.hasNativeIcon && root.fallbackIcon !== ""
-                sourceComponent: MaterialSymbol {
-                    text: root.fallbackIcon
-                    iconSize: 20
-                    color: root.actionPresentation ? Appearance.colors.colOnSecondaryContainer
-                        : Appearance.colors.colOnSurfaceVariant
-                }
-            }
-        }
-
-        StyledText {
-            Layout.fillWidth: true
-            text: root.labelText
-            elide: Text.ElideRight
-            font.pixelSize: Appearance.font.pixelSize.smallie
-            color: root.actionPresentation ? Appearance.colors.colOnSecondaryContainer
-                : Appearance.colors.colOnSurface
-        }
-
-        MaterialSymbol {
-            visible: root.menuEntry.hasChildren
-            text: "chevron_right"
-            iconSize: 20
-            color: root.actionPresentation ? Appearance.colors.colOnSecondaryContainer
-                : Appearance.colors.colOnSurfaceVariant
-        }
-
-        MaterialSymbol {
-            visible: root.nativeSelected
-            text: "check"
-            iconSize: 20
-            color: Appearance.colors.colPrimary
-        }
-
-        StyledSwitch {
-            visible: root.togglePresentation
-            enabled: false
-            checked: root.toggleChecked
         }
     }
 }
