@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import ts from 'typescript'
 import { createHash } from 'node:crypto'
-import { access, chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -153,6 +153,124 @@ printf '%s\\n' "$*" > "$MOCK_SUDO_LOG"
   return { downloadDir, result, root, sudoLog }
 }
 
+async function waitForFile(path, child, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      await access(path, constants.F_OK)
+      return
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+    if (child.exitCode !== null) {
+      throw new Error(`installer exited before reaching blocking point: ${child.exitCode}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`timed out waiting for ${path}`)
+}
+
+async function runInterruptedInstaller(signal) {
+  const root = await mkdtemp(join(tmpdir(), 'install-iimod-signal-test-'))
+  const binDir = join(root, 'bin')
+  const downloadDir = join(root, 'download')
+  const readyMarker = join(root, 'curl-ready')
+  const sudoLog = join(root, 'sudo.log')
+  await mkdir(binDir)
+  await writeExecutable(
+    join(binDir, 'curl'),
+    `#!/bin/sh
+set -eu
+output=''
+url=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output) output="$2"; shift 2 ;;
+    https://*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+: > "$MOCK_CURL_READY"
+sleep 1
+case "$url" in
+  *.sha256) printf '%s\\n' "$MOCK_CHECKSUM" > "$output" ;;
+  *) printf '%s' "$MOCK_PAYLOAD" > "$output" ;;
+esac
+`,
+  )
+  await writeExecutable(
+    join(binDir, 'mktemp'),
+    `#!/bin/sh
+set -eu
+[ "$1" = '-d' ]
+mkdir "$MOCK_TMP_DIR"
+printf '%s\\n' "$MOCK_TMP_DIR"
+`,
+  )
+  await writeExecutable(
+    join(binDir, 'uname'),
+    `#!/bin/sh
+case "$1" in
+  -s) printf '%s\\n' Linux ;;
+  -m) printf '%s\\n' x86_64 ;;
+  *) exit 2 ;;
+esac
+`,
+  )
+  await writeExecutable(
+    join(binDir, 'sudo'),
+    `#!/bin/sh
+printf '%s\\n' "$*" > "$MOCK_SUDO_LOG"
+`,
+  )
+
+  const child = spawn('sh', [installerPath], {
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      MOCK_CHECKSUM: createHash('sha256').update(testPayload).digest('hex'),
+      MOCK_CURL_READY: readyMarker,
+      MOCK_PAYLOAD: testPayload,
+      MOCK_SUDO_LOG: sudoLog,
+      MOCK_TMP_DIR: downloadDir,
+      PATH: `${binDir}:${process.env.PATH}`,
+    },
+  })
+  const stdout = []
+  const stderr = []
+  child.stdout.on('data', (chunk) => stdout.push(chunk))
+  child.stderr.on('data', (chunk) => stderr.push(chunk))
+
+  try {
+    await waitForFile(readyMarker, child)
+    process.kill(child.pid, signal)
+    const result = await new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', (code, closeSignal) => resolve({ code, signal: closeSignal }))
+    })
+    return {
+      downloadDir,
+      result: {
+        ...result,
+        stderr: Buffer.concat(stderr).toString('utf8'),
+        stdout: Buffer.concat(stdout).toString('utf8'),
+      },
+      root,
+      sudoLog,
+    }
+  } catch (error) {
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+    } catch (killError) {
+      if (killError.code !== 'ESRCH') throw killError
+    }
+    await new Promise((resolve) => child.once('close', resolve))
+    await rm(root, { recursive: true, force: true })
+    throw error
+  }
+}
+
 test('displayed CLI install command stays concise and uses the first-party HTTPS installer', async () => {
   const { INSTALL_IIMOD_COMMAND } = await loadInstallExports()
 
@@ -194,7 +312,10 @@ test('installer is valid POSIX shell and preserves secure installation stages', 
     'SHA256 checksum will be verified',
     'sudo may request your password',
     "tmp_dir=\"$(mktemp -d)\"",
-    "trap 'rm -rf \"$tmp_dir\"' EXIT HUP INT TERM",
+    'trap cleanup EXIT',
+    "trap 'exit 129' HUP",
+    "trap 'exit 130' INT",
+    "trap 'exit 143' TERM",
     'Downloading iimod and checksum',
     "checksum=\"$(cat \"$checksum_path\")\"",
     'sha256sum --check --status',
@@ -250,6 +371,22 @@ test('installer rejects unsupported platforms before download or sudo', async (t
   assert.match(run.result.stderr, /Unsupported platform: Linux\/aarch64/)
   await assert.rejects(access(run.sudoLog, constants.F_OK))
   await assert.rejects(access(run.downloadDir, constants.F_OK))
+})
+
+test('installer handles HUP, INT, and TERM by cleaning up and stopping before sudo', async (t) => {
+  const expectedCodes = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 }
+
+  for (const [signal, expectedCode] of Object.entries(expectedCodes)) {
+    await t.test(signal, async (t) => {
+      const run = await runInterruptedInstaller(signal)
+      t.after(() => rm(run.root, { recursive: true, force: true }))
+
+      assert.equal(run.result.code, expectedCode, run.result.stderr)
+      assert.equal(run.result.signal, null)
+      await assert.rejects(access(run.downloadDir, constants.F_OK))
+      await assert.rejects(access(run.sudoLog, constants.F_OK))
+    })
+  }
 })
 
 test('Hero uses the shared CLI install command', async () => {
