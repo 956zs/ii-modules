@@ -5,13 +5,20 @@ import { readFile } from 'node:fs/promises'
 const moduleRoot = new URL('../', import.meta.url)
 
 async function loadContract() {
-  const [bridge, bluetoothMenu, wifiMenu, manifestSource] = await Promise.all([
+  const [bridge, bluetoothEntry, bluetoothMenu, wifiMenu, manifestSource] = await Promise.all([
     readFile(new URL('AppletMenuBridge.qml', moduleRoot), 'utf8'),
+    readFile(new URL('AppletMenuEntry.qml', moduleRoot), 'utf8'),
     readFile(new URL('AppletMenu.qml', moduleRoot), 'utf8'),
     readFile(new URL('WifiAppletMenu.qml', moduleRoot), 'utf8'),
     readFile(new URL('module.json', moduleRoot), 'utf8'),
   ])
-  return { bridge, bluetoothMenu, wifiMenu, manifest: JSON.parse(manifestSource) }
+  return {
+    bridge,
+    bluetoothEntry,
+    bluetoothMenu,
+    wifiMenu,
+    manifest: JSON.parse(manifestSource),
+  }
 }
 
 function patchesFor(manifest, file) {
@@ -47,6 +54,16 @@ test('popups use the shell-wide click-outside dismiss lifecycle', async () => {
     assert.match(source, /target:\s*GlobalFocusGrab/, `${name} observes global dismiss`)
     assert.match(source, /function onDismissed\(\)\s*{\s*root\.close\(\)/, `${name} closes on outside click`)
   }
+})
+
+test('menu actions stay open long enough to trigger and reflect D-Bus state updates', async () => {
+  const { bluetoothEntry, wifiMenu } = await loadContract()
+
+  assert.match(bluetoothEntry, /property bool dismissAfterTrigger:\s*false/)
+  assert.doesNotMatch(
+    wifiMenu,
+    /menuEntry\.triggered\(\)\s*\n\s*entryButton\.dismiss\(\)/,
+  )
 })
 
 test('each stock RippleButton owns and dispatches right-click exactly once', async () => {

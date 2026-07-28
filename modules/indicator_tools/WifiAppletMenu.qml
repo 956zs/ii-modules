@@ -299,7 +299,6 @@ PopupWindow {
                 return
             }
             menuEntry.triggered()
-            entryButton.dismiss()
         }
         altAction: event => event.accepted = false
 

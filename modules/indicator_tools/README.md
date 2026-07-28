@@ -74,7 +74,9 @@ iimod install modules/indicator_tools/ --allow-patches
   3.4.3 再讓 Wi-Fi／Bluetooth 開啟流程互斥，開啟一側前會取消另一側的 pending
   open 並關閉既有 popup，確保只顯示一個選單；3.4.4 將兩個 popup 註冊到 shell
   共用的 `GlobalFocusGrab` dismiss lifecycle，點擊其他 window／桌面空白處會走同一個
-  `close()` 清理路徑。成熟 applet 仍是功能與 secret-agent 的唯一 owner。
+  `close()` 清理路徑；3.4.5 讓選單 action 觸發後保持面板開啟，等待 applet 的 D-Bus
+  model 更新狀態，不再在 `releaseAction` 後無條件關閉。成熟 applet 仍是功能與
+  secret-agent 的唯一 owner。
 
 卸載模塊後，stock 圖示不再接管 applet 選單，兩個 applet 的托盤圖示也會由
 IIMP 重組自動恢復顯示；appet 行程本身由 session 啟動配置管理，不受模塊卸載影響。

@@ -18,7 +18,7 @@ RippleButton {
     property string iconOverride: ""
     property bool stretch: presentation === "row" || presentation === "quiet"
         || presentation === "toggle"
-    property bool dismissAfterTrigger: true
+    property bool dismissAfterTrigger: false
 
     readonly property bool useSemanticStyle: semanticStyleId === "blueman" && !menuEntry.isSeparator
     readonly property string normalizedLabel: normalLabel(menuEntry.text)
