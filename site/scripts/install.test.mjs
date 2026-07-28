@@ -109,9 +109,12 @@ test('displayed CLI install command is short and uses the first-party HTTPS inst
 
   assert.equal(
     INSTALL_IIMOD_COMMAND,
-    "curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://ii.n1cat.xyz/install-iimod.sh | sh",
+    'sh -c "$(curl -sS https://ii.n1cat.xyz/install-iimod.sh)"',
   )
   assert.equal(INSTALL_IIMOD_COMMAND.split('\n').length, 1)
+  assert.match(INSTALL_IIMOD_COMMAND, /^sh -c "\$\(curl -sS /)
+  assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /--[a-z]/)
+  assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /\|\s*sh/)
   assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /sudo/)
   assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /downloads\/iimod\/linux-x86_64/)
 })
@@ -189,7 +192,7 @@ test('Hero uses the shared CLI install command', async () => {
 })
 
 test('bilingual install docs show the shared short command and security tradeoff', async () => {
-  const command = "curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://ii.n1cat.xyz/install-iimod.sh | sh"
+  const command = 'sh -c "$(curl -sS https://ii.n1cat.xyz/install-iimod.sh)"'
   const docs = await Promise.all([
     readFile(new URL('../docs/guide/install.md', import.meta.url), 'utf8'),
     readFile(new URL('../docs/en/guide/install.md', import.meta.url), 'utf8'),
