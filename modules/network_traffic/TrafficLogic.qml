@@ -20,6 +20,7 @@ Item {
     // ConfigLoader.ready — accounting must not initialise before the persisted
     // state has actually been read (FileView loads asynchronously).
     property bool storeReady: false
+    property bool writer: true
 
     property real downSpeed: 0 // bytes/s
     property real upSpeed: 0 // bytes/s
@@ -96,27 +97,51 @@ Item {
         monthTx = Math.max(monthTx, todayTx)
     }
 
-    function initAccounting(rx, tx) {
+    function loadStoredAccounting() {
         const now = new Date()
         curDayKey = dayKey(now)
         curMonthKey = monthKey(now)
-        let s = null
+        let state = null
         try {
-            s = JSON.parse(store.acctState)
-        } catch (e) {
-            s = null
+            state = JSON.parse(store?.acctState ?? "")
+        } catch (error) {
+            state = null
         }
-        const day = s?.day
-        const month = s?.month
-        const sample = s?.sample
+        const day = state?.day
+        const month = state?.month
         todayRx = (day && day.k === curDayKey) ? day.rx : 0
         todayTx = (day && day.k === curDayKey) ? day.tx : 0
         monthRx = (month && month.k === curMonthKey) ? month.rx : 0
         monthTx = (month && month.k === curMonthKey) ? month.tx : 0
+        clampInvariant()
+    }
+
+    onWriterChanged: {
+        if (!writer || !acctReady || !storeReady) return
+        acctReady = false
+        if (previousStats) initAccounting(previousStats.rx, previousStats.tx)
+    }
+
+    Connections {
+        target: root.store
+        ignoreUnknownSignals: true
+        function onAcctStateChanged() {
+            if (!root.writer && root.acctReady && root.storeReady) root.loadStoredAccounting()
+        }
+    }
+
+    function initAccounting(rx, tx) {
+        loadStoredAccounting()
+        let state = null
+        try {
+            state = JSON.parse(store?.acctState ?? "")
+        } catch (error) {
+            state = null
+        }
+        const sample = state?.sample
         // Same boot (counters grew): credit the unflushed interval since the
-        // last shell run. A shrunk counter means a reboot; that gap is lost by
-        // design — /proc/net/dev is all we have.
-        if (sample && sample.rx > 0 && rx >= sample.rx) {
+        // last shell run. Only the elected writer may advance persisted state.
+        if (writer && sample && sample.rx > 0 && rx >= sample.rx) {
             todayRx += rx - sample.rx
             todayTx += Math.max(0, tx - sample.tx)
             monthRx += rx - sample.rx
@@ -124,7 +149,7 @@ Item {
         }
         clampInvariant()
         acctReady = true
-        flushAccounting() // persist the repaired/credited state promptly
+        if (writer) flushAccounting() // persist the repaired/credited state promptly
     }
 
     function accumulate(deltaRx, deltaTx) {
@@ -154,7 +179,7 @@ Item {
     }
 
     function flushAccounting() {
-        if (!store || !acctReady) return
+        if (!writer || !store || !acctReady) return
         store.acctState = JSON.stringify({
             v: 1,
             day: { k: curDayKey, rx: todayRx, tx: todayTx },
@@ -167,7 +192,7 @@ Item {
     // file write, and the poll runs every couple of seconds.
     Timer {
         interval: 60000
-        running: root.acctReady
+        running: root.writer && root.acctReady
         repeat: true
         onTriggered: root.flushAccounting()
     }
@@ -197,7 +222,7 @@ Item {
                 const elapsed = (now - root.previousStats.time) / 1000
                 root.downSpeed = Math.max(0, (rx - root.previousStats.rx) / elapsed)
                 root.upSpeed = Math.max(0, (tx - root.previousStats.tx) / elapsed)
-                if (root.store && root.acctReady) {
+                if (root.writer && root.store && root.acctReady) {
                     root.accumulate(Math.max(0, rx - root.previousStats.rx),
                                     Math.max(0, tx - root.previousStats.tx))
                 }
