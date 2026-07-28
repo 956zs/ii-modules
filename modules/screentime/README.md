@@ -63,6 +63,9 @@ Esc 或點擊外部關閉。
 - **事件驅動**：每次焦點切換把經過的牆鐘秒數記給「上一個」應用
   （鍵：appId/class）。15 秒心跳只是為了封頂單段間隔——長時間停留同一應用
   也能穩定累計，並讓休眠可被偵測。
+- **本機應用名稱**：顯示 Steam 視窗的 `steam_app_<id>` 時，會從 Quickshell
+  的 desktop entry 索引找出精確 `steam://rungameid/<id>`，使用入口中的遊戲名稱；
+  找不到入口時才顯示可讀的 `Steam app <id>`，不會連線查詢 Steam。
 - **鎖屏暫停**：`GlobalStates.screenLocked` 為真時完全不入帳。
 - **休眠/掛起**：兩次記帳事件之間牆鐘跳躍超過門檻（預設 90 秒，可調）的
   時段不入帳。
@@ -122,6 +125,8 @@ iimod install screentime/ --allow-patches   # 磁貼補丁需要 --allow-patches
   （柱 ≤24px、資料端 4px 圓角/基線方角、柱間 2px 空隙、線 2px 圓端、
   面積 10% 透明度、端點 8px 帶 2px 底色環、hover 讀出列）；單一色相承載
   量值，身分由文字標籤承載，數值一律穿文字色 token
+- `Format.qml`：共用時長與應用名稱格式化；Steam 的 `steam_app_<id>` 會精確匹配
+  desktop entry 的 `steam://rungameid/<id>` command 參數並顯示本機遊戲名稱
 - `bar.qml`：BarGroup 藥丸；水平/雙行 bar 用「圖示＋6h 23m」，垂直 bar
   自動改直排緊湊版（圖示上、`6.4h` 下）
 - 補丁只有一個：往 `AndroidToggleDelegateChooser.qml` 的

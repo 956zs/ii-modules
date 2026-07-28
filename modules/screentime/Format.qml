@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import qs.modules.common
 import qs.services
 
@@ -30,7 +31,17 @@ QtObject {
 
     // "org.mozilla.firefox" -> "Firefox", "code-url-handler" -> "Code url handler"
     function appName(appId) {
+        if (typeof appId !== "string") return ""
         if (appId === "__other__") return Translation.tr("Other")
+
+        const steamMatch = appId.match(/^steam_app_(\d+)$/i)
+        if (steamMatch) {
+            const runUri = `steam://rungameid/${steamMatch[1]}`
+            const entry = DesktopEntries.applications.values.find(candidate =>
+                candidate.command && candidate.command.some(argument => argument === runUri))
+            if (entry && entry.name) return entry.name
+        }
+
         const last = appId.split(".").pop().replace(/[-_]+/g, " ").trim()
         if (last === "") return appId
         return last.charAt(0).toUpperCase() + last.slice(1)
