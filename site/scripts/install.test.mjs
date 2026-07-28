@@ -104,7 +104,7 @@ printf '%s\\n' "$*" > "$MOCK_SUDO_LOG"
   return { downloadDir, result, root, sudoLog }
 }
 
-test('displayed CLI install command is short and uses the first-party HTTPS installer', async () => {
+test('displayed CLI install command stays concise and uses the first-party HTTPS installer', async () => {
   const { INSTALL_IIMOD_COMMAND } = await loadInstallExports()
 
   assert.equal(
