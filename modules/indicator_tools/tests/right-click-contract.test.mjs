@@ -38,22 +38,63 @@ test('the bridge can cancel pending opens and close its popup', async () => {
 
   assert.match(bridge, /function closeStyledMenu\(\)/)
   assert.match(bridge, /root\.openWhenLoaded = false/)
-  assert.match(bridge, /root\.loadedMenu\?\.close\(\)/)
+  assert.match(bridge, /if \(root\.loadedMenu\)\s*\n\s*root\.loadedMenu\.close\(\)/)
+  assert.match(
+    bridge,
+    /function closeStyledMenu\(\)\s*\{[\s\S]*?root\.focusWindow = null[\s\S]*?\}/,
+  )
+  assert.match(
+    bridge,
+    /onItemChanged:\s*\{[\s\S]*?if \(!item\)[\s\S]*?root\.focusWindow = null[\s\S]*?\}/,
+  )
 })
 
-test('popups use the shell-wide click-outside dismiss lifecycle', async () => {
+test('inside actions, trigger toggles, and outside clicks share one complete focus grab', async () => {
   const { bridge, bluetoothMenu, wifiMenu } = await loadContract()
 
-  assert.doesNotMatch(bridge, /HyprlandFocusGrab/)
+  assert.match(bridge, /anchor\s*{/)
+  assert.match(bridge, /window:\s*root\.QsWindow\.window/)
+  assert.match(bridge, /rect\.x:\s*root\.menuAnchorRect\.x/)
+  assert.match(bridge, /HyprlandFocusGrab\s*{/)
+  assert.match(bridge, /property var focusWindow:\s*null/)
+  assert.match(bridge, /active:\s*root\.focusWindow !== null/)
+  assert.match(bridge, /windows:\s*\[root\.QsWindow\.window, root\.focusWindow\]/)
+  assert.match(bridge, /onMenuOpened:\s*qsWindow => root\.focusWindow = qsWindow/)
+  assert.match(bridge, /onMenuClosed:\s*root\.focusWindow = null/)
+  assert.match(
+    bridge,
+    /onCleared:\s*(?:root\.closeStyledMenu\(\)|\{[\s\S]*?root\.closeStyledMenu\(\)[\s\S]*?\})/,
+  )
   for (const [name, source] of [
     ['Bluetooth', bluetoothMenu],
     ['Wi-Fi', wifiMenu],
   ]) {
-    assert.match(source, /GlobalFocusGrab\.addDismissable\(root\)/, `${name} registers when visible`)
-    assert.match(source, /GlobalFocusGrab\.removeDismissable\(root\)/, `${name} unregisters when hidden`)
-    assert.match(source, /target:\s*GlobalFocusGrab/, `${name} observes global dismiss`)
-    assert.match(source, /function onDismissed\(\)\s*{\s*root\.close\(\)/, `${name} closes on outside click`)
+    assert.match(source, /PopupWindow\s*{/, `${name} uses popup stacking and geometry`)
+    assert.doesNotMatch(source, /PanelWindow\s*{/)
+    assert.doesNotMatch(source, /GlobalFocusGrab/)
+    assert.doesNotMatch(source, /HyprlandFocusGrab/)
   }
+})
+
+test('compact device actions center their visible content group', async () => {
+  const { bluetoothEntry } = await loadContract()
+
+  assert.match(bluetoothEntry, /readonly property bool centerCompactContent:\s*presentation === "compact"/)
+  assert.match(bluetoothEntry, /RowLayout\s*\{[\s\S]*id:\s*compactContent[\s\S]*anchors\.centerIn:\s*parent/)
+  assert.match(bluetoothEntry, /visible:\s*root\.menuEntry\.hasChildren[\s\S]*text:\s*"chevron_right"/)
+  assert.doesNotMatch(bluetoothEntry, /id:\s*compactTrailing/)
+  assert.doesNotMatch(bluetoothEntry, /compactLabel\.implicitWidth \+ 20 \* 2/)
+})
+
+test('known applet actions prefer end4 Material icons over unresolved native names', async () => {
+  const { bluetoothEntry, wifiMenu } = await loadContract()
+
+  assert.match(bluetoothEntry, /readonly property bool useMaterialIcon:\s*fallbackIcon !== ""/)
+  assert.match(bluetoothEntry, /hasNativeIcon:[\s\S]*&& !useMaterialIcon/)
+  assert.match(bluetoothEntry, /active:\s*root\.useMaterialIcon/)
+  assert.match(bluetoothEntry, /text:\s*root\.fallbackIcon/)
+  assert.doesNotMatch(wifiMenu, /sourceComponent:\s*IconImage/)
+  assert.match(wifiMenu, /text:\s*root\.materialIcon\(entryButton\.menuEntry\)/)
 })
 
 test('menu actions stay open long enough to trigger and reflect D-Bus state updates', async () => {
