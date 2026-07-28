@@ -26,7 +26,7 @@ StyledPopup {
     readonly property bool wide: Config.options.bar.vertical === true
     required property var appTraffic
     property bool appsEnabled: true
-    property string statsPeriod: "boot"
+    property string statsPeriod: "today"
     property bool appsExpanded: false
 
     readonly property real periodRx: statsPeriod === "today" ? logic.todayRx
@@ -54,7 +54,11 @@ StyledPopup {
     }
 
     function appName(name) {
-        return name === appTraffic.otherKey ? Translation.tr("Other") : name
+        if (name === appTraffic.otherKey) return Translation.tr("Other")
+        if (name === "__unattributed_udp") return Translation.tr("Unattributed UDP")
+        if (name === "__unattributed_tcp") return Translation.tr("Unattributed TCP")
+        if (name === "__unattributed_process") return Translation.tr("Unattributed process")
+        return name
     }
 
     // --- latency ---------------------------------------------------------
