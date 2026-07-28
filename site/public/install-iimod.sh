@@ -34,7 +34,13 @@ esac
 
 umask 077
 tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
+cleanup() {
+  rm -rf "$tmp_dir"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 binary_path="${tmp_dir}/iimod"
 checksum_path="${tmp_dir}/iimod.sha256"
 
