@@ -32,6 +32,55 @@ async function writeExecutable(path, source) {
   await chmod(path, 0o755)
 }
 
+async function runBootstrap(mode) {
+  const { INSTALL_IIMOD_COMMAND } = await loadInstallExports()
+  const root = await mkdtemp(join(tmpdir(), 'install-iimod-bootstrap-test-'))
+  const binDir = join(root, 'bin')
+  const marker = join(root, 'installer-ran')
+  await writeExecutable(join(root, 'setup.sh'), `#!/bin/sh\nmkdir -p "$1"\n`)
+  spawnSync('sh', [join(root, 'setup.sh'), binDir], { encoding: 'utf8' })
+  await writeExecutable(
+    join(binDir, 'curl'),
+    `#!/bin/sh
+set -eu
+case "$MOCK_CURL_MODE" in
+  success)
+    printf '%s\\n' '#!/bin/sh' 'printf executed > "$INSTALLER_MARKER"'
+    ;;
+  failure)
+    exit 7
+    ;;
+  empty)
+    exit 0
+    ;;
+  truncated)
+    printf '%s\\n' '#!/bin/sh' 'printf executed > "$INSTALLER_MARKER"'
+    exit 18
+    ;;
+  http-error)
+    printf '%s\\n' '#!/bin/sh' 'printf executed > "$INSTALLER_MARKER"'
+    exit 22
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+`,
+  )
+
+  const result = spawnSync('sh', ['-c', INSTALL_IIMOD_COMMAND], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      INSTALLER_MARKER: marker,
+      MOCK_CURL_MODE: mode,
+      PATH: `${binDir}:${process.env.PATH}`,
+    },
+  })
+
+  return { marker, result, root }
+}
+
 async function runInstaller(checksum, platform = { system: 'Linux', machine: 'x86_64' }) {
   const root = await mkdtemp(join(tmpdir(), 'install-iimod-test-'))
   const binDir = join(root, 'bin')
@@ -109,14 +158,33 @@ test('displayed CLI install command stays concise and uses the first-party HTTPS
 
   assert.equal(
     INSTALL_IIMOD_COMMAND,
-    'sh -c "$(curl -sS https://ii.n1cat.xyz/install-iimod.sh)"',
+    `sh -c 'script=$(curl --fail --location --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'`,
   )
   assert.equal(INSTALL_IIMOD_COMMAND.split('\n').length, 1)
-  assert.match(INSTALL_IIMOD_COMMAND, /^sh -c "\$\(curl -sS /)
-  assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /--[a-z]/)
+  assert.match(INSTALL_IIMOD_COMMAND, /^sh -c 'script=\$\(curl --fail --location /)
   assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /\|\s*sh/)
   assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /sudo/)
   assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /downloads\/iimod\/linux-x86_64/)
+})
+
+test('bootstrap executes a complete successful HTTPS response', async (t) => {
+  const run = await runBootstrap('success')
+  t.after(() => rm(run.root, { recursive: true, force: true }))
+
+  assert.equal(run.result.status, 0, run.result.stderr)
+  assert.equal(await readFile(run.marker, 'utf8'), 'executed')
+})
+
+test('bootstrap rejects failed, empty, truncated, and HTTP error responses before execution', async (t) => {
+  for (const mode of ['failure', 'empty', 'truncated', 'http-error']) {
+    await t.test(mode, async (t) => {
+      const run = await runBootstrap(mode)
+      t.after(() => rm(run.root, { recursive: true, force: true }))
+
+      assert.notEqual(run.result.status, 0, `${mode} unexpectedly succeeded`)
+      await assert.rejects(access(run.marker, constants.F_OK), `${mode} executed installer content`)
+    })
+  }
 })
 
 test('installer is valid POSIX shell and preserves secure installation stages', async () => {
@@ -192,7 +260,7 @@ test('Hero uses the shared CLI install command', async () => {
 })
 
 test('bilingual install docs show the shared short command and security tradeoff', async () => {
-  const command = 'sh -c "$(curl -sS https://ii.n1cat.xyz/install-iimod.sh)"'
+  const { INSTALL_IIMOD_COMMAND: command } = await loadInstallExports()
   const docs = await Promise.all([
     readFile(new URL('../docs/guide/install.md', import.meta.url), 'utf8'),
     readFile(new URL('../docs/en/guide/install.md', import.meta.url), 'utf8'),

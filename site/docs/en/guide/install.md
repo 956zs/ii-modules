@@ -16,12 +16,12 @@ This page walks you through it from scratch: get the `iimod` CLI installed, then
 Use the first-party installer served by this site to download the official binary from the stable endpoint and verify its SHA256:
 
 ```bash
-sh -c "$(curl -sS https://ii.n1cat.xyz/install-iimod.sh)"
+sh -c 'script=$(curl --fail --location --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'
 ```
 
 Before prompting, the script explains what it installs, the `/usr/local/bin/iimod` destination, SHA256 verification, and when `sudo` may request your password. It downloads the binary only into a restricted temporary directory. An invalid or mismatched checksum stops the installation before `sudo`, and temporary files are always removed.
 
-This short command executes the current script served over HTTPS, so its trust boundary includes `ii.n1cat.xyz` and TLS. To review it first, open [install-iimod.sh](https://ii.n1cat.xyz/install-iimod.sh), or download it locally and inspect it before running it. The binary itself is never piped into `sudo`: the script verifies SHA256 first, then invokes `sudo install` separately.
+This one-line command first retrieves the complete, nonempty installer over HTTPS. It executes the script only after `curl` succeeds, including its HTTP error check, so failed or truncated transfers are never executed. The trust boundary still includes `ii.n1cat.xyz`, TLS, and the complete script served by the site at that time. To review it first, open [install-iimod.sh](https://ii.n1cat.xyz/install-iimod.sh), or download it locally and inspect it before running it. The binary itself is never piped into `sudo`: the script verifies SHA256 first, then invokes `sudo install` separately.
 
 ::: tip Stable endpoint
 The site projects the binary and `.sha256` from the highest-versioned `iimod/v<version>` release. The CLI and every module release independently; neither depends on the repository-wide Latest Release.

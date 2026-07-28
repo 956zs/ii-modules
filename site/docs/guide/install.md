@@ -16,12 +16,12 @@ description: 從零開始:安裝 iimod CLI,然後裝上你的第一個 IIMP 模�
 透過網站提供的第一方安裝腳本，從穩定下載端點取得官方 binary 並核對 SHA256：
 
 ```bash
-sh -c "$(curl -sS https://ii.n1cat.xyz/install-iimod.sh)"
+sh -c 'script=$(curl --fail --location --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'
 ```
 
 腳本會先說明將安裝的內容、目標 `/usr/local/bin/iimod`、SHA256 驗證狀態，以及何時可能出現 `sudo` 密碼提示。binary 只會下載至受限的暫存目錄；checksum 不合法或不相符時會立即停止，不會執行 `sudo`，暫存檔也會自動清除。
 
-這個短指令會直接執行目前由網站透過 HTTPS 提供的腳本，因此信任邊界包含 `ii.n1cat.xyz` 與 TLS。若要先審查再執行，請開啟 [install-iimod.sh](https://ii.n1cat.xyz/install-iimod.sh)，或先下載到本機閱讀後執行。下載的 binary 不會直接 pipe 給 `sudo`；腳本會先完成 SHA256 驗證，再單獨呼叫 `sudo install`。
+這個單行指令會先透過 HTTPS 完整取得非空的安裝腳本；只有 `curl` 成功（含 HTTP 錯誤檢查）後才執行，因此傳輸失敗或截斷的內容不會執行。信任邊界仍包含 `ii.n1cat.xyz`、TLS，以及當下網站提供的完整腳本。若要先審查再執行，請開啟 [install-iimod.sh](https://ii.n1cat.xyz/install-iimod.sh)，或先下載到本機閱讀後執行。下載的 binary 不會直接 pipe 給 `sudo`；腳本會先完成 SHA256 驗證，再單獨呼叫 `sudo install`。
 
 ::: tip 穩定端點
 網站會從最高版本的 `iimod/v<version>` Release 投影 binary 與 `.sha256`。CLI 與各模塊獨立發版，不依賴 repository-wide Latest Release。
