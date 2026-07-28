@@ -1,0 +1,3 @@
+DelegateChooser {
+    DelegateChoice { roleValue: "antiFlashbang" }
+}
