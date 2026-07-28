@@ -16,7 +16,7 @@ description: 從零開始:安裝 iimod CLI,然後裝上你的第一個 IIMP 模�
 透過網站提供的第一方安裝腳本，從穩定下載端點取得官方 binary 並核對 SHA256：
 
 ```bash
-sh -c 'script=$(curl --fail --location --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'
+sh -c 'script=$(curl --fail --location --proto "=https" --tlsv1.2 --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'
 ```
 
 腳本會先說明將安裝的內容、目標 `/usr/local/bin/iimod`、SHA256 驗證狀態，以及何時可能出現 `sudo` 密碼提示。binary 只會下載至受限的暫存目錄；checksum 不合法或不相符時會立即停止，不會執行 `sudo`，暫存檔也會自動清除。

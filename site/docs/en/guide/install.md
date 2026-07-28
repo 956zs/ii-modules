@@ -16,7 +16,7 @@ This page walks you through it from scratch: get the `iimod` CLI installed, then
 Use the first-party installer served by this site to download the official binary from the stable endpoint and verify its SHA256:
 
 ```bash
-sh -c 'script=$(curl --fail --location --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'
+sh -c 'script=$(curl --fail --location --proto "=https" --tlsv1.2 --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'
 ```
 
 Before prompting, the script explains what it installs, the `/usr/local/bin/iimod` destination, SHA256 verification, and when `sudo` may request your password. It downloads the binary only into a restricted temporary directory. An invalid or mismatched checksum stops the installation before `sudo`, and temporary files are always removed.

@@ -37,12 +37,31 @@ async function runBootstrap(mode) {
   const root = await mkdtemp(join(tmpdir(), 'install-iimod-bootstrap-test-'))
   const binDir = join(root, 'bin')
   const marker = join(root, 'installer-ran')
+  const securityMarker = join(root, 'curl-security-options')
   await writeExecutable(join(root, 'setup.sh'), `#!/bin/sh\nmkdir -p "$1"\n`)
   spawnSync('sh', [join(root, 'setup.sh'), binDir], { encoding: 'utf8' })
   await writeExecutable(
     join(binDir, 'curl'),
     `#!/bin/sh
 set -eu
+fail=false
+location=false
+proto=''
+tls12=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --fail) fail=true; shift ;;
+    --location) location=true; shift ;;
+    --proto) proto="$2"; shift 2 ;;
+    --tlsv1.2) tls12=true; shift ;;
+    *) shift ;;
+  esac
+done
+if [ "$fail" != true ] || [ "$location" != true ] || [ "$proto" != '=https' ] || [ "$tls12" != true ]; then
+  printf '%s\n' 'missing required HTTPS transport options' >&2
+  exit 64
+fi
+: > "$CURL_SECURITY_MARKER"
 case "$MOCK_CURL_MODE" in
   success)
     printf '%s\\n' '#!/bin/sh' 'printf executed > "$INSTALLER_MARKER"'
@@ -72,13 +91,14 @@ esac
     encoding: 'utf8',
     env: {
       ...process.env,
+      CURL_SECURITY_MARKER: securityMarker,
       INSTALLER_MARKER: marker,
       MOCK_CURL_MODE: mode,
       PATH: `${binDir}:${process.env.PATH}`,
     },
   })
 
-  return { marker, result, root }
+  return { marker, result, root, securityMarker }
 }
 
 async function runInstaller(checksum, platform = { system: 'Linux', machine: 'x86_64' }) {
@@ -276,7 +296,7 @@ test('displayed CLI install command stays concise and uses the first-party HTTPS
 
   assert.equal(
     INSTALL_IIMOD_COMMAND,
-    `sh -c 'script=$(curl --fail --location --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'`,
+    `sh -c 'script=$(curl --fail --location --proto "=https" --tlsv1.2 --silent --show-error https://ii.n1cat.xyz/install-iimod.sh) && [ -n "$script" ] && sh -c "$script"'`,
   )
   assert.equal(INSTALL_IIMOD_COMMAND.split('\n').length, 1)
   assert.match(INSTALL_IIMOD_COMMAND, /^sh -c 'script=\$\(curl --fail --location /)
@@ -285,11 +305,12 @@ test('displayed CLI install command stays concise and uses the first-party HTTPS
   assert.doesNotMatch(INSTALL_IIMOD_COMMAND, /downloads\/iimod\/linux-x86_64/)
 })
 
-test('bootstrap executes a complete successful HTTPS response', async (t) => {
+test('bootstrap executes a complete successful HTTPS response with restricted transport options', async (t) => {
   const run = await runBootstrap('success')
   t.after(() => rm(run.root, { recursive: true, force: true }))
 
   assert.equal(run.result.status, 0, run.result.stderr)
+  await access(run.securityMarker, constants.F_OK)
   assert.equal(await readFile(run.marker, 'utf8'), 'executed')
 })
 
