@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Services.SystemTray
 import qs.modules.common
 import qs.mod.indicator_tools
@@ -19,11 +20,18 @@ MouseArea {
     property bool menuRequested: false
     property bool openWhenLoaded: false
     property var loadedMenu: null
+    property var focusWindow: null
     property rect menuAnchorRect: Qt.rect(0, 0, width, height)
 
     anchors.fill: parent
     acceptedButtons: Qt.NoButton
     hoverEnabled: true
+
+    HyprlandFocusGrab {
+        active: root.focusWindow !== null
+        windows: [root.QsWindow.window, root.focusWindow]
+        onCleared: root.closeStyledMenu()
+    }
 
     function refreshMenuAnchor() {
         const window = root.QsWindow.window
@@ -33,7 +41,9 @@ MouseArea {
 
     function closeStyledMenu() {
         root.openWhenLoaded = false
-        root.loadedMenu?.close()
+        root.focusWindow = null
+        if (root.loadedMenu)
+            root.loadedMenu.close()
     }
 
     function toggleStyledMenu() {
@@ -69,6 +79,8 @@ MouseArea {
         component: root.appletId === "nm-applet" ? wifiMenuComponent : appletMenuComponent
         onItemChanged: {
             root.loadedMenu = item
+            if (!item)
+                root.focusWindow = null
             if (item && root.openWhenLoaded) {
                 root.openWhenLoaded = false
                 item.open()
@@ -80,6 +92,8 @@ MouseArea {
         id: wifiMenuComponent
         WifiAppletMenu {
             menuHandle: root.trayItem.menu
+            onMenuOpened: qsWindow => root.focusWindow = qsWindow
+            onMenuClosed: root.focusWindow = null
             anchor {
                 window: root.QsWindow.window
                 rect.x: root.menuAnchorRect.x
@@ -101,6 +115,8 @@ MouseArea {
         AppletMenu {
             menuHandle: root.trayItem.menu
             semanticStyleId: root.appletId
+            onMenuOpened: qsWindow => root.focusWindow = qsWindow
+            onMenuClosed: root.focusWindow = null
             anchor {
                 window: root.QsWindow.window
                 rect.x: root.menuAnchorRect.x
