@@ -58,8 +58,9 @@ iimod install modules/indicator_tools/ --allow-patches
   選取狀態。每列使用 RippleButton 的 theme hover、快速色彩過渡與 ripple，
   不做造成布局位移的縮放動畫。
 - 沒有命令輸出解析、密碼 argv 或第二套網路／藍牙狀態機。
-- 四個圖示補丁（水平／垂直 × Wi-Fi／藍牙）用 path Loader 掛載橋接 MouseArea，
-  只接收右鍵；stock 外層左鍵仍開側欄。
+- 四個圖示補丁（水平／垂直 × Wi-Fi／藍牙）用 path Loader 掛載 hover-only bridge；
+  stock `RippleButton` 是唯一 pointer owner，右鍵由其 `altAction` 依座標只分派給命中的
+  Wi-Fi／Bluetooth bridge，避免父子 `MouseArea` 競爭；stock 左鍵仍開側欄。
 - `SysTray.qml` 的 pinned／unpinned 顯示陣列只排除精確 ID `nm-applet`、`blueman`；
   `TrayService` 和底層 `SystemTray.items` 保持完整，所以橋仍可取得選單。
 - separator 改以過濾後陣列判斷，避免托盤只剩兩個被隱藏 applet 時留下孤立圓點。
@@ -69,7 +70,11 @@ iimod install modules/indicator_tools/ --allow-patches
   在 spare frame 建立 renderer，並在 menu/layout 尺寸穩定後才播放原本的 opacity 與
   elementResize 動畫。Popup window 幾何不再被 D-Bus model 更新逐幀改寫，renderer
   也不再反覆銷毀重建；anchor 使用 window-relative rect，避免綁住易失的 bar item。
-  成熟 applet 仍是功能與 secret-agent 的唯一 owner。
+  3.4.2 把右鍵 ownership 上移到 stock `RippleButton.altAction`，bridge 改為 hover-only；
+  3.4.3 再讓 Wi-Fi／Bluetooth 開啟流程互斥，開啟一側前會取消另一側的 pending
+  open 並關閉既有 popup，確保只顯示一個選單；3.4.4 將兩個 popup 註冊到 shell
+  共用的 `GlobalFocusGrab` dismiss lifecycle，點擊其他 window／桌面空白處會走同一個
+  `close()` 清理路徑。成熟 applet 仍是功能與 secret-agent 的唯一 owner。
 
 卸載模塊後，stock 圖示不再接管 applet 選單，兩個 applet 的托盤圖示也會由
 IIMP 重組自動恢復顯示；appet 行程本身由 session 啟動配置管理，不受模塊卸載影響。
