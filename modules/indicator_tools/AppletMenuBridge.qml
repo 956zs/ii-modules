@@ -1,12 +1,13 @@
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Services.SystemTray
 import qs.modules.common
 import qs.mod.indicator_tools
 
 /*
- * Right-click bridge from a stock status icon to an applet-provided SNI menu.
+ * Hover-only bridge from a stock status icon to an applet-provided SNI menu.
+ * The surrounding stock RippleButton is the sole pointer-event owner; it calls
+ * toggleStyledMenu() only when its right-click lands inside this item's bounds.
  * The applet remains the sole owner of menu actions and state.
  */
 MouseArea {
@@ -21,13 +22,18 @@ MouseArea {
     property rect menuAnchorRect: Qt.rect(0, 0, width, height)
 
     anchors.fill: parent
-    acceptedButtons: Qt.RightButton
+    acceptedButtons: Qt.NoButton
     hoverEnabled: true
 
     function refreshMenuAnchor() {
         const window = root.QsWindow.window
         if (window)
             root.menuAnchorRect = window.itemRect(root)
+    }
+
+    function closeStyledMenu() {
+        root.openWhenLoaded = false
+        root.loadedMenu?.close()
     }
 
     function toggleStyledMenu() {
@@ -38,7 +44,7 @@ MouseArea {
             return
         }
         if (root.loadedMenu.visible)
-            root.loadedMenu.close()
+            root.closeStyledMenu()
         else
             root.loadedMenu.open()
     }
@@ -48,29 +54,6 @@ MouseArea {
         root.refreshMenuAnchor()
         if (root.styledMenu && root.trayItem?.hasMenu)
             root.menuRequested = true
-    }
-
-    onPressed: event => {
-        event.accepted = true
-        if (!root.trayItem?.hasMenu)
-            return
-
-        if (root.styledMenu) {
-            root.toggleStyledMenu()
-            return
-        }
-
-        const window = root.QsWindow.window
-        if (!window)
-            return
-        const p = window.itemPosition(root)
-        let x = p.x + root.width / 2
-        let y = Config.options.bar.bottom ? p.y : p.y + root.height
-        if (Config.options.bar.vertical) {
-            x = Config.options.bar.bottom ? p.x : p.x + root.width
-            y = p.y + root.height / 2
-        }
-        root.trayItem.display(window, Math.round(x), Math.round(y))
     }
 
     onTrayItemChanged: {
@@ -132,11 +115,5 @@ MouseArea {
                     : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom)
             }
         }
-    }
-
-    HyprlandFocusGrab {
-        active: root.loadedMenu?.visible === true
-        windows: root.loadedMenu?.visible ? [root.loadedMenu] : []
-        onCleared: if (root.loadedMenu?.visible) root.loadedMenu.close()
     }
 }

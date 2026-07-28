@@ -34,6 +34,20 @@ PopupWindow {
     implicitWidth: panelWidth + outerMargin * 2
     implicitHeight: settledPanelHeight + outerMargin * 2
     onTargetPanelHeightChanged: settleTimer.restart()
+    onVisibleChanged: {
+        if (visible)
+            GlobalFocusGrab.addDismissable(root)
+        else
+            GlobalFocusGrab.removeDismissable(root)
+    }
+    Component.onDestruction: GlobalFocusGrab.removeDismissable(root)
+
+    Connections {
+        target: GlobalFocusGrab
+        function onDismissed() {
+            root.close()
+        }
+    }
 
     function normalizedLabel(text) {
         const source = String(text ?? "")
