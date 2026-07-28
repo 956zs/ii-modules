@@ -76,25 +76,38 @@ test('inside actions, trigger toggles, and outside clicks share one complete foc
   }
 })
 
-test('compact device actions center their visible content group', async () => {
+test('compact device action labels stay centered independently of side icons', async () => {
   const { bluetoothEntry } = await loadContract()
 
   assert.match(bluetoothEntry, /readonly property bool centerCompactContent:\s*presentation === "compact"/)
-  assert.match(bluetoothEntry, /RowLayout\s*\{[\s\S]*id:\s*compactContent[\s\S]*anchors\.centerIn:\s*parent/)
-  assert.match(bluetoothEntry, /visible:\s*root\.menuEntry\.hasChildren[\s\S]*text:\s*"chevron_right"/)
-  assert.doesNotMatch(bluetoothEntry, /id:\s*compactTrailing/)
-  assert.doesNotMatch(bluetoothEntry, /compactLabel\.implicitWidth \+ 20 \* 2/)
+  assert.match(
+    bluetoothEntry,
+    /StyledText\s*\{[\s\S]*?id:\s*compactLabel[\s\S]*?anchors\.centerIn:\s*parent/,
+  )
+  assert.match(bluetoothEntry, /id:\s*compactLeading[\s\S]*?anchors\s*\{[\s\S]*?left:\s*parent\.left/)
+  assert.match(bluetoothEntry, /id:\s*compactTrailing[\s\S]*?anchors\s*\{[\s\S]*?right:\s*parent\.right/)
+  assert.match(
+    bluetoothEntry,
+    /Item\s*\{\s*\n\s*id:\s*compactContent[\s\S]*?anchors\.fill:\s*parent/,
+  )
 })
 
-test('known applet actions prefer end4 Material icons over unresolved native names', async () => {
+test('known applet actions use Material icons while unknown actions keep native fallback', async () => {
   const { bluetoothEntry, wifiMenu } = await loadContract()
 
   assert.match(bluetoothEntry, /readonly property bool useMaterialIcon:\s*fallbackIcon !== ""/)
   assert.match(bluetoothEntry, /hasNativeIcon:[\s\S]*&& !useMaterialIcon/)
-  assert.match(bluetoothEntry, /active:\s*root\.useMaterialIcon/)
-  assert.match(bluetoothEntry, /text:\s*root\.fallbackIcon/)
-  assert.doesNotMatch(wifiMenu, /sourceComponent:\s*IconImage/)
-  assert.match(wifiMenu, /text:\s*root\.materialIcon\(entryButton\.menuEntry\)/)
+  assert.match(bluetoothEntry, /function bluemanIcon\(text\)[\s\S]*?return ""\s*\n\s*\}/)
+  assert.match(bluetoothEntry, /active:\s*root\.hasNativeIcon[\s\S]*?sourceComponent:\s*IconImage/)
+  assert.match(bluetoothEntry, /active:\s*root\.useMaterialIcon[\s\S]*?text:\s*root\.fallbackIcon/)
+
+  assert.match(wifiMenu, /readonly property string nativeIconName:\s*String\(menuEntry\?\.icon \?\? ""\)/)
+  assert.match(wifiMenu, /readonly property string materialIconName:\s*root\.materialIcon\(menuEntry\)/)
+  assert.match(wifiMenu, /readonly property string genericIconName:/)
+  assert.match(wifiMenu, /readonly property bool hasNativeIcon:[\s\S]*materialIconName === ""/)
+  assert.match(wifiMenu, /visible:\s*entryButton\.hasNativeIcon[\s\S]*source:\s*entryButton\.nativeIconName/)
+  assert.match(wifiMenu, /visible:\s*entryButton\.materialIconName !== ""[\s\S]*text:\s*entryButton\.materialIconName/)
+  assert.match(wifiMenu, /function materialIcon\(entry\)[\s\S]*?return ""\s*\n\s*\}/)
 })
 
 test('menu actions stay open long enough to trigger and reflect D-Bus state updates', async () => {
