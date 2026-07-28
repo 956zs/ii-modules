@@ -2,40 +2,134 @@
   "protocolVersion": 1,
   "id": "clock_popup_slim",
   "name": {
-    "en_US": "Slim Clock Popup",
-    "zh_TW": "精簡時鐘彈窗",
-    "zh_CN": "精简时钟弹窗"
+    "en_US": "Bar Clock Customizer (Experimental)",
+    "zh_TW": "Bar 時鐘客製化（實驗性）",
+    "zh_CN": "Bar 时钟自定义（实验性）"
   },
   "description": {
-    "en_US": "Shrinks the clock widget's hover popup to a single date line by hiding the system-uptime row and the To-Do section. Disable the module to get the full popup back.",
-    "zh_TW": "把時鐘的 hover 彈窗縮成一行日期：隱藏 system uptime 列與 To Do 區塊。停用本模塊即可還原完整彈窗。"
+    "en_US": "Experimental Tier B bar clock customization; may be deprecated if the stock center layout changes or a safer replacement ships.",
+    "zh_TW": "實驗性的 Tier B bar 時鐘客製化；若 stock 中央版面改動或有更安全的替代方案，可能棄用。",
+    "zh_CN": "实验性的 Tier B bar 时钟自定义；若 stock 中央布局改动或有更安全的替代方案，可能弃用。"
   },
-  "version": "1.0.0",
+  "version": "2.1.0",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["window"],
   "entries": {
-    "window": "main.qml"
+    "window": "main.qml",
+    "settings": "settings.qml"
   },
   "compat": {
     "probes": [
-      {"type": "file-exists", "path": "modules/ii/bar/ClockWidgetPopup.qml", "reason": "the popup being slimmed"}
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "import qs.modules.ii.bar.weather",
+        "reason": "imports the custom clock beside the stock bar components"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "                ClockWidget {",
+        "reason": "replaces the horizontal stock clock at its layout position"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "            id: leftCenterGroup",
+        "reason": "reduces the left center bookend symmetrically"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "                id: rightCenterGroupContent",
+        "reason": "reduces the right center bookend symmetrically"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/ClockWidgetPopup.qml",
+        "pattern": "import qs.modules.common.widgets",
+        "reason": "imports the popup-density configuration"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/ClockWidgetPopup.qml",
+        "pattern": "    id: root",
+        "reason": "hosts the popup configuration reader"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/ClockWidgetPopup.qml",
+        "pattern": "label: Translation.tr(\"System uptime:\")",
+        "reason": "toggles the system-uptime row"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/ClockWidgetPopup.qml",
+        "pattern": "            Layout.fillWidth: true",
+        "reason": "toggles the To Do section"
+      }
     ],
-    "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
+    "testedOn": {
+      "dotsCommit": "446504ad42",
+      "qsVersion": "0.2.1"
+    }
   },
   "capabilities": [],
   "patches": [
     {
-      "file": "modules/ii/bar/ClockWidgetPopup.qml",
+      "file": "modules/ii/bar/BarContent.qml",
       "op": "insert-after",
-      "anchor": "label: Translation.tr(\"System uptime:\")",
-      "content": "            visible: false\n"
+      "anchor": "import qs.modules.ii.bar.weather",
+      "content": "import qs.mod.clock_popup_slim as ClockCustomizer\n"
+    },
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-after",
+      "anchor": "                ClockWidget {",
+      "content": "                    visible: false\n"
+    },
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-before",
+      "anchor": "                ClockWidget {",
+      "content": "                ClockCustomizer.ClockBar {\n                    id: customBarClock\n                    Layout.alignment: Qt.AlignVCenter\n\n                    ClockWidgetPopup {\n                        hoverTarget: customBarClock.hoverTarget\n                    }\n                }\n\n"
+    },
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-after",
+      "anchor": "            id: leftCenterGroup",
+      "content": "\n            property var clockCustomizerWidthBinding: Binding {\n                target: leftCenterGroup\n                property: \"implicitWidth\"\n                value: Math.min(root.centerSideModuleWidth, customBarClock.centerSideWidth)\n            }\n"
+    },
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-after",
+      "anchor": "                id: rightCenterGroupContent",
+      "content": "\n                property var clockCustomizerWidthBinding: Binding {\n                    target: rightCenterGroup\n                    property: \"implicitWidth\"\n                    value: Math.min(root.centerSideModuleWidth, customBarClock.centerSideWidth)\n                }\n"
     },
     {
       "file": "modules/ii/bar/ClockWidgetPopup.qml",
       "op": "insert-after",
-      "anchor": "Layout.fillWidth: true",
-      "content": "            visible: false\n"
+      "anchor": "import qs.modules.common.widgets",
+      "content": "import qs.mod.clock_popup_slim as ClockCustomizer\n"
+    },
+    {
+      "file": "modules/ii/bar/ClockWidgetPopup.qml",
+      "op": "insert-after",
+      "anchor": "    id: root",
+      "content": "\n    property var clockCustomizerConfig: ClockCustomizer.ConfigLoader {}\n"
+    },
+    {
+      "file": "modules/ii/bar/ClockWidgetPopup.qml",
+      "op": "insert-after",
+      "anchor": "label: Translation.tr(\"System uptime:\")",
+      "content": "            visible: !clockCustomizerConfig.options.slimPopup\n"
+    },
+    {
+      "file": "modules/ii/bar/ClockWidgetPopup.qml",
+      "op": "insert-after",
+      "anchor": "            Layout.fillWidth: true",
+      "content": "            visible: !clockCustomizerConfig.options.slimPopup\n"
     }
   ]
 }

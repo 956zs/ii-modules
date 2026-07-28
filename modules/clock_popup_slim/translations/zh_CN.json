@@ -1,0 +1,16 @@
+{
+  "These options customize the horizontal bar clock. The vertical bar keeps its stock layout.": "这些选项会自定义水平 bar 时钟；垂直 bar 保持原始布局。",
+  "Show date on the bar": "在 bar 显示日期",
+  "Time format": "时间格式",
+  "Date format": "日期格式",
+  "Separator": "分隔符号",
+  "Qt date/time patterns are supported. Use HH:mm for a 24-hour clock, hh:mm AP for a 12-hour clock, and add :ss for seconds.": "支持 Qt 日期与时间格式。HH:mm 为 24 小时制，hh:mm AP 为 12 小时制，加入 :ss 可显示秒数。",
+  "Content spacing (px)": "内容间距（px）",
+  "Horizontal padding (px)": "左右留白（px）",
+  "Center side width (px)": "中央两侧宽度（px）",
+  "Reduces the left and right center sections equally, keeping Workspaces at the exact screen center. The clock remains left-aligned in the right section.": "等量缩短中央左右两侧，让工作区保持在屏幕正中央；时钟仍靠左排列在右侧区域。",
+  "Time text size offset (px)": "时间文字尺寸偏移（px）",
+  "Date text size offset (px)": "日期文字尺寸偏移（px）",
+  "Slim hover popup": "精简 hover 弹窗",
+  "When enabled, the hover popup hides system uptime and To Do. Disable it to restore the complete stock popup.": "启用后，hover 弹窗会隐藏 system uptime 与 To Do；停用即可还原完整原始弹窗。"
+}
