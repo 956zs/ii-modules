@@ -75,8 +75,14 @@ iimod install modules/indicator_tools/ --allow-patches
   open 並關閉既有 popup，確保只顯示一個選單；3.4.4 將兩個 popup 註冊到 shell
   共用的 `GlobalFocusGrab` dismiss lifecycle，點擊其他 window／桌面空白處會走同一個
   `close()` 清理路徑；3.4.5 讓選單 action 觸發後保持面板開啟，等待 applet 的 D-Bus
-  model 更新狀態，不再在 `releaseAction` 後無條件關閉。成熟 applet 仍是功能與
-  secret-agent 的唯一 owner。
+  model 更新狀態，不再在 `releaseAction` 後無條件關閉；3.4.6 保留 stock tray 同型的
+  anchored `PopupWindow`，但將 shell-wide dismiss lifecycle 換成 bridge 協調的
+  `HyprlandFocusGrab`；3.4.7 改用 `menuOpened(qsWindow)` 回傳的真實 popup window handle，
+  而不是 LazyLoader proxy，讓內部 action、同圖示 toggle 與點外關閉真正共存。已知的
+  Wi-Fi／Blueman actions 也改為優先使用 end-4 `MaterialSymbol`，避免 GTK native icon name
+  無法解析時留下空白 icon 欄；未知的 applet 專屬 icon 才保留 native fallback。裝置列的
+  Profiles／Disconnect compact buttons 固定同寬，文字用獨立 overlay 錨定按鈕中心；左右
+  icon／chevron 不再參與 label 排版。成熟 applet 仍是功能與 secret-agent 的唯一 owner。
 
 卸載模塊後，stock 圖示不再接管 applet 選單，兩個 applet 的托盤圖示也會由
 IIMP 重組自動恢復顯示；appet 行程本身由 session 啟動配置管理，不受模塊卸載影響。

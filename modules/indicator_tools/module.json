@@ -11,7 +11,7 @@
     "zh_TW": "為 stock Wi-Fi 與藍牙指示圖示提供 Material 面板，直接呈現 nm-applet 與 Blueman 的 D-Bus 選單，不接管網路或藍牙狀態。重複托盤圖示會隱藏；stock 狀態圖示與左鍵行為維持不變。",
     "zh_CN": "为 stock Wi-Fi 与蓝牙指示图标提供 Material 面板，直接呈现 nm-applet 与 Blueman 的 D-Bus 菜单，不接管网络或蓝牙状态。重复托盘图标会隐藏；stock 状态图标与左键行为保持不变。"
   },
-  "version": "3.4.5",
+  "version": "3.4.7",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["window"],
