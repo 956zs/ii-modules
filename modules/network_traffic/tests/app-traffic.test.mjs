@@ -16,7 +16,7 @@ async function loadLogic() {
 async function loadConfigLogic() {
   const source = await readFile(new URL('../ConfigLogic.js', import.meta.url), 'utf8')
   const context = vm.createContext({})
-  vm.runInContext(`${source}\nglobalThis.api = { prepareConfig, mergeConfigChanges }`, context)
+  vm.runInContext(`${source}\nglobalThis.api = { prepareConfig, mergeConfigChanges, decodeSettingIntent }`, context)
   return context.api
 }
 
@@ -319,13 +319,80 @@ test('legacy boot default migrates before owner write without removing boot sele
   assert.doesNotMatch(migrationBody, /appAcctState\s*=/)
 })
 
-test('settings controls cannot overwrite persisted values before config load', async () => {
-  const source = await readFile(new URL('../settings.qml', import.meta.url), 'utf8')
-  assert.match(source, /if \(cfg\.ready && !cfg\.materializing\) cfg\.options\.autoStackMaxWidth = value/)
-  assert.match(source, /if \(cfg\.ready && !cfg\.materializing\) cfg\.options\.stackedShowIcons = checked/)
-  assert.match(source, /if \(cfg\.ready && !cfg\.materializing\) cfg\.options\.appMonitoring = checked/)
-  assert.match(source, /if \(cfg\.ready && !cfg\.materializing\) cfg\.options\.updateInterval = value/)
-  assert.match(source, /if \(cfg\.ready && !cfg\.materializing\) cfg\.options\.breatheThresholdKB = value/)
+test('setting intents accept only the public typed allowlist and exact boundaries', async () => {
+  const logic = await loadConfigLogic()
+  const accepted = [
+    ['displayMode', '"auto"', 'auto'],
+    ['displayMode', '"stacked"', 'stacked'],
+    ['displayMode', '"horizontal"', 'horizontal'],
+    ['autoStackMaxWidth', '800', 800],
+    ['autoStackMaxWidth', '7680', 7680],
+    ['stackedShowIcons', 'false', false],
+    ['statsPeriod', '"boot"', 'boot'],
+    ['statsPeriod', '"today"', 'today'],
+    ['statsPeriod', '"month"', 'month'],
+    ['appMonitoring', 'true', true],
+    ['updateInterval', '500', 500],
+    ['updateInterval', '10000', 10000],
+    ['breatheThresholdKB', '64', 64],
+    ['breatheThresholdKB', '65536', 65536],
+    ['pingHost', '"auto"', 'auto'],
+    ['pingHost', '"2001:db8::1"', '2001:db8::1'],
+  ]
+  for (const [key, serialized, value] of accepted) {
+    assert.deepEqual(plain(logic.decodeSettingIntent(key, serialized)), {
+      accepted: true, key, value,
+    })
+  }
+
+  const rejected = [
+    [null, 'true'], ['', 'true'], ['displayMode', null], ['acctState', '"stale"'],
+    ['appAcctState', '"stale"'], ['statsPeriodSchema', '2'],
+    ['displayMode', '"wide"'], ['displayMode', 'null'],
+    ['autoStackMaxWidth', '799'], ['autoStackMaxWidth', '7681'],
+    ['autoStackMaxWidth', '800.5'], ['stackedShowIcons', '"false"'],
+    ['statsPeriod', '"week"'], ['appMonitoring', '1'],
+    ['updateInterval', '499'], ['updateInterval', '10001'],
+    ['breatheThresholdKB', '63'], ['breatheThresholdKB', '65537'],
+    ['pingHost', '""'], ['pingHost', '"bad\\nhost"'],
+    ['pingHost', JSON.stringify('x'.repeat(256))], ['pingHost', '{bad'],
+  ]
+  for (const [key, serialized] of rejected)
+    assert.deepEqual(plain(logic.decodeSettingIntent(key, serialized)), { accepted: false })
+})
+
+test('settings and secondary bars send intents while only the primary owner writes config', async () => {
+  const settingsSource = await readFile(new URL('../settings.qml', import.meta.url), 'utf8')
+  const senderSource = await readFile(new URL('../ConfigRequest.qml', import.meta.url), 'utf8')
+  const configSource = await readFile(new URL('../ConfigLoader.qml', import.meta.url), 'utf8')
+  const barSource = await readFile(new URL('../bar.qml', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(settingsSource, /cfg\.options\.[A-Za-z]+\s*=(?!=)/)
+  assert.match(settingsSource, /ConfigRequest\s*\{\s*id:\s*configRequest/)
+  for (const key of ['displayMode', 'autoStackMaxWidth', 'stackedShowIcons',
+    'appMonitoring', 'updateInterval', 'breatheThresholdKB', 'pingHost']) {
+    assert.match(settingsSource, new RegExp(`configRequest\\.send\\("${key}"`))
+  }
+
+  assert.match(senderSource, /command:\s*request === null \? \[\] : \[[\s\S]*"qs", "-c", "ii", "ipc", "--any-display", "call",/)
+  assert.match(senderSource, /"network_traffic", "setSetting"/)
+  assert.doesNotMatch(senderSource, /\["sh",\s*"-c"/)
+  assert.match(senderSource, /const next = root\.queue\.filter\(request => request\.key !== key\)/)
+  assert.match(senderSource, /property int maxAttempts:\s*8/)
+  assert.match(senderSource, /if \(exitCode !== 0 && request\.attempts < root\.maxAttempts\)/)
+
+  assert.match(configSource, /function queueChange\(key, value\) \{[\s\S]*!root\.ownerReady/)
+  assert.match(configSource, /function requestSerializedSetting\(key, serializedValue\)/)
+  assert.match(configSource, /ConfigLogic\.decodeSettingIntent\(key, serializedValue\)/)
+  assert.match(configSource, /if \(!root\.ownerReady \|\| !intent\.accepted\)\s*return false/)
+
+  assert.match(barSource, /IpcHandler\s*\{[\s\S]*enabled:\s*cfg\.ownerReady[\s\S]*target:\s*cfg\.ownerReady \? "network_traffic"/)
+  assert.match(barSource, /network_traffic_reader_/)
+  assert.match(barSource, /function setSetting\(key:\s*string, serializedValue:\s*string\):\s*void/)
+  assert.match(barSource, /cfg\.requestSerializedSetting\(key, serializedValue\)/)
+  assert.match(barSource, /function requestSetting\(key, value\)/)
+  assert.match(barSource, /configRequest\.send\(key, value\)/)
+  assert.doesNotMatch(barSource, /cfg\.options\.statsPeriod\s*=(?!=)/)
 })
 
 test('multi-monitor bars elect one accounting writer and keep readers read-only', async () => {
@@ -353,7 +420,7 @@ test('multi-monitor bars elect one accounting writer and keep readers read-only'
   assert.match(configSource, /onLoaded:[\s\S]*const acquiring = root\.acquiringOwner;[\s\S]*root\.acquiringOwner = false;[\s\S]*root\.ownerReady = true/)
   assert.match(configSource, /onOwnerChanged:[\s\S]*root\.acquiringOwner = true[\s\S]*ownerReload\.restart\(\)/)
   assert.match(configSource, /^import QtQuick$/m)
-  assert.match(configSource, /property var ownerReload: Timer \{[\s\S]*interval: 100[\s\S]*root\.reload\(\)/)
+  assert.match(configSource, /property var ownerReload(?:\s*:\s*Timer \{|\s*$[\s\S]*ownerReload:\s*Timer \{)[\s\S]*interval: 100[\s\S]*root\.reload\(\)/m)
   assert.match(configSource, /ConfigLogic\.mergeConfigChanges\([\s\S]*latest, changes, root\.owner \|\| root\.ownerReady\)/)
   assert.match(configSource, /root\.reload\(\);[\s\S]*const latest = root\.text\(\)/)
 })
