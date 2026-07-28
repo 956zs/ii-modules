@@ -86,6 +86,41 @@ function prepareConfig(serialized, defaults, owner, currentSchema) {
     }
 }
 
+function decodeSettingIntent(key, serializedValue) {
+    const reject = { accepted: false }
+    if (typeof key !== "string" || typeof serializedValue !== "string") return reject
+
+    let value
+    try {
+        value = JSON.parse(serializedValue)
+    } catch (error) {
+        return reject
+    }
+
+    const oneOf = (candidate, choices) => typeof candidate === "string"
+        && choices.includes(candidate)
+    const integerIn = (candidate, minimum, maximum) => Number.isInteger(candidate)
+        && candidate >= minimum && candidate <= maximum
+    let accepted = false
+    if (key === "displayMode")
+        accepted = oneOf(value, ["auto", "stacked", "horizontal"])
+    else if (key === "autoStackMaxWidth")
+        accepted = integerIn(value, 800, 7680)
+    else if (key === "stackedShowIcons" || key === "appMonitoring")
+        accepted = typeof value === "boolean"
+    else if (key === "statsPeriod")
+        accepted = oneOf(value, ["boot", "today", "month"])
+    else if (key === "updateInterval")
+        accepted = integerIn(value, 500, 10000)
+    else if (key === "breatheThresholdKB")
+        accepted = integerIn(value, 64, 65536)
+    else if (key === "pingHost")
+        accepted = typeof value === "string" && value.length > 0 && value.length <= 255
+            && !/[\s\x00-\x1f\x7f]/.test(value)
+
+    return accepted ? { accepted: true, key, value } : reject
+}
+
 function mergeConfigChanges(serialized, changes, accountingOwner) {
     const raw = parseObject(serialized)
     let changed = false

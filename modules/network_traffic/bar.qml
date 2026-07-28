@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import qs.modules.common
 import qs.modules.common.widgets
 import qs.modules.ii.bar
@@ -39,11 +40,17 @@ BarGroup {
         // per-app ranking — the popup itself is a hover tooltip and can't take
         // clicks.
         property bool appsExpanded: false
+        function requestSetting(key, value) {
+            if (cfg.ownerReady)
+                cfg.requestSerializedSetting(key, JSON.stringify(value));
+            else
+                configRequest.send(key, value);
+        }
         onPressed: event => {
             if (event.button === Qt.LeftButton) {
                 const order = ["boot", "today", "month"]
                 const i = order.indexOf(cfg.options.statsPeriod)
-                cfg.options.statsPeriod = order[(i + 1) % order.length]
+                root.requestSetting("statsPeriod", order[(i + 1) % order.length])
             } else if (event.button === Qt.RightButton) {
                 root.appsExpanded = !root.appsExpanded
             }
@@ -65,6 +72,18 @@ BarGroup {
                 appTraffic.finalizePendingAccounting()
                 appTraffic.flushAcct()
                 logic.flushAccounting()
+            }
+        }
+
+        ConfigRequest { id: configRequest }
+
+        IpcHandler {
+            enabled: cfg.ownerReady
+            target: cfg.ownerReady ? "network_traffic"
+                                   : `network_traffic_reader_${barGroup.QsWindow.window?.screen?.name ?? "detached"}`
+
+            function setSetting(key: string, serializedValue: string): void {
+                cfg.requestSerializedSetting(key, serializedValue)
             }
         }
 

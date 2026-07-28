@@ -1,9 +1,9 @@
 import QtQuick
 import QtQuick.Layouts
+import qs.mod.network_traffic
 import qs.modules.common
 import qs.modules.common.widgets
 import qs.services
-import qs.mod.network_traffic
 
 /*
  * Settings fragment rendered inside the Modules page (Item root, minimal API
@@ -12,7 +12,13 @@ import qs.mod.network_traffic
 ColumnLayout {
     spacing: 4
 
-    ConfigLoader { id: cfg }
+    ConfigLoader {
+        id: cfg
+    }
+
+    ConfigRequest {
+        id: configRequest
+    }
 
     StyledText {
         Layout.fillWidth: true
@@ -27,26 +33,22 @@ ColumnLayout {
         Layout.fillWidth: false
         Layout.leftMargin: 8
         currentValue: cfg.options.displayMode
-        onSelected: newValue => {
-            cfg.options.displayMode = newValue;
+        onSelected: (newValue) => {
+            configRequest.send("displayMode", newValue);
         }
-        options: [
-            {
-                displayName: Translation.tr("Auto"),
-                icon: "auto_awesome",
-                value: "auto"
-            },
-            {
-                displayName: Translation.tr("Stacked"),
-                icon: "table_rows",
-                value: "stacked"
-            },
-            {
-                displayName: Translation.tr("Single line"),
-                icon: "view_column",
-                value: "horizontal"
-            },
-        ]
+        options: [{
+            "displayName": Translation.tr("Auto"),
+            "icon": "auto_awesome",
+            "value": "auto"
+        }, {
+            "displayName": Translation.tr("Stacked"),
+            "icon": "table_rows",
+            "value": "stacked"
+        }, {
+            "displayName": Translation.tr("Single line"),
+            "icon": "view_column",
+            "value": "horizontal"
+        }]
     }
 
     StyledText {
@@ -67,7 +69,9 @@ ColumnLayout {
         to: 7680
         stepSize: 160
         onValueChanged: {
-            if (cfg.ready && !cfg.materializing) cfg.options.autoStackMaxWidth = value;
+            if (cfg.ready && !cfg.materializing)
+                configRequest.send("autoStackMaxWidth", value);
+
         }
     }
 
@@ -76,7 +80,9 @@ ColumnLayout {
         buttonIcon: "swap_vert"
         checked: cfg.options.stackedShowIcons
         onCheckedChanged: {
-            if (cfg.ready && !cfg.materializing) cfg.options.stackedShowIcons = checked;
+            if (cfg.ready && !cfg.materializing)
+                configRequest.send("stackedShowIcons", checked);
+
         }
     }
 
@@ -85,7 +91,9 @@ ColumnLayout {
         buttonIcon: "apps"
         checked: cfg.options.appMonitoring
         onCheckedChanged: {
-            if (cfg.ready && !cfg.materializing) cfg.options.appMonitoring = checked;
+            if (cfg.ready && !cfg.materializing)
+                configRequest.send("appMonitoring", checked);
+
         }
     }
 
@@ -106,7 +114,9 @@ ColumnLayout {
         to: 10000
         stepSize: 500
         onValueChanged: {
-            if (cfg.ready && !cfg.materializing) cfg.options.updateInterval = value;
+            if (cfg.ready && !cfg.materializing)
+                configRequest.send("updateInterval", value);
+
         }
     }
 
@@ -118,7 +128,9 @@ ColumnLayout {
         to: 65536
         stepSize: 256
         onValueChanged: {
-            if (cfg.ready && !cfg.materializing) cfg.options.breatheThresholdKB = value;
+            if (cfg.ready && !cfg.materializing)
+                configRequest.send("breatheThresholdKB", value);
+
         }
     }
 
@@ -132,14 +144,16 @@ ColumnLayout {
             text: Translation.tr("Ping target")
             color: Appearance.colors.colOnSecondaryContainer
         }
+
         MaterialTextField {
             Layout.fillWidth: true
             placeholderText: Translation.tr("auto = your DNS server")
             text: cfg.options.pingHost
             onEditingFinished: {
-                cfg.options.pingHost = text.trim() === "" ? "auto" : text.trim();
+                configRequest.send("pingHost", text.trim() === "" ? "auto" : text.trim());
             }
         }
+
     }
 
     StyledText {
@@ -150,4 +164,5 @@ ColumnLayout {
         wrapMode: Text.WordWrap
         text: Translation.tr("Config file:") + " ~/.config/illogical-impulse/modules/network_traffic.json"
     }
+
 }
