@@ -87,11 +87,7 @@ PopupWindow {
         if (label.includes("wi-fi") || label.includes("wifi")
                 || label.includes("wireless") || label.includes("network"))
             return "wifi"
-        if (entry?.hasChildren)
-            return "list"
-        if (entry?.buttonType !== QsMenuButtonType.None)
-            return "tune"
-        return "network_check"
+        return ""
     }
 
     function compactEntries(values) {
@@ -238,6 +234,12 @@ PopupWindow {
 
         readonly property bool hasEntry: menuEntry !== null
         readonly property string label: root.displayLabel(menuEntry)
+        readonly property string nativeIconName: String(menuEntry?.icon ?? "")
+        readonly property string materialIconName: root.materialIcon(menuEntry)
+        readonly property string genericIconName: menuEntry?.hasChildren ? "list"
+            : menuEntry?.buttonType !== QsMenuButtonType.None ? "tune" : "network_check"
+        readonly property bool hasNativeIcon: nativeIconName.length > 0
+            && materialIconName === ""
         readonly property bool hasSpecialInteraction:
             menuEntry?.buttonType !== QsMenuButtonType.None
         readonly property bool selected: menuEntry?.checkState === Qt.Checked
@@ -317,9 +319,21 @@ PopupWindow {
                 Layout.preferredWidth: 22
                 Layout.preferredHeight: 22
 
+                IconImage {
+                    anchors.centerIn: parent
+                    visible: entryButton.hasNativeIcon
+                    asynchronous: true
+                    source: entryButton.nativeIconName
+                    implicitSize: 21
+                    mipmap: true
+                }
+
                 MaterialSymbol {
                     anchors.centerIn: parent
-                    text: root.materialIcon(entryButton.menuEntry)
+                    visible: entryButton.materialIconName !== ""
+                        || !entryButton.hasNativeIcon
+                    text: entryButton.materialIconName !== ""
+                        ? entryButton.materialIconName : entryButton.genericIconName
                     iconSize: 21
                     color: Appearance.colors.colOnSurfaceVariant
                 }

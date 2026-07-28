@@ -94,7 +94,7 @@ RippleButton {
         if (label.includes("A2DP") && label.includes("AAC")) return "music_note"
         if (label.includes("A2DP")) return "headphones"
         if (label.includes("HSP/HFP")) return "headset_mic"
-        return "bluetooth"
+        return ""
     }
 
     colBackground: menuEntry.isSeparator
@@ -232,26 +232,64 @@ RippleButton {
             }
         }
 
-        RowLayout {
+        Item {
             id: compactContent
             visible: root.centerCompactContent
-            anchors.centerIn: parent
-            spacing: 6
+            anchors.fill: parent
+            implicitWidth: 126
             implicitHeight: 20
 
-            MaterialSymbol {
-                text: root.fallbackIcon
-                iconSize: 20
-                color: Appearance.colors.colOnSecondaryContainer
+            Item {
+                id: compactLeading
+                anchors {
+                    left: parent.left
+                    leftMargin: root.horizontalPadding
+                    verticalCenter: parent.verticalCenter
+                }
+                implicitWidth: 20
+                implicitHeight: 20
+                visible: root.hasIcon
+
+                Loader {
+                    anchors.centerIn: parent
+                    active: root.hasNativeIcon
+                    sourceComponent: IconImage {
+                        asynchronous: true
+                        source: root.nativeIconName
+                        implicitSize: 20
+                        mipmap: true
+                    }
+                }
+
+                Loader {
+                    anchors.centerIn: parent
+                    active: root.useMaterialIcon
+                    sourceComponent: MaterialSymbol {
+                        text: root.fallbackIcon
+                        iconSize: 20
+                        color: Appearance.colors.colOnSecondaryContainer
+                    }
+                }
             }
 
             StyledText {
+                id: compactLabel
+                anchors.centerIn: parent
+                width: Math.max(0, parent.width - 72)
+                horizontalAlignment: Text.AlignHCenter
                 text: root.labelText
+                elide: Text.ElideRight
                 font.pixelSize: Appearance.font.pixelSize.smallie
                 color: Appearance.colors.colOnSecondaryContainer
             }
 
             MaterialSymbol {
+                id: compactTrailing
+                anchors {
+                    right: parent.right
+                    rightMargin: root.horizontalPadding
+                    verticalCenter: parent.verticalCenter
+                }
                 visible: root.menuEntry.hasChildren
                 text: "chevron_right"
                 iconSize: 20
