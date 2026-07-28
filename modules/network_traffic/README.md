@@ -33,7 +33,9 @@ delta 累加進開機/今日/本月三桶並持久化，每分鐘至多寫盤一
 歸入「Unattributed process」。具名應用追蹤上限 30 個，長尾摺疊進「其他」；三類 unattributed bucket
 獨立保留。
 bar slot 會按螢幕各建立一份 UI，但只有 `Quickshell.screens[0]` 的 primary instance 啟動 nethogs、
-累加與寫盤；其他螢幕只讀同一份 watched state，避免多個 collector 重複擷取同一介面並競相覆寫記帳。
+累加與寫盤；其他螢幕與獨立 Settings process 只讀同一份 watched state。它們的使用者設定變更會以
+argv-safe `qs ipc call` 傳給 primary，經 key/type/range allowlist 驗證後，與 accounting 在同一 process
+串行寫入，避免兩個 process 同讀舊快照後互相覆寫。
 彈窗摘要使用所選範圍的完整 attributed + unattributed 排名計算占比，右鍵展開時只顯示該排名前五名。
 1.5.1 修正 collector 缺少 `-C` 而漏算 UDP／QUIC，以及 process 離開 snapshot 後沿用舊
 cumulative baseline、同 PID／command 重現時形成假流量尖峰；同時讓 unresolved PID／comm
@@ -131,7 +133,7 @@ cornerStyle 時內容不會超出膠囊。
 - `TrafficLogic.qml`：輪詢邏輯**實例**（非單例——IIMP 模塊禁用 pragma Singleton），由 `bar.qml` 建立並向下傳遞；今日/本月累計以 delta 累加（`/proc/net/dev` 計數器縮小＝重開機，該段遺失是設計取捨）
 - `AppTraffic.qml`：per-app 常駐取樣器＋記帳（隨 bar 元件生滅，不是隨彈窗）；nethogs 用 `-C -v 2` 擷取 TCP+UDP 累計 bytes 再取 delta、需 `stdbuf -oL`（接管道時會整塊緩衝）；synthetic unknown TCP/UDP 使用穩定 unattributed identity，保留方向與 cumulative delta 而不猜測應用歸屬；每個 refresh 只保留當次仍存在且計數器連續的 process identity，counter shrink 會清除 PID comm/pending 並重新解析；`/proc/self/exe` 型程式名先把 delta 暫存，等 `ps` 解析出 comm 再入帳，若在停用、銷毀或 ownership handoff 前仍無法解析，已觀測 bytes 會 exactly-once 歸入 Unattributed process；boot 桶以 `/proc/sys/kernel/random/boot_id` 判斷換機重置
 - `BezierGraph.qml`：Catmull-Rom → 貝茲曲線 Canvas，視窗最大值即滿刻度並以小字標註
-- `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔，永不碰 shell 的 `config.json`；每個 adapter 變更只記錄欄位 intent，寫入前同步 reload 最新原始 JSON，再以原子 `setText()` 合併，故 settings instance 仍可保存使用者設定，但只有 owner lease 可改 accounting blobs，stale secondary snapshot 不會覆寫新統計
+- `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔，永不碰 shell 的 `config.json`；只有 primary owner 能進入寫檔路徑，Settings 與 secondary bar 的 ConfigLoader 都是 watched reader。`ConfigRequest.qml` 以 argv-safe、FIFO、有界 retry 的 `qs ipc call` 傳遞單欄位 JSON intent；primary 的 `IpcHandler` 交給 `ConfigLogic.decodeSettingIntent()` 做明確 key/type/range allowlist，再與 accounting 在同一事件序列寫入，故不存在跨 process read-modify-write lost update
 - `bar.qml`：以 `BarGroup` 為根自帶藥丸外觀；固定欄寬防抖動（TextMetrics）；版面用「每個方向一個獨立 RowLayout」而非共用四格 GridLayout——GridLayout 會**跳過** `visible: false` 的項目而不是保留格位，箭頭一關兩行就會錯位
 - `ConfigLogic.js`：materialize 當前 schema 的缺失預設值並保留未知 JSON 欄位；遇到 future `statsPeriodSchema` 時不覆寫原文或套用當前 adapter 預設，後續使用者欄位更新也在 future 原文上 merge
 - 每個用到的 stock API（BarGroup、StyledPopup、Graph、Network 服務）都在 manifest 宣告了探針
