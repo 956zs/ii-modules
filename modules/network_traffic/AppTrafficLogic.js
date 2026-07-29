@@ -183,6 +183,94 @@ function finalizePending(pendingDelta, commByPid, unattributedKey) {
     return { pendingDelta: {}, accounting: Object.values(accounting) }
 }
 
+function pktzTimestampMs(value) {
+    if (typeof value !== "string") return -1
+    const match = value.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/)
+    if (!match) return -1
+    const milliseconds = (match[2] ?? "").padEnd(3, "0").substring(0, 3)
+    const parsed = Date.parse(`${match[1]}.${milliseconds}Z`)
+    return Number.isFinite(parsed) ? parsed : -1
+}
+
+function pktzCandidates(home) {
+    const candidates = ["pktz"]
+    if (typeof home !== "string" || home === "") return candidates
+    candidates.push(`${home}/go/bin/pktz`)
+    candidates.push(`${home}/.local/bin/pktz`)
+    return candidates
+}
+
+function pktzCommand(executable) {
+    const binary = typeof executable === "string" && executable !== "" ? executable : "pktz"
+    return [binary, "--log"]
+}
+
+function parsePktzLine(data) {
+    if (typeof data !== "string" || data.trim() === "") return null
+
+    let record
+    try {
+        record = JSON.parse(data)
+    } catch (error) {
+        return null
+    }
+    if (record === null || typeof record !== "object" || record.type !== "process")
+        return null
+    if (typeof record.ts !== "string" || pktzTimestampMs(record.ts) < 0)
+        return null
+    if (!Number.isSafeInteger(record.pid) || record.pid <= 0) return null
+    if (typeof record.comm !== "string" || record.comm === "") return null
+    if (!Number.isSafeInteger(record.rx_bytes) || record.rx_bytes < 0) return null
+    if (!Number.isSafeInteger(record.tx_bytes) || record.tx_bytes < 0) return null
+    if (typeof record.rx_bps !== "number" || !Number.isFinite(record.rx_bps) || record.rx_bps < 0)
+        return null
+    if (typeof record.tx_bps !== "number" || !Number.isFinite(record.tx_bps) || record.tx_bps < 0)
+        return null
+    if (!Number.isInteger(record.conns) || record.conns < 0) return null
+
+    return {
+        ts: record.ts,
+        pid: String(record.pid),
+        comm: record.comm,
+        rx: record.rx_bytes,
+        tx: record.tx_bytes
+    }
+}
+
+function commitPktzBatch(batch, lastCum, elapsed) {
+    const previousCum = lastCum ?? {}
+    const nextCum = {}
+    const accounting = {}
+    const rates = {}
+    for (const entry of (batch ?? [])) {
+        if (!entry || typeof entry.pid !== "string" || typeof entry.comm !== "string")
+            continue
+        const entryId = `${entry.pid}/${entry.comm}`
+        const previous = previousCum[entryId]
+        nextCum[entryId] = { rx: entry.rx, tx: entry.tx }
+        if (!previous || entry.rx < previous.rx || entry.tx < previous.tx)
+            continue
+
+        const drx = entry.rx - previous.rx
+        const dtx = entry.tx - previous.tx
+        if (drx + dtx === 0) continue
+        addTraffic(accounting, entry.comm, drx, dtx)
+        if (elapsed > 0) {
+            const rate = rates[entry.comm] ?? { name: entry.comm, down: 0, up: 0 }
+            rate.down += drx / elapsed
+            rate.up += dtx / elapsed
+            rates[entry.comm] = rate
+        }
+    }
+    return {
+        lastCum: nextCum,
+        accounting: Object.values(accounting),
+        rates: Object.values(rates)
+            .filter(app => app.down + app.up >= 1)
+            .sort((left, right) => (right.down + right.up) - (left.down + left.up))
+    }
+}
+
 function nethogsCommand(seconds) {
     return ["stdbuf", "-oL", "nethogs", "-t", "-C", "-v", "2", "-d", String(seconds)]
 }

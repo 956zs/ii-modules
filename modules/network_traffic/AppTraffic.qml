@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import "AppTrafficLogic.js" as AppTrafficLogic
 
@@ -12,11 +13,10 @@ import "AppTrafficLogic.js" as AppTrafficLogic
  * actually running — the seconds between system boot and shell start are lost,
  * for nethogs and ss alike.
  *
- * Primary source: `nethogs -t -v 2` (pcap, cumulative bytes since process
- * start; sees TCP and UDP, so QUIC-heavy apps like browsers are counted).
- * Declared in requires.system; rootless capture needs file capabilities on
- * the binary (see README). If it dies or stays silent, degrade to polling
- * `ss -tinp` — unprivileged but kernel-TCP only.
+ * Preferred source: `pktz --log` (eBPF, process cumulative bytes for TCP
+ * and UDP). If pktz is absent, lacks BPF privileges, or exits, fall back to
+ * `nethogs -t -C -v 2`, then to polling `ss -tinp` as the
+ * final unprivileged kernel-TCP-only source.
  */
 Item {
     id: root
@@ -31,7 +31,7 @@ Item {
     property bool storeReady: false
     property bool writer: true
 
-    // "starting" | "nethogs" | "ss" | "none"
+    // "starting" | "pktz" | "nethogs" | "ss" | "none"
     property string source: "starting"
     readonly property bool tcpOnly: source === "ss"
     // Live rates, [{name, down, up}] bytes/s sorted by down+up descending.
@@ -48,6 +48,10 @@ Item {
     property int monitoringGeneration: 0
     property int psQuerySerial: 0
     property bool psStopping: false
+    property bool pktzStopping: false
+    property bool pktzFallbackPending: false
+    readonly property var pktzCandidates: AppTrafficLogic.pktzCandidates(Quickshell.env("HOME") ?? "")
+    property int pktzCandidateIndex: 0
     property bool nethogsStopping: false
     property bool fallbackPending: false
     property bool ssStopping: false
@@ -66,6 +70,10 @@ Item {
         psQueue = []
         if (active) {
             source = "starting"
+            pktzBatch = []
+            pktzTimestamp = ""
+            pktzSawRecord = false
+            pktzCandidateIndex = 0
             nethogsBatch = []
             nethogsSawSnapshot = false
             lastCum = {}
@@ -76,12 +84,16 @@ Item {
             ssTimer.stop()
             ssStopping = ssStopping || ssProc.running
             ssProc.running = false
-            if (!ssStopping && !nethogsStopping)
-                startNethogs()
+            if (!ssStopping && !nethogsStopping && !pktzStopping)
+                startPktz()
         } else {
             startupTimeout.stop()
+            pktzStartFailure.stop()
+            pktzFallbackPending = false
             fallbackPending = false
             finalizePendingAccounting()
+            pktzStopping = pktzStopping || pktz.running
+            pktz.running = false
             nethogsStopping = nethogsStopping || nethogs.running
             nethogs.running = false
             ssTimer.stop()
@@ -255,7 +267,113 @@ Item {
         psProc.running = true
     }
 
-    // --- nethogs (primary) -------------------------------------------------
+    // --- pktz (preferred) --------------------------------------------------
+
+    property var pktzBatch: []
+    property string pktzTimestamp: ""
+    property bool pktzSawRecord: false
+
+    function startPktz() {
+        if (!root.active || root.pktzStopping || root.nethogsStopping || root.ssStopping)
+            return
+        root.source = "starting"
+        root.pktzBatch = []
+        root.pktzTimestamp = ""
+        root.pktzSawRecord = false
+        root.pktzStarted = false
+        root.lastCum = {}
+        root.lastBatchTime = 0
+        pktz.running = true
+    }
+
+    function acceptPktzRecord(record) {
+        if (!root.active || root.pktzStopping
+                || (root.source !== "starting" && root.source !== "pktz"))
+            return
+        if (root.pktzTimestamp !== "" && record.ts !== root.pktzTimestamp)
+            root.commitPktzBatch(root.pktzTimestamp)
+        root.pktzTimestamp = record.ts
+        root.pktzBatch.push(record)
+        if (!root.pktzSawRecord) {
+            root.pktzSawRecord = true
+            root.source = "pktz"
+        }
+    }
+
+    function commitPktzBatch(timestamp) {
+        if (root.pktzBatch.length === 0)
+            return
+        const batch = root.pktzBatch
+        root.pktzBatch = []
+        const time = AppTrafficLogic.pktzTimestampMs(timestamp)
+        const elapsed = time >= 0 && root.lastBatchTime > 0
+            ? Math.max(0, (time - root.lastBatchTime) / 1000) : 0
+        if (time >= 0) root.lastBatchTime = time
+        const result = AppTrafficLogic.commitPktzBatch(batch, root.lastCum, elapsed)
+        root.lastCum = result.lastCum
+        for (const app of result.accounting) root.accumulate(app.name, app.rx, app.tx)
+        root.apps = result.rates
+        root.acctRevision++
+    }
+
+    function startNethogsFallback() {
+        if (!root.active) return
+        if (pktz.running || root.pktzStopping) {
+            root.pktzFallbackPending = true
+            root.pktzStopping = true
+            pktz.running = false
+            return
+        }
+        root.pktzFallbackPending = false
+        root.startNethogs()
+    }
+
+    Timer {
+        id: pktzStartFailure
+        interval: 0
+        onTriggered: {
+            if (!root.active || pktz.running || root.pktzStopping
+                    || root.source !== "starting") return
+            if (root.pktzCandidateIndex + 1 < root.pktzCandidates.length) {
+                root.pktzCandidateIndex++
+                root.startPktz()
+            } else {
+                root.startNethogsFallback()
+            }
+        }
+    }
+
+    Process {
+        id: pktz
+        command: AppTrafficLogic.pktzCommand(root.pktzCandidates[root.pktzCandidateIndex])
+        onRunningChanged: {
+            if (!running && root.active && !root.pktzStopping)
+                pktzStartFailure.restart()
+        }
+        stdout: SplitParser {
+            onRead: data => {
+                if (root.pktzStopping) return
+                const record = AppTrafficLogic.parsePktzLine(data)
+                if (record) root.acceptPktzRecord(record)
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            pktzStartFailure.stop()
+            const requestedStop = root.pktzStopping
+            root.pktzStopping = false
+            root.pktzBatch = []
+            root.pktzTimestamp = ""
+            if (!root.active) return
+            if (requestedStop && root.source === "starting" && !root.nethogsStopping && !root.ssStopping) {
+                root.startPktz()
+                return
+            }
+            if (root.pktzFallbackPending) root.pktzFallbackPending = false
+            root.startNethogsFallback()
+        }
+    }
+
+    // --- nethogs (fallback) ------------------------------------------------
 
     property var nethogsBatch: []
     property bool nethogsSawSnapshot: false
@@ -278,11 +396,14 @@ Item {
     }
 
     function startNethogs() {
-        if (!root.active || root.nethogsStopping || root.ssStopping)
+        if (!root.active || root.pktzStopping || pktz.running
+                || root.nethogsStopping || root.ssStopping)
             return
         root.source = "starting"
         root.nethogsBatch = []
         root.nethogsSawSnapshot = false
+        root.lastCum = {}
+        root.lastBatchTime = 0
         nethogs.running = true
         startupTimeout.restart()
     }
@@ -296,7 +417,7 @@ Item {
         command: AppTrafficLogic.nethogsCommand(root.nethogsSeconds)
         stdout: SplitParser {
             onRead: data => {
-                if (!root.active || root.source === "ss") return;
+                if (!root.active || root.nethogsStopping || root.source === "ss") return;
                 const parsed = AppTrafficLogic.parseNethogsLine(data)
                 if (!parsed) return
                 if (parsed.refresh) {
@@ -316,7 +437,7 @@ Item {
                 root.fallbackPending = false
                 root.startSsFallback()
             } else if (requestedStop && root.source === "starting" && !root.ssStopping) {
-                root.startNethogs()
+                root.startPktz()
             } else {
                 root.startSsFallback()
             }
@@ -399,7 +520,7 @@ Item {
             if (!root.active)
                 return
             if (root.source === "starting") {
-                root.startNethogs()
+                root.startPktz()
                 return
             }
             if (exitCode !== 0) {
