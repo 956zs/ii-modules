@@ -49,6 +49,9 @@ jobs:
       - name: Test Rust
         run: timeout 60 cargo test --manifest-path tools/iimod/Cargo.toml
 
+      - name: Test module contracts
+        run: node --test modules/*/tests/*.test.mjs
+
       - name: Check release scripts
         run: |
           bash -n tools/release/*.sh
