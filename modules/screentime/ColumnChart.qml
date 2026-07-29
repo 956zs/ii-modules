@@ -14,6 +14,11 @@ import qs.modules.common.widgets
 Item {
     id: root
     property list<real> values: []
+    // Optional presence mask distinguishes missing observations from a real 0.
+    // Empty means every value is observed.
+    property var present: []
+    // Optional horizontal reference line, e.g. a period average.
+    property real referenceValue: -1
     property int highlightIndex: -1
     // highlight -> accent, rest -> dim (lighter step of the same ramp).
     // With no highlight every bar is accent.
@@ -72,11 +77,17 @@ Item {
             ctx.stroke()
 
             for (let i = 0; i < n; i++) {
-                const v = Math.max(0, root.values[i])
+                const observed = root.present.length === 0 || root.present[i] === true
+                const v = Math.max(0, Number(root.values[i]) || 0)
+                const x = i * slot + (slot - barW) / 2
+                if (!observed) {
+                    ctx.fillStyle = Appearance.colors.colLayer2
+                    ctx.fillRect(x, baseY - 2, barW, 2)
+                    continue
+                }
                 if (v <= 0)
                     continue
                 const h = Math.max(2, (v / root.maxValue) * (height - 6))
-                const x = i * slot + (slot - barW) / 2
                 const y = baseY - h
                 const r = Math.min(4, barW / 2, h)
                 ctx.fillStyle = (root.highlightIndex < 0 || i === root.highlightIndex)
@@ -92,11 +103,25 @@ Item {
                 ctx.closePath()
                 ctx.fill()
             }
+
+            if (root.referenceValue >= 0 && root.maxValue > 0) {
+                const y = baseY - Math.min(1, root.referenceValue / root.maxValue) * (height - 6)
+                ctx.strokeStyle = Appearance.colors.colOnSurfaceVariant
+                ctx.lineWidth = 1
+                ctx.setLineDash([4, 3])
+                ctx.beginPath()
+                ctx.moveTo(0, y + 0.5)
+                ctx.lineTo(width, y + 0.5)
+                ctx.stroke()
+                ctx.setLineDash([])
+            }
         }
 
         Connections {
             target: root
             function onValuesChanged() { canvas.requestPaint() }
+            function onPresentChanged() { canvas.requestPaint() }
+            function onReferenceValueChanged() { canvas.requestPaint() }
             function onHighlightIndexChanged() { canvas.requestPaint() }
             function onAccentColorChanged() { canvas.requestPaint() }
             function onDimColorChanged() { canvas.requestPaint() }

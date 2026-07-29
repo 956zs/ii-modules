@@ -75,7 +75,12 @@ FileView {
 
         // Usage history blob, managed by ScreentimeLogic in the window slot,
         // flushed at most once a minute — not a user setting.
-        // {v, day:{k,apps:{id:sec},hours:[24]}, days:[{k,total,apps:[{n,s}]}]}
+        // {v, day:{k,apps:{id:sec},hours:[24],hoursComplete:bool},
+        //  days:[{k,total,apps:[{n,s}],hours?:[24],aiU,aiS,aiP}]}
+        // Historical `hours` is optional: records written before v1.3 keep
+        // their daily totals but are excluded from hourly heatmap coverage.
+        // `hoursComplete` prevents a mid-day upgrade from presenting the
+        // post-upgrade tail as a complete day's hourly distribution.
         // NEVER a `property var` — Quickshell's deserializer segfaults
         // writing a JSON object into one. JSON string + parse at the reader.
         property string histState: ""

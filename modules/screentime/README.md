@@ -1,134 +1,169 @@
-# screentime — 螢幕使用時間
+# Screen Time - 螢幕使用時間
 
-手機風格的螢幕使用時間統計（Tier B：一個側欄磁貼補丁）。以 Quickshell 原生
-`ToplevelManager` 做前台焦點記帳：今日各應用時長、每小時直方圖、7 天趨勢、
-30 天每日曲線。另有獨立的「AI 工作時長」維度：agent（claude/codex）在背景
-真正工作的時間，即使視窗未聚焦、甚至已鎖屏。
+手機風格的焦點使用時間統計，提供 Daily 與 Trends 兩個詳情頁、30 天可瀏覽歷史、
+bar 摘要與獨立的 AI 工作時長。焦點記帳使用 Quickshell `ToplevelManager`；鎖屏與
+休眠斷層不計入。
 
-## 互動
+側欄磁貼是可選的 Tier B integration，由 delegate 與 edit-mode re-add 兩個
+insert-only patches 組成。
+
+## 安裝
+
+從 repository 根目錄執行：
+
+```bash
+iimod validate modules/screentime/
+iimod check modules/screentime/
+iimod install modules/screentime/ --allow-patches
+```
+
+## 入口與操作
+
+詳情面板分成「每日／趨勢」兩頁。
 
 | 入口 | 效果 |
 |---|---|
-| bar 藥丸（`timelapse` 圖示＋「6h 23m」） | hover：彈窗（今日總時長、Top 5 應用比例條、昨日比較）；點擊：開啟詳情面板 |
-| 側欄快速開關磁貼（沙漏圖示，見下方設定） | 點擊：關閉側欄並開啟詳情面板 |
-| `qs -c ii ipc --any-display call screentime toggleDetails` | 切換詳情面板 |
+| Hover bar 藥丸 | 顯示今日總時長、Top 5 與昨日比較 |
+| 點擊 bar 藥丸 | 開啟詳細面板 |
+| 側欄快速開關磁貼 | 關閉側欄並開啟詳細面板 |
+| `qs -c ii ipc --any-display call screentime toggleDetails` | 切換詳細面板 |
 
-詳情面板：今日總時長與昨日比較、AI 工作時長區塊（今日聯集時長、
-「N 個工作中」即時狀態、並行峰值與合計、7 天 AI 柱狀圖）、今日 24 小時
-直方圖（當前小時高亮）、最近 7 天趨勢（今日高亮、其餘用同色淺階）、
-應用排行（時長＋比例條）、30 天每日曲線。圖表全部單色（Material You
-`colPrimary`，換壁紙自動變），hover 任一柱/點會在圖上方讀出該時段數值。
-Esc 或點擊外部關閉。
+按 `Esc` 或點擊面板外部可關閉詳細面板。
 
-## AI 工作時長（獨立維度）
+## Daily
 
-焦點記帳只回答「我看著螢幕多久」；這個維度回答「我的 agent 們工作了多久」——
-把任務丟給 claude 之後切去別的視窗，那個未聚焦終端裡的工作照樣被算到。
-兩者**永不相加、永不混算**。
+Daily 可用前一天／後一天瀏覽最近 30 個日曆日。選定日期會更新總時長、應用排行
+與 AI 工作摘要；點擊中央日期可回到今日。沒有紀錄的日期顯示空狀態，不會當成零值。
 
-- **偵測**：每 10 秒掃一次 `/proc`，程序名（comm）符合正則（預設
-  `^(claude|codex)$`，可改）者為一個 session，CPU 計入整棵子程序樹——
-  agent 開的 bash/工具子程序也是它的工作。單一取樣窗內 CPU 超過門檻
-  （預設單核 1%）→ 該 session 記為工作中。本機實測：閒置在提示符的
-  claude 是 **0** ticks/10s，工作中 200+，codex 約 30——1% 門檻兩側
-  裕度都很大。
-- **主數字是牆鐘聯集**：≥1 個 session 工作中的時間。並行的故事另外講：
-  「峰值 2 並行 · 合計 4h 05m」（合計＝Σ 秒 × 並行數；只有出現過並行
-  才顯示，否則合計＝聯集，無資訊量）。
-- **鎖屏照計**：agent 趁你離開時工作正是要量的東西。suspend 造成的取樣
-  斷層（間隔遠超取樣週期）重新取基線、不入帳。
-- 資料進同一個 `histState` blob（`day.ai` 與每日紀錄的 `aiU`/`aiS`/`aiP`），
-  舊 blob 自動視為 0。設定頁可整個關閉（關閉即停止取樣程序）。
+24 小時直方圖刻意只在今日 Daily view 顯示。v1.3 起，完整日紀錄會保存
+`hours[24]`；這些歷史時段資料用於 Trends heatmap，而不是在過去日期的 Daily view
+重複顯示。
 
-## 側欄磁貼（必讀：需手動加一行設定）
+## Trends
 
-內建磁貼編輯器只提供原生類型，**不會**列出本模塊的磁貼。安裝後請手動把
-下列項目加入 `~/.config/illogical-impulse/config.json` 的
-`sidebar.quickToggles.android.toggles` 陣列（`size: 2` 可換寬版，顯示名稱）：
+- 最近 7 個完整日中有紀錄日期的平均，附 `N/7` 覆蓋率。
+- 與前一個 7 日完整期間比較。
+- 缺日不冒充零值的 7 日柱狀圖與 30 日曲線。
+- 最近 28 個完整日的星期×時段熱力圖（星期一至星期日 x 24 小時）。
+
+舊版歷史沒有 `hours[24]` 時，仍可參與每日總量平均，但不會被視為有時段明細。
+Heatmap 以 `N/28` 顯示實際覆蓋率，支援 hover 讀值、Tab focus 與方向鍵瀏覽。
+
+圖表使用 Material You `colPrimary` 單色階，換主題時會重繪；數值與身分由文字和
+位置承載，不只依賴色相。
+
+## 焦點記帳語意
+
+- **事件驅動**：焦點切換時，把經過的牆鐘秒數記給上一個應用。
+- **心跳**：每 15 秒結算長時間不切換的同一應用，也用來辨識 suspend gap。
+- **鎖屏**：`GlobalStates.screenLocked` 為真時不入帳。
+- **休眠／掛起**：事件間隔超過 `idleGapSec` 時不計該段。
+- **無焦點**：空桌面不入帳，因此今日總時長等於各應用時長總和。
+- **應用名稱**：Steam `steam_app_<id>` 會從本機 desktop entry 的
+  `steam://rungameid/<id>` command 尋找遊戲名稱，不執行網路查詢。
+
+沒有 idle protocol 資料時，螢幕未鎖但人已離開且仍有焦點視窗的時間會繼續入帳。
+正常 component destruction 會先結算並寫盤；突然 crash 或強制終止仍可能遺失最近
+一次週期寫入後、最多約一分鐘的時間。
+
+記帳者只有 window slot 的 `main.qml`。每個螢幕的 bar instance 都是純 reader，
+避免多螢幕重複累加；代價是 bar 數字可能落後最多一次週期寫入。
+
+## AI 工作時長
+
+AI 維度回答「agent processes 實際工作多久」，與「視窗聚焦多久」分開記錄，
+兩者不相加。
+
+每 10 秒掃描一次 `/proc`。符合 `aiProcessRegex` 的 process 會形成候選 session；
+若符合項目巢狀於另一個符合 process，整棵 process tree 歸入最外層 session root，
+避免重複計數。
+
+當取樣窗內 process tree CPU 使用率達到 `aiActiveCpuPct` 門檻時，該 session 視為
+工作中。這是可調 heuristic：純網路等待且本機 CPU 沒有活動時，可能被判定為閒置。
+
+- 主數字是至少一個 session 工作中的 wall-clock 聯集。
+- 另記錄並行峰值與各 sessions 的時間總和。
+- 鎖屏期間照常計算 AI 工作時間。
+- Suspend 造成的長斷層只重建 baseline，不入帳。
+- 關閉 `aiTracking` 會停止取樣 process。
+
+## 側欄磁貼
+
+首次加入時，將以下項目放入
+`~/.config/illogical-impulse/config.json` 的
+`sidebar.quickToggles.android.toggles`：
 
 ```json
 {"type": "screentime", "size": 1}
 ```
 
-設定 app 的 **Modules → Screen Time** 頁也有這行可直接複製。移除磁貼即從
-陣列刪掉該項；`iimod uninstall` 後殘留的該項只會被 DelegateChooser 靜默略過。
+設定頁提供可複製的同一行。磁貼之後若在 edit mode 移除，會出現在「未使用」區，
+可直接點擊重新加入；不需要再次手動修改 JSON。
 
-1.2 起編輯模式可直接停用/加回：磁貼被停用後會出現在分隔線下方的「未使用」
-區（stock 的未使用清單只從寫死的 `availableToggleTypes` 產生，本模塊補上
-自己的一列），點一下即加回——不再需要回頭手改 config.json。首次加入仍需
-上面那行手動設定。
-
-## 記帳原則（誠實規則）
-
-- **事件驅動**：每次焦點切換把經過的牆鐘秒數記給「上一個」應用
-  （鍵：appId/class）。15 秒心跳只是為了封頂單段間隔——長時間停留同一應用
-  也能穩定累計，並讓休眠可被偵測。
-- **鎖屏暫停**：`GlobalStates.screenLocked` 為真時完全不入帳。
-- **休眠/掛起**：兩次記帳事件之間牆鐘跳躍超過門檻（預設 90 秒，可調）的
-  時段不入帳。
-- **已知限制**：螢幕沒鎖、視窗有焦點但人離開（AFK）無法從 shell 偵測
-  （沒有 idle 協議來源），這段會照常入帳。shell 重啟會丟失最後一次寫盤
-  （≤1 分鐘）之後的時間。無視窗焦點（空桌面）不入帳，故「今日總時長」＝
-  各應用之和。
-
-記帳者只有一個：window slot 的 `main.qml`（模塊 host 只實例化一次）。
-bar 元件是純讀者——bar 每個螢幕各實例化一份，放記帳會在多螢幕下重複計算；
-代價是 bar 數字最多滯後一次寫盤（≤1 分鐘），與顯示粒度（分鐘）相稱。
-
-## 安裝
-
-```bash
-iimod validate screentime/
-iimod check screentime/
-iimod install screentime/ --allow-patches   # 磁貼補丁需要 --allow-patches
-```
+卸載後殘留的 `screentime` toggle 會被 stock delegate 忽略。建議卸載時一併從
+quick-toggle config 移除。
 
 ## 設定
 
-`~/.config/illogical-impulse/modules/screentime.json`：
+設定檔位於：
+
+```text
+~/.config/illogical-impulse/modules/screentime.json
+```
 
 | Key | 預設 | 說明 |
-|---|---|---|
-| `excludedApps` | `""` | 逗號分隔的 appId/class 子字串，命中者不入帳（不分大小寫） |
-| `idleGapSec` | `90` | 閒置間隔門檻（秒）；事件間牆鐘跳躍超過此值視為離開 |
-| `keepHistory` | `true` | 保留 30 天每日歷史；關閉即清除並只記今日 |
-| `aiTracking` | `true` | 統計 AI agent 工作時長；關閉即停止取樣 |
-| `aiProcessRegex` | `^(claude\|codex)$` | agent 程序名（comm）正則 |
-| `aiActiveCpuPct` | `1` | 工作判定門檻：取樣窗內程序樹 CPU 佔單核百分比 |
+|---|---:|---|
+| `excludedApps` | `""` | 逗號分隔的 appId/class 子字串，不分大小寫 |
+| `idleGapSec` | `90` | 超過此秒數的事件間隔視為 suspend/idle gap |
+| `keepHistory` | `true` | 保留 30 天歷史；關閉時清除歷史，只記今日 |
+| `aiTracking` | `true` | 啟用 AI process-tree 取樣 |
+| `aiProcessRegex` | `^(claude\|codex)$` | 匹配 process `comm` 的 regular expression |
+| `aiActiveCpuPct` | `1` | 工作判定門檻，單位為單核 CPU 百分比 |
 
-`histState` 是模塊自管的統計狀態（今日各應用秒數＋今日各小時直方圖＋
-30 天每日紀錄，每日紀錄含 Top 20 應用、長尾摺疊進「其他」）。整個歷史是
-**單一 JSON 字串**、單次賦值寫入——分欄位儲存在熱重載時會被讀到撕裂快照
-（network_traffic 的教訓）；單 blob 讓撕裂在結構上不可能。每分鐘至多寫回
-一次，不是使用者設定。
+全部公開選項都可在 **Settings > Modules > Screen Time** 調整。
 
-全部選項在設定 app 的 **Modules → Screen Time** 頁有對應控件。
+## 資料與保留
 
-## 實作說明（給模塊作者的參考）
+`histState` 是模塊管理的單一 JSON 字串，包含今日應用秒數、今日每小時資料、AI
+資料與最近 30 天 daily records。單 blob 寫入避免熱重載時讀到跨欄位撕裂快照。
 
-- `ScreentimeLogic.qml`：焦點記帳**實例**（非單例——IIMP 模塊禁用 pragma
-  Singleton），由 `main.qml` 建立；`focusedApp` 一個 binding 同時折疊
-  焦點切換、鎖屏、排除清單三種來源，`onFocusedAppChanged` 先結算舊區間
-  再換人
-- `AgentMonitor.qml`：AI 取樣器，同樣只活在 window slot；一次 `sh` 掃
-  `/proc/[pid]/stat`（awk，session root＝無符合祖先的符合程序，子樹 CPU
-  歸給最近的 root），QML 端對每個 root pid 記上次累計值算增量。使用者可改
-  的正則以 argv 傳入（`sh -c '…' name "$re"`），不做字串內插。取樣結果經
-  `logic.accrueAi()` 進同一套 blob/flush 管線
-- `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔；`owner` 旗標
-  讓唯一實例負責 materialise 預設值；**絕不**在 JsonAdapter 裡宣告
-  `property var`（quickshell 反序列化會 segfault），map 一律 JSON 字串
-- `ColumnChart.qml` / `LineChart.qml`：Canvas 圖表，遵循 dataviz 規格
-  （柱 ≤24px、資料端 4px 圓角/基線方角、柱間 2px 空隙、線 2px 圓端、
-  面積 10% 透明度、端點 8px 帶 2px 底色環、hover 讀出列）；單一色相承載
-  量值，身分由文字標籤承載，數值一律穿文字色 token
-- `bar.qml`：BarGroup 藥丸；水平/雙行 bar 用「圖示＋6h 23m」，垂直 bar
-  自動改直排緊湊版（圖示上、`6.4h` 下）
-- 補丁只有一個：往 `AndroidToggleDelegateChooser.qml` 的
-  `roleValue: "antiFlashbang"` 錨點前插入一個完整 `DelegateChoice`
-  （`AndroidQuickToggleButton` 是該目錄的本地元件，`Quickshell` 已在檔內
-  import；`mainAction` 用 `execDetached` 呼叫本模塊 IPC——這是 manifest
-  宣告 `exec` 的原因）。磁貼刻意不讀統計檔：那需要再補一個 import 補丁，
-  換來的只是 size-2 磁貼上一行 ≤1 分鐘新鮮度的字
-- 每個用到的 stock API（BarGroup、StyledPopup、GlobalStates 的鎖屏/側欄
-  狀態、設定控件、補丁錨點與元件）都在 manifest 宣告了探針
+每個 daily record 最多保留 Top 20 應用，其餘摺疊成「其他」。v1.3 起，只有經過
+完整日收尾且標記 `hoursComplete` 的 `hours[24]` 會進入 heatmap；中途升級的當天
+不會把不完整時段冒充完整日。
+
+## 限制
+
+- 沒有 idle protocol 時，未鎖屏 AFK 無法與實際使用區分。
+- AI CPU threshold 是 heuristic，不是 agent protocol；低 CPU 的遠端等待可能漏算，
+  其他符合 regex 的高 CPU process 也可能被計入。
+- 舊 daily records 缺少 hourly data 時不參與 heatmap，但仍參與總量統計。
+- 30 天瀏覽以已保存 records 為準，缺日保持 unknown，不補零或插值。
+- Sidebar integration 依賴目前 stock quick-toggle anchors；上游改動時
+  `iimod check` 會拒絕套用。
+
+## 實作說明
+
+| 檔案 | 職責 |
+|---|---|
+| `ScreentimeLogic.qml` | 焦點／鎖屏／排除規則、歷史 fold 與持久化 |
+| `AgentMonitor.qml` | `/proc` process-tree CPU heuristic |
+| `HistoryLogic.js` | 日期、完整期間、missing semantics 與 heatmap 累計 |
+| `DetailsPanel.qml` | Daily/Trends navigation 與 panel interaction |
+| `ColumnChart.qml` / `LineChart.qml` | missing-aware period charts |
+| `HourHeatmap.qml` | 7 x 24 heatmap、鍵盤與 accessibility 狀態 |
+| `Format.qml` | 時長與本機應用名稱格式化 |
+| `ConfigLoader.qml` | 設定與單一歷史 blob |
+
+兩個 Tier B patches 分別新增 sidebar tile delegate，以及磁貼缺席時的 edit-mode
+unused-row offer。`exec` capability 只用於磁貼的 argv-safe `qs ... ipc` 呼叫。
+Manifest probes 覆蓋相容性關鍵的 stock integration surfaces 與 patch anchors。
+
+## 開發驗證
+
+```bash
+node --test modules/screentime/tests/*.test.mjs
+for file in modules/screentime/*.qml; do qmlformat "$file" >/dev/null; done
+iimod validate modules/screentime/
+iimod suggest modules/screentime/
+iimod check modules/screentime/
+```
