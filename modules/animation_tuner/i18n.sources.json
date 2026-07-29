@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "declarations": [
+    {
+      "source": "settings.qml",
+      "expression": "modelData.label",
+      "sources": [
+        "Click bounce",
+        "Element enter",
+        "Element exit",
+        "Element move",
+        "Element resize",
+        "Fast element move",
+        "Scroll",
+        "Small element move"
+      ]
+    },
+    {
+      "source": "settings.qml",
+      "expression": "root.selectedToken.label",
+      "sources": [
+        "Click bounce",
+        "Element enter",
+        "Element exit",
+        "Element move",
+        "Element resize",
+        "Fast element move",
+        "Scroll",
+        "Small element move"
+      ]
+    }
+  ]
+}
