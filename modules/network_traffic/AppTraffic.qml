@@ -280,6 +280,7 @@ Item {
         root.pktzBatch = []
         root.pktzTimestamp = ""
         root.pktzSawRecord = false
+        root.pktzStarted = false
         root.lastCum = {}
         root.lastBatchTime = 0
         pktz.running = true
