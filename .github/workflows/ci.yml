@@ -49,6 +49,9 @@ jobs:
       - name: Test Rust
         run: timeout 60 cargo test --manifest-path tools/iimod/Cargo.toml
 
+      - name: Check module translations
+        run: tools/iimod/target/debug/iimod i18n check --all --deny-orphans
+
       - name: Check release scripts
         run: |
           bash -n tools/release/*.sh
