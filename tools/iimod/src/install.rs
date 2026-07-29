@@ -8,7 +8,8 @@ use anyhow::Result;
 
 use crate::exit::{self, bail};
 use crate::hostpatch;
-use crate::manifest::{self, Manifest};
+use crate::hoststate::{self, HostBundle, MutationMode};
+use crate::manifest::Manifest;
 use crate::ops::{
     all_stock_targets, check_deps_conflicts, full_patch_set, load_payload, module_import_ids,
     patch_records_for, project_enabled, recompose_all, validate_payload, wipe_banner,
@@ -18,7 +19,7 @@ use crate::patch::{self, PatchInstance};
 use crate::paths;
 use crate::probe;
 use crate::qs;
-use crate::registry::{self, InstalledModule, Lock, ModuleState, Registry};
+use crate::registry::{self, InstalledModule, ModuleState, Registry};
 use crate::store::{self, BackupSet};
 use crate::translations;
 
@@ -97,21 +98,23 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
     };
     let opts = &opts;
 
-    let _lock = Lock::acquire()?;
+    let mutation = hoststate::mutation_preflight(MutationMode::Normal)?;
     let registry = registry::load()?;
     reject_wiped_tree(&registry)?;
 
-    let Some(mut prepared) = prepare_install(source, opts, registry)? else {
+    let Some(mut prepared) = prepare_install(source, opts, registry, mutation.host())? else {
         return Ok(());
     };
     let backups = begin_install_journal(&prepared)?;
-    let result = apply_install_mutation(&mut prepared);
+    let result = apply_install_mutation(&mut prepared, mutation.host())
+        .and_then(|_| mutation.activate_after_host_write())
+        .and_then(|_| commit_install(&mut prepared, opts));
     if let Err(e) = result {
         eprintln!("install failed — rolling back: {e}");
         rollback_install(&prepared, &backups);
         return Err(e);
     }
-    commit_install(prepared, opts)
+    Ok(())
 }
 
 fn reject_wiped_tree(registry: &Registry) -> Result<()> {
@@ -128,6 +131,7 @@ fn prepare_install(
     source: &Path,
     opts: &InstallOpts,
     registry: Registry,
+    host: &HostBundle,
 ) -> Result<Option<PreparedInstall>> {
     let candidate = load_candidate(source, opts.max_size)?;
     let readiness = assess_candidate(&candidate, &registry, opts)?;
@@ -153,9 +157,9 @@ fn prepare_install(
     {
         eprintln!("note: this package carries no update origin — `iimod update` will not cover it");
     }
-    dry_run_stock_composition(&next)?;
+    dry_run_stock_composition(host, &next)?;
     let module_dicts = translations::load_module_dicts(&candidate.payload.dir)?;
-    let stock_targets = all_stock_targets(&next, &[]);
+    let stock_targets = all_stock_targets(host, &next, &[]);
     let module_dir = paths::mod_root().join(&candidate.manifest.id);
 
     Ok(Some(PreparedInstall {
@@ -256,13 +260,13 @@ fn registry_with_candidate(
     Ok(next)
 }
 
-fn dry_run_stock_composition(registry: &Registry) -> Result<()> {
+fn dry_run_stock_composition(host: &HostBundle, registry: &Registry) -> Result<()> {
     let ii = paths::ii_root();
-    for rel in all_stock_targets(registry, &[]) {
+    for rel in all_stock_targets(host, registry, &[]) {
         let target = ii.join(&rel);
         if target.exists() {
             let current = std::fs::read_to_string(&target)?;
-            patch::recompose(&current, &full_patch_set(registry, &rel, None))?;
+            patch::recompose(&current, &full_patch_set(host, registry, &rel, None))?;
         } else if HOST_FILES.contains(&rel.as_str()) {
             return Err(bail(exit::STATE, format!("stock file missing: {rel}")));
         } else {
@@ -288,6 +292,34 @@ fn begin_install_journal(prepared: &PreparedInstall) -> Result<BackupSet> {
             &paths::translations_dir().join(format!("{locale}.json")),
         )?;
     }
+    backups.add("registry.json", &paths::registry_path())?;
+    backups.add("index.json", &paths::index_projection_path())?;
+    backups.add_tree("module", &prepared.module_dir)?;
+    backups.add_tree(
+        "store-version",
+        &store::store_path(
+            &prepared.candidate.manifest.id,
+            &prepared.candidate.manifest.version,
+        ),
+    )?;
+    for (label, path) in [
+        (
+            "host/ModuleHost.qml",
+            paths::host_dir().join("ModuleHost.qml"),
+        ),
+        (
+            "host/ModulesConfig.qml",
+            paths::host_dir().join("ModulesConfig.qml"),
+        ),
+        (
+            "host/ModuleImports.qml",
+            paths::host_dir().join("ModuleImports.qml"),
+        ),
+        ("host/sentinel", paths::host_sentinel()),
+        ("host/current.json", paths::host_current_path()),
+    ] {
+        backups.add(label, &path)?;
+    }
     write_install_journal(prepared, &backups)?;
     Ok(backups)
 }
@@ -307,12 +339,12 @@ fn write_install_journal(prepared: &PreparedInstall, backups: &BackupSet) -> Res
     Ok(())
 }
 
-fn apply_install_mutation(prepared: &mut PreparedInstall) -> Result<()> {
+fn apply_install_mutation(prepared: &mut PreparedInstall, host: &HostBundle) -> Result<()> {
     stage_module_payload(prepared)?;
     refresh_pristine_snapshots(prepared)?;
-    std::fs::create_dir_all(paths::host_dir())?;
-    recompose_all(&prepared.next, true)?;
-    write_host_assets(&prepared.next)?;
+    hostpatch::ensure_host(host, &|rel| prepared.next.patches_for_file(rel))?;
+    recompose_all(host, &prepared.next, true)?;
+    hostpatch::write_module_imports(&module_import_ids(&prepared.next))?;
     merge_install_translations(prepared)?;
     Ok(())
 }
@@ -351,35 +383,6 @@ fn refresh_pristine_snapshots(prepared: &PreparedInstall) -> Result<()> {
     Ok(())
 }
 
-fn write_host_assets(registry: &Registry) -> Result<()> {
-    std::fs::write(
-        paths::host_dir().join("ModuleHost.qml"),
-        include_str!("../assets/ModuleHost.qml"),
-    )?;
-    std::fs::write(
-        paths::host_dir().join("ModulesConfig.qml"),
-        include_str!("../assets/ModulesConfig.qml"),
-    )?;
-    hostpatch::write_module_imports(&module_import_ids(registry))?;
-    write_host_sentinel()?;
-    std::fs::create_dir_all(paths::modules_config_dir())?;
-    Ok(())
-}
-
-fn write_host_sentinel() -> Result<()> {
-    let sentinel = hostpatch::HostSentinel {
-        host_version: hostpatch::HOST_VERSION.to_string(),
-        protocol_version: manifest::SUPPORTED_PROTOCOL_MAX,
-        installed_at_epoch: registry::now_epoch(),
-        qs_version_hint: qs::qs_version(),
-    };
-    std::fs::write(
-        paths::host_sentinel(),
-        serde_json::to_string_pretty(&sentinel)? + "\n",
-    )?;
-    Ok(())
-}
-
 fn merge_install_translations(prepared: &mut PreparedInstall) -> Result<()> {
     let id = prepared.candidate.manifest.id.clone();
     let mut warn = Vec::new();
@@ -409,13 +412,38 @@ fn rollback_install(prepared: &PreparedInstall, backups: &BackupSet) {
             &paths::translations_dir().join(format!("{locale}.json")),
         );
     }
-    if prepared.module_dir.exists() {
-        let _ = std::fs::remove_dir_all(&prepared.module_dir);
+    let _ = backups.restore("registry.json", &paths::registry_path());
+    let _ = backups.restore("index.json", &paths::index_projection_path());
+    let _ = backups.restore_tree("module", &prepared.module_dir);
+    let _ = backups.restore_tree(
+        "store-version",
+        &store::store_path(
+            &prepared.candidate.manifest.id,
+            &prepared.candidate.manifest.version,
+        ),
+    );
+    for (label, path) in [
+        (
+            "host/ModuleHost.qml",
+            paths::host_dir().join("ModuleHost.qml"),
+        ),
+        (
+            "host/ModulesConfig.qml",
+            paths::host_dir().join("ModulesConfig.qml"),
+        ),
+        (
+            "host/ModuleImports.qml",
+            paths::host_dir().join("ModuleImports.qml"),
+        ),
+        ("host/sentinel", paths::host_sentinel()),
+        ("host/current.json", paths::host_current_path()),
+    ] {
+        let _ = backups.restore(label, &path);
     }
     let _ = std::fs::remove_file(paths::journal_path());
 }
 
-fn commit_install(mut prepared: PreparedInstall, opts: &InstallOpts) -> Result<()> {
+fn commit_install(prepared: &mut PreparedInstall, opts: &InstallOpts) -> Result<()> {
     prepared.next.host_version = Some(hostpatch::HOST_VERSION.to_string());
     if opts.no_enable {
         let id = prepared.candidate.manifest.id.clone();
@@ -425,7 +453,7 @@ fn commit_install(mut prepared: PreparedInstall, opts: &InstallOpts) -> Result<(
     project_new_state(&prepared.next)?;
     store::prune_backups(BACKUPS_TO_KEEP)?;
     reload_and_reconcile(&prepared.next)?;
-    print_install_result(&prepared, opts);
+    print_install_result(prepared, opts);
     Ok(())
 }
 

@@ -55,6 +55,8 @@ Author modules under IIMP SPEC 1.0. `iimod` is the reference tool and
 
 ## Release Checklist
 
+Complete source and live verification first:
+
 ```bash
 iimod validate <dir>
 iimod suggest <dir>
@@ -65,9 +67,21 @@ qs -c ii ipc --any-display call iimp ping
 iimod uninstall <id>
 iimod verify
 iimod install <dir>
-iimod pack <dir>
-sha256sum <id>-<version>.iimod
 ```
+
+Use the repository release entry point after the version bump is committed:
+
+```bash
+# Full local build + verification; never creates a tag
+tools/release/publish.sh module <id>
+
+# Only after merge to a clean, synchronized main
+tools/release/publish.sh module <id> --push
+```
+
+Do not hand-create or push release tags when `publish.sh` is available. Never use
+`--allow-dirty` with `--push`; GitHub Actions remains the only publisher of the
+Release and canonical-origin package.
 
 ## Forbidden
 

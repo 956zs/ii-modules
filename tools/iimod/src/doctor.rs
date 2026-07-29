@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::hostpatch;
+use crate::hoststate::{self, MutationMode};
 use crate::ops::{patch_records_for, validate_payload, wipe_banner};
 use crate::paths;
 use crate::qs;
@@ -50,6 +51,7 @@ fn print_environment_report() {
 }
 
 fn rebuild_registry_from_store() -> Result<()> {
+    let _mutation = hoststate::mutation_preflight(MutationMode::Normal)?;
     let rebuilt = recover_registry_from_store()?;
     registry::save(&rebuilt)?;
     println!(

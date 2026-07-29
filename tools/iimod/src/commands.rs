@@ -6,6 +6,7 @@ use anyhow::Result;
 
 use crate::exit::{self, bail};
 use crate::hostpatch;
+use crate::hoststate::{self, MutationMode};
 use crate::lint;
 use crate::manifest::{self, Manifest};
 use crate::ops::{
@@ -17,7 +18,7 @@ use crate::paths;
 use crate::pkg;
 use crate::probe;
 use crate::qs;
-use crate::registry::{self, Lock, ModuleState};
+use crate::registry::{self, ModuleState};
 use crate::store;
 use crate::translations;
 
@@ -51,6 +52,7 @@ pub fn cmd_check(source: &Path, max_size: u64) -> Result<()> {
     let payload = load_payload(source, max_size)?;
     let (m, _) = validate_payload(&payload.dir)?;
     let registry = registry::load()?;
+    let host = hoststate::selected_or_candidate()?;
     check_deps_conflicts(&m, &registry)?;
     probe::require(&paths::ii_root(), &m.compat.probes)?;
 
@@ -64,7 +66,7 @@ pub fn cmd_check(source: &Path, max_size: u64) -> Result<()> {
                 format!("patches[{i}]: target {} unreadable", p.file),
             )
         })?;
-        let mut set = full_patch_set(&registry, &p.file, Some(&m.id));
+        let mut set = full_patch_set(&host, &registry, &p.file, Some(&m.id));
         set.push(PatchInstance {
             owner: m.id.clone(),
             index: i as u32,
@@ -87,8 +89,9 @@ pub fn cmd_check(source: &Path, max_size: u64) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn cmd_uninstall(id: &str, cascade: bool) -> Result<()> {
-    let _lock = Lock::acquire()?;
+    let mutation = hoststate::mutation_preflight(MutationMode::Normal)?;
     let mut registry = registry::load()?;
+    reject_wiped_tree(&registry)?;
     if registry.get(id).is_none() {
         return Err(bail(exit::USAGE, format!("module {id:?} is not installed")));
     }
@@ -119,10 +122,12 @@ pub fn cmd_uninstall(id: &str, cascade: bool) -> Result<()> {
         }
         store::remove_from_store(victim)?;
     }
-    recompose_all(&registry, true)?;
+    hostpatch::ensure_host(mutation.host(), &|rel| registry.patches_for_file(rel))?;
+    recompose_all(mutation.host(), &registry, true)?;
     if paths::host_dir().exists() {
         hostpatch::write_module_imports(&module_import_ids(&registry))?;
     }
+    mutation.activate_after_host_write()?;
     registry::save(&registry)?;
     write_index_projection(&registry)?;
     project_enabled(&registry)?;
@@ -133,8 +138,9 @@ pub fn cmd_uninstall(id: &str, cascade: bool) -> Result<()> {
 }
 
 pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
-    let _lock = Lock::acquire()?;
+    let mutation = hoststate::mutation_preflight(MutationMode::Normal)?;
     let mut registry = registry::load()?;
+    reject_wiped_tree(&registry)?;
     let Some(module) = registry.get(id) else {
         return Err(bail(exit::USAGE, format!("module {id:?} is not installed")));
     };
@@ -202,8 +208,11 @@ pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
         .iter()
         .any(|t| registry.get(t).is_some_and(|m| m.manifest.is_tier_b()));
     if tier_b_flip {
-        crate::ops::recompose_all(&registry, true)?;
+        crate::ops::recompose_all(mutation.host(), &registry, true)?;
     }
+    hostpatch::ensure_host(mutation.host(), &|rel| registry.patches_for_file(rel))?;
+    hostpatch::write_module_imports(&module_import_ids(&registry))?;
+    mutation.activate_after_host_write()?;
     registry::save(&registry)?;
     write_index_projection(&registry)?;
     project_enabled(&registry)?;
@@ -216,6 +225,16 @@ pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
         to_flip
     );
     Ok(())
+}
+
+fn reject_wiped_tree(registry: &crate::registry::Registry) -> Result<()> {
+    if !wipe_banner(registry) {
+        return Ok(());
+    }
+    Err(bail(
+        exit::STATE,
+        "shell tree is wiped; run `iimod reapply` before mutating modules",
+    ))
 }
 
 // ---------------------------------------------------------------------------
