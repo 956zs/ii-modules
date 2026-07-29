@@ -1,117 +1,244 @@
-# network_traffic — IIMP 參考模塊
+# network_traffic - 網路流量
 
-Bar 上下行流量計（Tier A，零 stock 補丁）。即時速率、開機/本日/本月累計、
-動態刻度貝茲趨勢曲線、per-app 佔用排行（nethogs）、高流量呼吸動效。
+Tier A bar 流量計，不修改 stock QML。提供即時上下行速率、DNS ping、
+開機／今日／本月累計、動態刻度趨勢圖，以及 best-effort per-app 排行。
+
+全系統流量讀取 `/proc/net/dev`。per-app 統計依序嘗試 `pktz`、`nethogs`
+與 `ss`；介面會明確標示目前資料來源與降級後的涵蓋範圍。
 
 ## 互動
 
 | 操作 | 效果 |
 |---|---|
-| hover bar 元件 | 開啟彈窗：速率、ping、累計、趨勢圖、Top app |
-| 左鍵點 bar 元件 | 切換統計範圍：本次開機 → 今日 → 本月（全系統與 per-app 排行同步切換） |
-| 右鍵點 bar 元件 | 展開/收合 Top 5 應用排行（顯示所選範圍的累計量） |
+| Hover bar 元件 | 顯示速率、ping、累計、趨勢圖與應用摘要 |
+| 左鍵點擊 | 在開機、今日、本月三種統計範圍間切換 |
+| 右鍵點擊 | 展開或收合所選範圍的 Top 5 應用排行 |
 
-顏色跟隨 Material You 主題（下載 `colPrimary`、上傳 `colTertiary`），
-換壁紙自動變。任一方向速率 ≥ 呼吸門檻（預設 1 MiB/s，可調）時該箭頭呼吸閃爍。
+下載使用 Material You `colPrimary`，上傳使用 `colTertiary`。任一方向達到
+呼吸門檻時，對應箭頭會播放呼吸動效。
 
-彈窗的 ping 列每 3 秒測一次，只在彈窗開啟時執行。目標預設 `auto`＝主機設定的
-DNS（解析 `resolvectl dns` / `resolv.conf`，跳過 loopback stub 與 tailscale
-魔法解析器，公網位址優先），可在設定頁改成任意主機。
+彈窗開啟期間：
 
-彈窗頂部的訊號圖示：stock `Network` 服務只在 nmcli 連線事件時刷新，訊號漂移
-不觸發——所以彈窗開啟期間每 5 秒輪詢一次公開的 `Network.update()`，圖示隨即時
-強度換檔，換檔時帶滑動淡入動效。
+- 每 3 秒測量一次 ping。
+- 每 5 秒呼叫 stock `Network.update()`，更新連線類型與 Wi-Fi 訊號圖示。
+- `pingHost: auto` 優先使用主機設定的公網 DNS，並跳過 loopback stub 與
+  Tailscale magic DNS。
 
-## 依賴
+## 需求與資料來源
 
-`nethogs` 宣告在 `requires.system`——`iimod check`/`install` 缺它時會直接提示安裝指令。
-per-app 統計以 nethogs **常駐取樣**（`-t -v 2` 累計模式；pcap，TCP+UDP 全計，QUIC 不漏），
-delta 累加進開機/今日/本月三桶並持久化，每分鐘至多寫盤一次；追蹤上限 30 個 app，
-長尾摺疊進「其他」。若 nethogs 執行失敗（例如 binary 沒有 file capabilities），
-runtime 自動降級為 `ss -tinp` 輪詢（僅 kernel TCP，UI 會標「僅 TCP」）。
-可在設定頁關閉整個 per-app 統計（筆電省電）。
+`nethogs` 是 `module.json` 中的 install-time 必要依賴，也是宣告的 per-app fallback；
+`iimod check/install` 只驗證它存在於 `PATH`，不保證 runtime 抓包權限或輸出可用。
+`pktz` 是可選的 preferred backend；IIMP v1 沒有 optional system dependency
+欄位，因此未列入 `requires.system`。
 
-已知限制：userspace 取樣器只能統計「shell 在看著」的期間——開機到 shell 啟動之間、
-以及 shell 沒跑的時段不會入帳（任何非 root/eBPF 常駐方案皆然）。無 root 抓包：
+| 分類 | 工具 | 用途 |
+|---|---|---|
+| Install-gated | `nethogs` | 宣告的 per-app fallback |
+| Optional preferred | `pktz` | eBPF process payload 統計 |
+| Runtime helpers | `stdbuf`, `ss`, `ps`, `qs` | 行緩衝、最終 fallback、名稱解析與 IPC |
+| Popup-only | `ping`, `sh`, `resolvectl`, `grep`, `awk` | Ping 與 DNS auto-discovery |
+
+| 順序 | Backend | 彈窗標示 | 涵蓋範圍 | 啟動條件 |
+|---:|---|---|---|---|
+| 1 | `pktz --log` | eBPF 估算 | TCP payload；UDP RX 與 IPv6 UDP TX 視 upstream probes 而定 | Binary 存在且 eBPF probes、權限可用 |
+| 2 | `nethogs -t -C -v 2` | pcap | TCP/UDP；特定 synthetic unknown rows 另列 | `pktz` 無法啟動或退出 |
+| 3 | `ss -tinpH` | 僅 TCP | 仍存在的 kernel TCP sockets | `nethogs` 啟動失敗、退出或逾時無可用 snapshot |
+| 4 | unavailable | 無 | Per-app 區塊無新資料 | `ss` 非零退出 |
+
+模塊依序在 `$PATH`、`$HOME/go/bin/pktz`、`$HOME/.local/bin/pktz` 尋找
+`pktz`，以涵蓋未繼承互動 shell `PATH` 的 Quickshell session。本文描述的 NDJSON、
+probe coverage 與 log-tick 行為以 `pktz 0.1.0` 實測為準；其他版本屬 best-effort。
+切換 backend 只重建記憶體中的 baseline，不會清空既有 `appAcctState`。
+
+### 一次性權限設定
+
+模塊宣告 `exec` capability，但不會呼叫 `sudo`、啟動 root daemon，或自行修改
+binary capabilities。需要 rootless 取樣時，由使用者一次性設定 file capabilities。
+
+`pktz`：
 
 ```bash
-sudo setcap 'cap_net_admin,cap_net_raw,cap_dac_read_search,cap_sys_ptrace+ep' /usr/bin/nethogs
+PKTZ="$HOME/go/bin/pktz"  # or another discovered pktz binary
+sudo setcap 'cap_bpf,cap_perfmon,cap_dac_read_search+ep' "$PKTZ"
+```
+
+Runtime 也會檢查 `$HOME/.local/bin/pktz`，可依實際安裝位置調整 `PKTZ`。
+
+`nethogs`：
+
+```bash
+sudo setcap 'cap_net_admin,cap_net_raw,cap_dac_read_search,cap_sys_ptrace+ep' \
+  /usr/bin/nethogs
 ```
 
 ## 安裝
 
+從 repository 根目錄執行：
+
 ```bash
-iimod validate network_traffic/
-iimod check network_traffic/
-iimod install network_traffic/     # 或先 iimod pack 再裝 .iimod
+iimod validate modules/network_traffic/
+iimod check modules/network_traffic/
+iimod install modules/network_traffic/
 ```
 
 ## 設定
 
-`~/.config/illogical-impulse/modules/network_traffic.json`：
+設定檔位於：
+
+```text
+~/.config/illogical-impulse/modules/network_traffic.json
+```
 
 | Key | 預設 | 說明 |
-|---|---|---|
-| `updateInterval` | 2000 | 輪詢間隔（毫秒） |
-| `excludeRegex` | `^(lo\|docker.*\|veth.*\|br-.*\|virbr.*\|tun.*\|tap.*\|wg.*\|tailscale.*\|CloudflareWARP)$` | 排除的介面（隧道/容器預設排除，VPN 不重複計算） |
-| `displayMode` | `auto` | `auto` / `stacked`（雙行）/ `horizontal`（單行） |
-| `autoStackMaxWidth` | 1920 | `auto` 模式下，螢幕寬度 ≤ 此值時改用雙行 |
-| `stackedShowIcons` | `true` | 雙行時是否顯示方向箭頭 |
-| `statsPeriod` | `boot` | 彈窗統計範圍（左鍵點 bar 元件循環切換，自動持久化） |
-| `appMonitoring` | `true` | per-app 常駐統計；關閉即隱藏彈窗應用區塊、不啟動任何取樣程序 |
-| `pingHost` | `auto` | 彈窗 ping 目標；`auto`＝主機設定的 DNS（公網優先），可填任意主機/IP |
-| `breatheThresholdKB` | `1024` | 箭頭呼吸門檻（KiB/s），該方向速率達標時呼吸閃爍 |
+|---|---:|---|
+| `updateInterval` | `2000` | `/proc` 與 `ss` 輪詢、四捨五入後的 `nethogs -d`，以及 nethogs 啟動 timeout 基準；不控制 pktz upstream tick |
+| `excludeRegex` | 見設定檔 | 排除 loopback、容器、隧道等介面，避免 VPN 重複計算 |
+| `displayMode` | `auto` | `auto`、`stacked` 或 `horizontal` |
+| `autoStackMaxWidth` | `1920` | `auto` 模式切換成雙行版面的最大螢幕寬度 |
+| `stackedShowIcons` | `true` | 雙行版面是否顯示方向箭頭 |
+| `statsPeriod` | `today` | `boot`、`today` 或 `month`；左鍵點擊時循環切換 |
+| `statsPeriodSchema` | `1` | 內部遷移標記，不是一般使用者選項 |
+| `appMonitoring` | `true` | 是否啟動 per-app 取樣與顯示應用區塊 |
+| `pingHost` | `auto` | Ping 主機名稱或 IP；`auto` 使用主機 DNS |
+| `breatheThresholdKB` | `1024` | 箭頭呼吸門檻，單位為 KiB/s |
 
-`acctState` / `appAcctState` 是模塊自管的統計狀態（今日/本月累計、上次取樣點、
-per-app 記帳），各自是**單一 JSON 字串**、單次賦值寫入——分欄位儲存曾在熱重載
-時被讀到撕裂快照，造成「本月 < 今日」；單 blob 讓撕裂在結構上不可能。
-每分鐘至多寫回一次，不是使用者設定。月 ≥ 日不變量在載入與累加時強制鉗制，
-壞掉的舊資料會自我修復。
+**Settings > Modules > Network Traffic** 提供更新間隔、版面、圖示、per-app
+監控、ping 目標與呼吸門檻控件。`statsPeriod` 由 bar 左鍵切換；`excludeRegex`
+目前只能在設定檔調整。
 
-全部選項在設定 app 的 **Modules → Network Traffic** 頁有對應控件。
+> [!NOTE]
+> `acctState`、`appAcctState` 與 `statsPeriodSchema` 是模塊管理的持久狀態，
+> 不應手動編輯。
 
-### 為什麼預設要雙行
+## 資料與記帳行為
 
-ii 的 bar 右區是 `anchors { left: middleSection.right; right: parent.right }` 加
-`layoutDirection: Qt.RightToLeft` 的 RowLayout。中間區用 `barCenterSideModuleWidth`
-**固定**預留（`bar.verbose` 開啟時每側 360px），不隨螢幕縮放；右區內容一旦超出剩餘寬度，
-就會往左溢出並蓋在 stock 元件上，而不是被裁切。
+### 全系統統計
 
-1920×1200、`bar.verbose: true`、10 個 workspace 的實測：
+`TrafficLogic.qml` 從 `/proc/net/dev` 讀取累計 counters，再以相鄰樣本 delta
+計算速率與今日／本月累計。counter 縮小視為重開機或資料來源重置；該段差值不猜測。
 
+預設排除 loopback、容器與隧道介面，以免 VPN 流量同時出現在實體介面與 tunnel。
+使用者可用 `excludeRegex` 調整範圍。
+
+### Per-app 統計
+
+`pktz` process NDJSON 以 timestamp 分 frame。只有看到下一個 timestamp 時，前一個
+frame 才視為封口並提交；EOF、主動停止或 ownership handoff 會捨棄未封口的最後一批，
+最多損失一個 log tick，但不會把 partial frame 當成完整 snapshot。
+
+`nethogs` 與 `pktz` 都以 cumulative counters 的相鄰 delta 記帳。以下事件只建立
+新 baseline，不產生流量尖峰：
+
+- 首次觀測 process
+- counter 縮小
+- collector 重啟
+- process command 改變
+- process 從可觀測 snapshot 消失後重新出現
+
+記帳分類如下：
+
+| 分類 | 來源與規則 |
+|---|---|
+| 具名應用 | 可解析 process identity 的流量；最多保留 30 個名稱 |
+| 其他 | 超出具名應用上限的長尾流量 |
+| Unattributed TCP | `nethogs` 的 synthetic `unknown TCP/0/0` |
+| Unattributed UDP | `nethogs` 的 synthetic `unknown UDP/0/0` |
+| Unattributed process | 已有 delta，但在結束、重置或 handoff 前仍無法解析 command |
+
+模塊不會把 unattributed bytes 猜測成同一 snapshot 中的 Spotify 或其他應用。
+彈窗摘要以所有保留的 per-app buckets 計算占比；展開時只顯示前五名。這不代表
+所有線路流量都能歸屬到具名應用。
+
+### 持久化與單寫入者
+
+`acctState` 與 `appAcctState` 各自儲存為單一 JSON 字串，並以單次賦值寫入，避免
+熱重載期間讀到跨欄位撕裂快照。一般累加會節流寫入；初始化、修復、週期滾動、
+停止、銷毀、ownership handoff 與設定 intent 可立即寫入。載入與累加時會維持
+「本月累計不小於今日累計」的不變量。
+
+bar slot 會在每個螢幕建立 UI，但只有 `Quickshell.screens[0]` 的 primary instance
+啟動 collector、累加與寫盤。其他 bar instance 與獨立 Settings process 都是 watched
+reader；設定變更透過 argv-safe `qs ipc call` 傳給 primary，經 key、type、range
+allowlist 驗證後，與 accounting 在同一 process 串行寫入。
+
+### 統計範圍遷移
+
+schema 1 會把任何舊版未標記或 schema 0 的 `boot` 選擇遷移成 `today`；舊格式沒有
+足夠資訊區分預設值與使用者主動選擇。完成遷移後，使用者再次選擇 `boot` 不會被
+覆寫，既有開機／今日／本月統計 blob 也不會因遷移而清空。
+
+## 版面行為
+
+`displayMode: auto` 在螢幕寬度不大於 `autoStackMaxWidth` 時使用雙行版面。這是為了
+避免 stock bar 中央區固定預留寬度後，右側 RowLayout 內容向左溢出。
+
+以 1920x1200、`bar.verbose: true`、10 個 workspace 的量測為例：
+
+```text
+中間區 996 px -> 右區可用 461 px
+右區需求 576 px
+預估溢出 115 px
 ```
-中間區 996px  →  右區可用 461px
-右區需求 576px（指示器 153 + 托盤 110 + 本模塊 171 + 天氣 88 + 間距 42）
-                                       溢出 115px
-```
 
-單行版 171px 是右區最寬的單一元件。雙行版約 58px，剛好把溢出補平。
-寬螢幕不受這個限制，所以 `auto` 只在窄螢幕上壓縮。
+單行元件約 171 px，雙行約 58 px。垂直 bar 則使用無箭頭、色彩編碼的直向數值，
+彈窗改成寬扁雙欄；字級與行高從 `baseBarHeight` 推導，不寫死固定尺寸。
 
-**支援四種 bar 位置**：上/下（水平，單行或雙行版面）、左/右（垂直，
-無箭頭、純色彩編碼的直向數值，自動適配 45px 窄膠囊；彈窗改為寬扁雙欄，
-避開 stock 彈窗無邊緣夾取的裁切）。垂直 bar 的載入圍欄由 iimod ≥1.1 的
-host P5 提供，位置在頂段的留白區（水平 bar 放視窗標題的位置）——頂段高度
-天生等於「中段以上的剩餘空間」，模塊在此結構上不可能與置中的時鐘/電池相撞。
+## 限制
 
-字級不寫死，從 `baseBarHeight` 反推（膠囊高 = `baseBarHeight - 8`，行高 =
-`floor((膠囊高 - 6) / 2)`，字級 = `clamp(行高 - 2, 9, small)`），因此改 bar 高度或
-cornerStyle 時內容不會超出膠囊。
+- Per-app collector 只統計 shell 運行期間；開機到 shell 啟動前，以及 shell 停止期間
+  不入帳。全系統 `/proc/net/dev` 統計會在目前 counters 不小於持久化 sample 時補上
+  shell 停止期間的 delta，但沒有保存 boot ID 或 sample timestamp：重開機後 counters
+  已超過舊 sample 時可能誤判為連續，跨日／跨月 gap 也會全數記在重啟當下週期。
+- `pktz` 計算 process socket payload，不含 headers 與 TCP 線路重傳，因此不應與
+  `/proc/net/dev` 逐 byte 相等。
+- `pktz` upstream 的 UDP RX 與 IPv6 UDP TX probes 是 optional；attach 失敗時可能
+  靜默降低涵蓋率。
+- `pktz --log` 沒有 heartbeat、empty-frame、exit record 或 schema version。健康但
+  沒有 process 時可以完全沉默，因此模塊只在 process 退出時 fallback。
+- `pktz` upstream identity 只有 PID。模塊增加 command、counter 與 snapshot barrier，
+  但相同 PID／command 若在沒有非空中間 snapshot 時重用，protocol 仍無法辨識。
+- 在第一個 500 ms log tick 前開始並結束的 process 可能不會出現在 `pktz` snapshot。
+- `nethogs` 只把精確 synthetic rows `unknown TCP/0/0` 與 `unknown UDP/0/0`
+  保留為 Unattributed；其他無法辨識的 `unknown <protocol>` 形式會被丟棄。具名應用
+  排行因此不是線路總量的完整歸因。
+- `nethogs` 可能漏掉短於取樣間隔的完整連線；`ss` fallback 只涵蓋仍存在的 TCP socket，
+  不含 UDP。
 
 ## 從舊手工補丁版遷移
 
-若你先前手動安裝過（`services/NetworkTraffic.qml` ＋ BarContent/Config/BarConfig 補丁）：
+若曾手動安裝 `services/NetworkTraffic.qml` 與 stock QML 補丁：
 
-1. 舊設定對照：`config.json` 的 `bar.networkTraffic.updateInterval` / `excludeRegex` → 搬到上表的模塊設定檔；`bar.networkTraffic.enable` → 由 `iimod enable/disable` 或設定 app 的 Modules 頁控制
-2. 移除手工補丁（或等下次 dots 更新自然沖掉後 `iimod reapply`）再 `iimod install`
-3. 手工版在 `config.json` 留下的 `bar.networkTraffic` 區塊會被 shell 的 JsonAdapter 自動剝掉，無需清理
+1. 將 `config.json` 的 `bar.networkTraffic.updateInterval` 與 `excludeRegex` 搬到
+   模塊設定檔。
+2. 以 `iimod enable/disable network_traffic` 取代舊的
+   `bar.networkTraffic.enable`。
+3. 移除手工補丁，或等 dots 更新還原 stock 後，再執行 `iimod install`。
 
-## 實作說明（給模塊作者的參考）
+stock JsonAdapter 會在後續寫入 `config.json` 時移除不再宣告的舊
+`bar.networkTraffic` 區塊，無需為遷移立即手動清理。
 
-- `TrafficLogic.qml`：輪詢邏輯**實例**（非單例——IIMP 模塊禁用 pragma Singleton），由 `bar.qml` 建立並向下傳遞；今日/本月累計以 delta 累加（`/proc/net/dev` 計數器縮小＝重開機，該段遺失是設計取捨）
-- `AppTraffic.qml`：per-app 常駐取樣器＋記帳（隨 bar 元件生滅，不是隨彈窗）；nethogs 用 `-v 2` 累計模式取 delta、需 `stdbuf -oL`（接管道時會整塊緩衝）；`/proc/self/exe` 型程式名先把 delta 暫存，等 `ps` 解析出 comm 再入帳，避免 Electron app 被記成「exe」；boot 桶以 `/proc/sys/kernel/random/boot_id` 判斷換機重置
-- `BezierGraph.qml`：Catmull-Rom → 貝茲曲線 Canvas，視窗最大值即滿刻度並以小字標註
-- `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔，永不碰 shell 的 `config.json`；`ready` 旗標讓統計初始化等檔案真正載入（FileView 是非同步的）
-- `bar.qml`：以 `BarGroup` 為根自帶藥丸外觀；固定欄寬防抖動（TextMetrics）；版面用「每個方向一個獨立 RowLayout」而非共用四格 GridLayout——GridLayout 會**跳過** `visible: false` 的項目而不是保留格位，箭頭一關兩行就會錯位
-- `ConfigLoader.qml`：`onLoaded: writeAdapter()` 把合併後的設定寫回檔案。舊版寫的設定檔缺少後來新增的 key，JsonAdapter 對缺失的 key 是回傳型別零值而非 QML 宣告的預設值，不寫回就會讓升級的使用者拿到 `false` / `0`
-- 每個用到的 stock API（BarGroup、StyledPopup、Graph、Network 服務）都在 manifest 宣告了探針
+## 實作說明
+
+| 檔案 | 職責 |
+|---|---|
+| `TrafficLogic.qml` | `/proc/net/dev` 輪詢、速率與全系統累計 |
+| `AppTraffic.qml` | Backend lifecycle、per-app baseline、rate 與 accounting |
+| `AppTrafficLogic.js` | 純 NDJSON/nethogs parsing 與 snapshot 計算 |
+| `ConfigLoader.qml` | 設定讀取、primary-only 寫入與 watched-reader 狀態 |
+| `ConfigRequest.qml` | FIFO、argv-safe、有界 retry 的 IPC 設定請求 |
+| `ConfigLogic.js` | 設定 materialization、allowlist 驗證與 future-schema 保留 |
+| `BezierGraph.qml` | Catmull-Rom 到 Bezier 的動態刻度 Canvas |
+| `bar.qml` | `BarGroup` 外觀、固定欄寬與水平／垂直版面 |
+
+所有非 baseline stock API 都在 `module.json` 宣告 probe。邏輯物件由 entry component
+建立並向下傳遞；模塊不使用 `pragma Singleton`。
+
+## 開發驗證
+
+```bash
+node --test modules/network_traffic/tests/*.test.mjs
+python -m py_compile modules/network_traffic/tests/pktz-live-smoke.py
+iimod validate modules/network_traffic/
+iimod suggest modules/network_traffic/
+iimod check modules/network_traffic/
+```
