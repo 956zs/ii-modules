@@ -52,6 +52,12 @@ Author modules under IIMP SPEC 1.0. `iimod` is the reference tool and
     `module.json`/QML before packaging, but the packaged module must validate as
     static artifacts. Do not require `iimod` or Quickshell to execute
     module-supplied Lua at install time or runtime.
+16. Module documentation follows the repository `AGENTS.md` Markdown template.
+    Keep usage before internals; separate requirements, fallback behavior,
+    configuration, data semantics, limitations, and implementation notes. Use
+    tables for settings and backend matrices, and split paragraphs that contain
+    three or more independent facts. Verify commands, paths, defaults,
+    capabilities, tier, and version claims against `module.json` and source.
 
 ## Release Checklist
 

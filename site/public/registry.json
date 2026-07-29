@@ -27,6 +27,33 @@
       }
     },
     {
+      "id": "animation_tuner",
+      "name": {
+        "en_US": "Animation Tuner",
+        "zh_TW": "動畫曲線調校器",
+        "zh_CN": "动画曲线调校器"
+      },
+      "description": {
+        "en_US": "Visually tunes the shell's central animation tokens with validated cubic Bezier curves, duration, velocity, reduced motion, and real QML previews for Bezier, delay, and spring parameters.",
+        "zh_TW": "以視覺化方式調校 shell 中央動畫 token：經驗證的 cubic Bezier 曲線、時長、速度、減少動態效果，以及 Bezier、延遲與彈簧參數的真實 QML 預覽。",
+        "zh_CN": "以可视化方式调校 shell 中央动画 token：经验证的 cubic Bezier 曲线、时长、速度、减少动态效果，以及 Bezier、延迟与弹簧参数的真实 QML 预览。"
+      },
+      "sourceVersion": "1.0.1",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [],
+      "requires": {},
+      "tierB": false,
+      "origin": "https://ii.n1cat.xyz/index.json",
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/animation_tuner",
+      "docs": {
+        "zh_TW": "/docs/modules/animation_tuner",
+        "en_US": "/docs/en/modules/animation_tuner"
+      }
+    },
+    {
       "id": "battery_trend",
       "name": {
         "en_US": "Battery Trend",
@@ -171,10 +198,10 @@
         "zh_CN": "网络流量"
       },
       "description": {
-        "en_US": "Up/down bandwidth meter for the bar: live rates, DNS ping, boot/today/month totals (whole-system and per-app), Bezier trend graphs with dynamic scale, and a per-app usage ranking (continuous nethogs accounting) in the hover popup. Reads /proc/net/dev; tunnel and container interfaces are excluded by default so VPN traffic is not double-counted.",
-        "zh_TW": "Bar 上下行流量計：即時速率、DNS ping、開機/本日/本月累計（全系統與 per-app）、動態刻度貝茲趨勢曲線、hover 彈窗含 per-app 佔用排行（nethogs 常駐統計）。預設排除隧道/容器介面，VPN 不重複計算。窄螢幕自動改用雙行緊湊版面。"
+        "en_US": "Up/down bandwidth meter for the bar: live rates, DNS ping, boot/today/month totals (whole-system and per-app), Bezier trend graphs with dynamic scale, and a per-app usage ranking (best-effort pktz eBPF payload estimate with nethogs fallback) in the hover popup. Reads /proc/net/dev; common tunnel and container interfaces are excluded by default to reduce VPN double-counting.",
+        "zh_TW": "Bar 上下行流量計：即時速率、DNS ping、開機/本日/本月累計（全系統與 per-app）、動態刻度貝茲趨勢曲線、hover 彈窗含 per-app 佔用排行（優先使用 pktz eBPF payload 盡力估算，降級 nethogs）。預設排除常見隧道/容器介面，以減少 VPN 重複計算。窄螢幕自動改用雙行緊湊版面。"
       },
-      "sourceVersion": "1.5.0",
+      "sourceVersion": "1.6.0",
       "authors": [
         "nlcat"
       ],

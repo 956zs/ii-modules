@@ -115,15 +115,15 @@ def main():
     final = rows[-1]
     rx = final["rx_bytes"] - baseline["rx_bytes"]
     tx = final["tx_bytes"] - baseline["tx_bytes"]
-    required_rx = TCP_RX
-    optional_udp_rx = UDP_MESSAGES * UDP_SIZE
+    expected_tcp_rx = TCP_RX
     expected_tx = TCP_TX + UDP_MESSAGES * UDP_SIZE
+    udp_rx_observed = rx >= TCP_RX + UDP_MESSAGES * UDP_SIZE
     print(json.dumps({"pid": pid, "rows": len(rows), "rx_delta": rx, "tx_delta": tx,
-                      "required_rx": required_rx, "optional_udp_rx": optional_udp_rx,
-                      "expected_tx": expected_tx, "udp_rx_observed": rx >= required_rx + optional_udp_rx}))
+                      "expected_tcp_rx": expected_tcp_rx, "expected_tx": expected_tx,
+                      "udp_rx_observed": udp_rx_observed}))
     if tx < expected_tx:
         raise SystemExit("pktz TX total missed TCP or UDP payload")
-    if rx < required_rx:
+    if rx < expected_tcp_rx:
         raise SystemExit("pktz RX total missed required TCP payload")
 
 

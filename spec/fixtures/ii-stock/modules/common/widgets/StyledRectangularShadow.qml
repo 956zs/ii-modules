@@ -1,1 +1,3 @@
+import QtQuick
+
 Item {}
