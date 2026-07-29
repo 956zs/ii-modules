@@ -63,6 +63,7 @@ any operation.
   main.qml                    # window slot entry (if slots contains "window")
   settings.qml                # optional settings fragment (Item root)
   translations/<locale>.json  # optional flat key→string dicts
+  i18n.sources.json           # optional development metadata; no runtime role
   README.md                   # RECOMMENDED
   ...                         # any further QML/JS/assets, free-form
 ```
@@ -79,6 +80,13 @@ Rules:
   would shadow or collide with stock singletons/types; see §12 lesson 1).
 - `pragma Singleton` MUST NOT be used anywhere in a module; modules instantiate
   a plain logic object in their entry component and pass the instance down.
+- User-visible runtime strings SHOULD use
+  `Translation.tr("English source")`. A missing dictionary or key MUST fall back
+  to that English source argument. `translations/<locale>.json` remains optional
+  at the protocol layer so existing protocolVersion 1 payloads stay compatible.
+- `i18n.sources.json`, when present, describes finite nonliteral source sets for
+  development tools. It is not a manifest field, is ignored by runtime lookup,
+  and adds no protocolVersion 1 installation behavior.
 - **Sibling types require an explicit self-import.** Files loaded by path
   (every slot entry) get NO implicit same-directory type resolution under
   Quickshell's URL interceptor (verified empirically; stock path-loaded pages
@@ -314,13 +322,52 @@ shell is down, with a write→verify loop.
 ### 8.3 Translations
 
 Module dicts merge into `~/.config/illogical-impulse/translations/<locale>.json`
-at install (the shell's generated-dict lookup; repo dict wins collisions).
-Per-key ownership is recorded in the registry: a key already owned by another
-module (different value) is skipped with a warning (first owner wins); a key
-present but unowned (user's own entry) is never overwritten. Uninstall removes
-only keys the module owns whose current value still equals the module's value.
-A shell reload is required for new keys to take effect (the reader does not
-watch the file).
+at install (the shell's generated-dict lookup; repo dict wins collisions). Module
+code passes an English source to `Translation.tr`; if the active dictionary has
+no matching entry, the shell returns that source unchanged.
+
+Registry `translationKeys` entries are references, not exclusive ownership.
+Every installed module whose stored dictionary contributes the selected value is
+recorded as a reference. Same-value sharers therefore survive uninstall in any
+order until the last contributor is removed. Different-value contributors retain
+deterministic first-value-wins behavior; a present unowned value or a value that
+differs from all previously managed contributors is treated as a user entry/edit
+and is never overwritten or removed. Uninstall and reapply reconcile surviving
+store payloads, and a key is removed only when no contributor survives and its
+current value still equals the removed managed value. A shell reload is required
+for new keys to take effect (the reader does not watch the file).
+
+### 8.4 Reference authoring checks (non-normative)
+
+The reference CLI provides development-time commands without changing the
+manifest schema or runtime protocol:
+
+```text
+iimod i18n extract <SOURCE>
+iimod i18n extract --all
+iimod i18n check <SOURCE> [--locale <LOCALE>...] [--deny-orphans]
+iimod i18n check --all [--locale <LOCALE>...] [--deny-orphans]
+```
+
+`SOURCE` accepts a payload directory or package. Extraction is read-only and
+scans payload QML/JS plus QML in `module.json` patch content. A payload-root
+`i18n.sources.json` may declare exact finite sets for otherwise nonliteral calls;
+undeclared, ambiguous, duplicate, or stale declarations fail extraction and
+checking.
+
+Standalone checks default to `zh_TW`, the portable authoring minimum. Repository
+checks default to `zh_TW` and `zh_CN`; repeated `--locale` options replace those
+defaults. This repository runs `--all --deny-orphans`, making both first-party
+catalogs exact. These locale and exact-set requirements are reference-tool and
+repository authoring policy, not new protocolVersion 1 manifest requirements.
+
+The checker requires exact nonempty English keys, canonical `%1` through `%99`
+placeholders with contiguous indices, matching immediate `.arg()` counts, and
+the same placeholder multiset in each translation. `%n` is rejected because the
+runtime has no plural API. Dictionaries must be string-to-string objects in
+Unicode-codepoint key order, two-space JSON, and one final newline. Missing or
+malformed entries fail; orphans warn unless denied. Repository checking allows
+same-value locale/source sharing and rejects different-value conflicts.
 
 ## 9. Lifecycle states and `verify`
 
