@@ -179,6 +179,99 @@ fn extract_ignores_regex_literals_after_expression_keywords() {
 }
 
 #[test]
+fn extract_rejects_unrelated_enclosing_group_arg_chains() {
+    let root = temp_root("unrelated-group-arg");
+    let payload = make_module(
+        &root,
+        "group_arg_mod",
+        "Item { property var value: ({ value: Translation.tr(\"Needs %1\") }).arg(value) }\n",
+    );
+
+    for qml in [
+        "Item { property var value: ({ value: Translation.tr(\"Needs %1\") }).arg(value) }\n",
+        "Item { property var value: ([Translation.tr(\"Needs %1\")]).arg(value) }\n",
+        "Item { property var value: (ok ? Translation.tr(\"Needs %1\") : \"plain\").arg(value) }\n",
+    ] {
+        std::fs::write(payload.join("bar.qml"), qml).unwrap();
+        let output = run(&["i18n", "extract", payload.to_str().unwrap()]);
+        assert_eq!(
+            output.status.code(),
+            Some(3),
+            "qml={qml}\nstdout={}\nstderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("requires 1 immediate .arg() call"),
+            "qml={qml}\nstderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn extract_ignores_statement_regexes_after_control_flow() {
+    let root = temp_root("control-flow-regex");
+    let payload = make_module(
+        &root,
+        "control_regex_mod",
+        r#"Item {
+  function regexes(value, values) {
+    if (value) /Translation.tr("Ignored if")/.test(value)
+    while (value) /Translation.tr("Ignored while")/.test(value)
+    for (const item of values) /Translation.tr("Ignored for")/.test(item)
+    with (value) /Translation.tr("Ignored with")/.test(value)
+    try { throw value } catch (error) /Translation.tr("Ignored catch")/.test(error)
+    switch (value) { default: break }
+    /users:\\(\\(\"([^\"]+)\",pid=\\d+/.test(value);
+    /Translation.tr("Ignored block")/.test(value)
+    if (value) value = false; else /Translation.tr("Ignored else")/.test(value)
+    return Translation.tr("Real source")
+  }
+}
+"#,
+    );
+
+    let output = run(&["i18n", "extract", payload.to_str().unwrap()]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["sources"],
+        serde_json::json!(["Real source"])
+    );
+}
+
+#[test]
+fn extract_keeps_division_after_call_and_object_expressions() {
+    let root = temp_root("division-after-expressions");
+    let payload = make_module(
+        &root,
+        "division_mod",
+        r#"Item {
+  property real callRatio: measure() / Translation.tr("Call divisor")
+  property real objectRatio: ({ value: 1 }).value / Translation.tr("Object divisor")
+}
+"#,
+    );
+
+    let output = run(&["i18n", "extract", payload.to_str().unwrap()]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["sources"],
+        serde_json::json!(["Call divisor", "Object divisor"])
+    );
+}
+
+#[test]
 fn cli_shape_requires_exactly_one_source_mode() {
     for args in [
         vec!["i18n", "extract"],

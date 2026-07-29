@@ -527,7 +527,7 @@ fn scan_calls_range(
             index = scan_template_interpolations(source, text, index, calls)?;
             continue;
         }
-        if bytes[index] == b'/' && is_regex_start(text, index) {
+        if bytes[index] == b'/' && is_regex_start(source, text, index)? {
             index = skip_regex_literal(source, text, index)?;
             continue;
         }
@@ -665,13 +665,116 @@ fn enclosing_group_arg_count(
     let mut count = 0;
     let mut contained_end = call_end;
     for (open, close) in groups {
-        if open < call_start && close >= contained_end {
+        if open < call_start
+            && close >= contained_end
+            && group_is_translated_ternary(source, text, open, close)?
+        {
             let (postfix_count, postfix_end) = count_arg_chain(source, text, close + 1)?;
             count += postfix_count;
             contained_end = postfix_end.max(close + 1);
         }
     }
     Ok(count)
+}
+
+fn group_is_translated_ternary(
+    source: &str,
+    text: &str,
+    open: usize,
+    close: usize,
+) -> Result<bool> {
+    let Some((question, colon)) = top_level_ternary(source, text, open + 1, close)? else {
+        return Ok(false);
+    };
+    Ok(
+        is_complete_translation_expression(source, text, question + 1, colon)?
+            && is_complete_translation_expression(source, text, colon + 1, close)?,
+    )
+}
+
+fn top_level_ternary(
+    source: &str,
+    text: &str,
+    start: usize,
+    end: usize,
+) -> Result<Option<(usize, usize)>> {
+    let bytes = text.as_bytes();
+    let mut stack = Vec::new();
+    let mut question = None;
+    let mut index = start;
+    while index < end {
+        if starts(bytes, index, b"//") {
+            index = skip_line_comment(bytes, index + 2);
+            continue;
+        }
+        if starts(bytes, index, b"/*") {
+            index = skip_block_comment(source, text, index)?;
+            continue;
+        }
+        if matches!(bytes[index], b'\'' | b'"') {
+            index = parse_string(source, text, index)?.0;
+            continue;
+        }
+        if bytes[index] == b'`' {
+            index = skip_template(source, text, index)?;
+            continue;
+        }
+        if bytes[index] == b'/' && is_regex_start(source, text, index)? {
+            index = skip_regex_literal(source, text, index)?;
+            continue;
+        }
+        match bytes[index] {
+            b'(' => stack.push(b')'),
+            b'[' => stack.push(b']'),
+            b'{' => stack.push(b'}'),
+            b')' | b']' | b'}' => {
+                stack.pop();
+            }
+            b'?' if stack.is_empty() => {
+                if question.is_some() {
+                    return Ok(None);
+                }
+                question = Some(index);
+            }
+            b':' if stack.is_empty() && question.is_some() => {
+                return Ok(Some((question.expect("checked"), index)));
+            }
+            _ => {}
+        }
+        index += char_len(text, index);
+    }
+    Ok(None)
+}
+
+fn is_complete_translation_expression(
+    source: &str,
+    text: &str,
+    start: usize,
+    end: usize,
+) -> Result<bool> {
+    let bytes = text.as_bytes();
+    let call_start = skip_trivia(source, text, start)?;
+    if call_start >= end
+        || !starts(bytes, call_start, b"Translation")
+        || !service_call_boundary(bytes, call_start, call_start + b"Translation".len())
+    {
+        return Ok(false);
+    }
+    let mut cursor = skip_trivia(source, text, call_start + b"Translation".len())?;
+    if bytes.get(cursor) != Some(&b'.') {
+        return Ok(false);
+    }
+    cursor = skip_trivia(source, text, cursor + 1)?;
+    if !starts(bytes, cursor, b"tr") || !identifier_boundary(bytes, cursor, cursor + b"tr".len()) {
+        return Ok(false);
+    }
+    cursor = skip_trivia(source, text, cursor + b"tr".len())?;
+    if bytes.get(cursor) != Some(&b'(') {
+        return Ok(false);
+    }
+    let close = find_call_close(source, text, cursor)?;
+    let (_, after) = count_arg_chain(source, text, close + 1)?;
+    Ok(skip_trivia(source, text, after)? == end)
 }
 
 fn grouping_parentheses(source: &str, text: &str) -> Result<Vec<(usize, usize)>> {
@@ -703,7 +806,7 @@ fn grouping_parentheses(source: &str, text: &str) -> Result<Vec<(usize, usize)>>
             can_end_expression = true;
             continue;
         }
-        if bytes[index] == b'/' && is_regex_start(text, index) {
+        if bytes[index] == b'/' && is_regex_start(source, text, index)? {
             index = skip_regex_literal(source, text, index)?;
             can_end_expression = true;
             continue;
@@ -778,7 +881,7 @@ fn find_call_close(source: &str, text: &str, open: usize) -> Result<usize> {
             index = skip_template(source, text, index)?;
             continue;
         }
-        if bytes[index] == b'/' && is_regex_start(text, index) {
+        if bytes[index] == b'/' && is_regex_start(source, text, index)? {
             index = skip_regex_literal(source, text, index)?;
             continue;
         }
@@ -827,7 +930,7 @@ fn has_top_level_comma(source: &str, text: &str, start: usize, end: usize) -> Re
             index = skip_template(source, text, index)?;
             continue;
         }
-        if bytes[index] == b'/' && is_regex_start(text, index) {
+        if bytes[index] == b'/' && is_regex_start(source, text, index)? {
             index = skip_regex_literal(source, text, index)?;
             continue;
         }
@@ -932,7 +1035,7 @@ fn find_matching_brace(source: &str, text: &str, open: usize) -> Result<usize> {
             index = skip_template(source, text, index)?;
             continue;
         }
-        if bytes[index] == b'/' && is_regex_start(text, index) {
+        if bytes[index] == b'/' && is_regex_start(source, text, index)? {
             index = skip_regex_literal(source, text, index)?;
             continue;
         }
@@ -1515,13 +1618,13 @@ fn skip_regex_literal(source: &str, text: &str, start: usize) -> Result<usize> {
     Err(diag(source, text, start, "unterminated regex literal"))
 }
 
-fn is_regex_start(text: &str, slash: usize) -> bool {
+fn is_regex_start(source: &str, text: &str, slash: usize) -> Result<bool> {
     let bytes = text.as_bytes();
     let Some(previous_index) = bytes[..slash]
         .iter()
         .rposition(|byte| !byte.is_ascii_whitespace())
     else {
-        return true;
+        return Ok(true);
     };
     let previous = bytes[previous_index];
     if matches!(
@@ -1545,10 +1648,16 @@ fn is_regex_start(text: &str, slash: usize) -> bool {
             | b'<'
             | b'>'
     ) {
-        return true;
+        return Ok(true);
+    }
+    if previous == b')' && closes_control_header(source, text, previous_index)? {
+        return Ok(true);
+    }
+    if previous == b'}' && closes_statement_block(source, text, previous_index)? {
+        return Ok(true);
     }
     if !is_identifier_byte(previous) {
-        return false;
+        return Ok(false);
     }
 
     let mut word_start = previous_index;
@@ -1556,11 +1665,108 @@ fn is_regex_start(text: &str, slash: usize) -> bool {
         word_start -= 1;
     }
     let keyword = &text[word_start..=previous_index];
-    matches!(keyword, "return" | "throw" | "case")
+    Ok(matches!(keyword, "return" | "throw" | "case" | "else")
         && bytes[..word_start]
             .iter()
             .rfind(|byte| !byte.is_ascii_whitespace())
-            .is_none_or(|byte| *byte != b'.')
+            .is_none_or(|byte| *byte != b'.'))
+}
+
+fn closes_control_header(source: &str, text: &str, close: usize) -> Result<bool> {
+    let Some(open) = matching_open_delimiter(source, text, close, b'(', b')')? else {
+        return Ok(false);
+    };
+    let bytes = text.as_bytes();
+    let Some(previous_index) = bytes[..open]
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())
+    else {
+        return Ok(false);
+    };
+    if !is_identifier_byte(bytes[previous_index]) {
+        return Ok(false);
+    }
+    let mut word_start = previous_index;
+    while word_start > 0 && is_identifier_byte(bytes[word_start - 1]) {
+        word_start -= 1;
+    }
+    Ok(matches!(
+        &text[word_start..=previous_index],
+        "if" | "while" | "for" | "with" | "switch" | "catch"
+    ))
+}
+
+fn closes_statement_block(source: &str, text: &str, close: usize) -> Result<bool> {
+    let Some(open) = matching_open_delimiter(source, text, close, b'{', b'}')? else {
+        return Ok(false);
+    };
+    let bytes = text.as_bytes();
+    let Some(previous_index) = bytes[..open]
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())
+    else {
+        return Ok(true);
+    };
+    if bytes[previous_index] == b')' {
+        return closes_control_header(source, text, previous_index);
+    }
+    if !is_identifier_byte(bytes[previous_index]) {
+        return Ok(false);
+    }
+    let mut word_start = previous_index;
+    while word_start > 0 && is_identifier_byte(bytes[word_start - 1]) {
+        word_start -= 1;
+    }
+    Ok(matches!(
+        &text[word_start..=previous_index],
+        "else" | "try" | "finally" | "do"
+    ))
+}
+
+fn matching_open_delimiter(
+    source: &str,
+    text: &str,
+    close: usize,
+    open_byte: u8,
+    close_byte: u8,
+) -> Result<Option<usize>> {
+    let bytes = text.as_bytes();
+    let mut stack = Vec::new();
+    let mut index = 0;
+    while index <= close && index < bytes.len() {
+        if starts(bytes, index, b"//") {
+            index = skip_line_comment(bytes, index + 2);
+            continue;
+        }
+        if starts(bytes, index, b"/*") {
+            index = skip_block_comment(source, text, index)?;
+            continue;
+        }
+        if matches!(bytes[index], b'\'' | b'"') {
+            index = parse_string(source, text, index)?.0;
+            continue;
+        }
+        if bytes[index] == b'`' {
+            index = skip_template(source, text, index)?;
+            continue;
+        }
+        if bytes[index] == b'/' && is_regex_start(source, text, index)? {
+            index = skip_regex_literal(source, text, index)?;
+            continue;
+        }
+        if bytes[index] == open_byte {
+            stack.push(index);
+        } else if bytes[index] == close_byte {
+            let Some(open) = stack.pop() else {
+                return Ok(None);
+            };
+            if index == close {
+                return Ok(Some(open));
+            }
+        }
+        index += char_len(text, index);
+    }
+    Ok(None)
 }
 
 fn skip_line_comment(bytes: &[u8], mut index: usize) -> usize {
