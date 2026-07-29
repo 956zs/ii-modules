@@ -1,5 +1,7 @@
+import QtQuick
+
 Item {
-    Column {
+    Item {
         id: unusedRows
     }
 }
