@@ -103,7 +103,7 @@ ColumnLayout {
         color: Appearance.colors.colOnSurfaceVariant
         font.pixelSize: Appearance.font.pixelSize.smaller
         wrapMode: Text.WordWrap
-        text: Translation.tr("Samples continuously via nethogs to build boot/today/month per-app totals. Turn off to save power on battery.")
+        text: Translation.tr("Uses pktz for a best-effort eBPF payload estimate when available, then nethogs, to build boot/today/month per-app totals. Turn off to save power on battery.")
     }
 
     ConfigSpinBox {

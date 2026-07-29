@@ -297,6 +297,12 @@ StyledPopup {
                     }
                 }
                 StyledText {
+                    visible: root.appTraffic.source === "pktz" || root.appTraffic.source === "nethogs"
+                    font.pixelSize: Appearance.font.pixelSize.smallest
+                    color: Appearance.colors.colOnLayer1Inactive
+                    text: root.appTraffic.source === "pktz" ? Translation.tr("eBPF estimate") : Translation.tr("pcap")
+                }
+                StyledText {
                     visible: root.appTraffic.tcpOnly
                     font.pixelSize: Appearance.font.pixelSize.smallest
                     color: Appearance.colors.colOnLayer1Inactive
