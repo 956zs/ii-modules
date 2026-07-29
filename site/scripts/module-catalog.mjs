@@ -10,6 +10,11 @@ const REPO_URL = 'https://github.com/956zs/ii-modules'
 const RELEASE_INDEX = 'https://ii.n1cat.xyz/index.json'
 const REQUIRED_LOCALES = ['en_US', 'zh_TW']
 
+export function documentationEditUrl({ filePath, params }) {
+  const sourcePath = params?.editPath ?? `site/docs/${filePath}`
+  return `https://github.com/956zs/ii-modules/edit/main/${sourcePath}`
+}
+
 function assertNonEmptyString(value, field, source) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error(`${source}: ${field} must be a non-empty string`)
@@ -124,17 +129,27 @@ export async function moduleDocPaths(locale, options) {
   return Promise.all(
     modules.map(async (module) => {
       const readme = await readFile(module.readmePath, 'utf8')
-      if (locale === 'zh_TW') return { params: { id: module.id }, content: readme }
+      const readmeParams = {
+        id: module.id,
+        editPath: `modules/${module.id}/README.md`,
+      }
+      if (locale === 'zh_TW') return { params: readmeParams, content: readme }
 
       const englishReadme = path.join(module.moduleDir, 'README.en.md')
       try {
-        return { params: { id: module.id }, content: await readFile(englishReadme, 'utf8') }
+        return {
+          params: {
+            id: module.id,
+            editPath: `modules/${module.id}/README.en.md`,
+          },
+          content: await readFile(englishReadme, 'utf8'),
+        }
       } catch (error) {
         if (error?.code !== 'ENOENT') throw error
       }
       const body = readme.replace(/^# .*(?:\r?\n)+/, '')
       return {
-        params: { id: module.id },
+        params: readmeParams,
         content: `# ${module.name.en_US}\n\n::: info Translation status\nAn English README is not available yet. The module metadata above is localized; the detailed README below is shown in Traditional Chinese.\n:::\n\n${body}`,
       }
     }),
