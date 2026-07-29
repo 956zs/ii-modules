@@ -4,11 +4,49 @@
 
 - Read `README.md` and the target module's `README.md` before editing.
 - Use `.claude/skills/ii-module-author/SKILL.md` for module development and
+  `.claude/skills/ii-module-i18n/SKILL.md` for translation-only work. Use
   `.claude/skills/ii-module-manage/SKILL.md` for live module operations.
 - Keep `.claude/skills/<name>/SKILL.md` and `skills/<name>/SKILL.md` identical.
   Update both whenever workflow or product rules change.
 - Record cross-session progress in `plans/SESSION.md` and unresolved issues in
   `plans/ISSUES.md`.
+
+## Module Internationalization
+
+The runtime contract remains `Translation.tr("English source")` plus optional
+payload dictionaries at `translations/<locale>.json`. Missing entries display
+the English source key. A payload-root `i18n.sources.json` is development
+metadata for finite nonliteral source sets; it is not a `module.json` field and
+does not change the protocol or runtime lookup.
+
+The feature owner owns QML/JS, source wording, dynamic-source provenance,
+`module.json`, versions, documentation, and tests. After source strings freeze,
+handoff translation work to an independent `ii-module-i18n` subagent. That
+subagent reads the target module's documentation and source, but may write only
+the target module's `translations/*.json` and `i18n.sources.json`. It must return
+ambiguous English wording or an unprovable dynamic source set to the feature
+owner instead of altering feature files or weakening checks.
+
+Portable modules require a complete, canonical `zh_TW` catalog. This repository
+additionally requires exact `zh_CN` catalogs and denies orphans in both locales
+for first-party modules. Run target-scoped checks before handoff completion:
+
+```bash
+iimod i18n extract modules/<id>
+iimod i18n check modules/<id> \
+  --locale zh_TW --locale zh_CN --deny-orphans
+```
+
+`extract` scans payload QML/JS and `module.json` patch content. Nonliteral calls
+must have exactly one matching declaration in `i18n.sources.json`; stale,
+duplicate, unmatched, or ambiguous declarations fail. Catalogs use exact English
+keys, Unicode-codepoint ordering, two-space JSON, and one final newline. `%1`
+through `%99` placeholders must be contiguous and preserve their multiset in the
+translation; every source call must have the matching immediate `.arg()` count,
+and `%n` is unsupported. Missing, malformed, placeholder-marker, conflicting, or
+orphan entries are errors under this repository's exact check. Identical values
+and same-value sharing warn or pass as reported; different values for the same
+locale/source across modules fail repository checks.
 
 ## Markdown Documentation
 

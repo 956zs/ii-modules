@@ -22,6 +22,7 @@
 
 - [快速開始（使用者）](#快速開始使用者)
 - [快速開始（模塊作者）](#快速開始模塊作者)
+- [模塊國際化](#模塊國際化)
 - [核心概念](#核心概念)
 - [AI Agent Skills](#ai-agent-skills)
 - [Release workflow（多人協作）](#release-workflow多人協作)
@@ -67,12 +68,57 @@ imports 與 host fences，避免舊 UI 被覆寫後仍誤報 intact。
 iimod init my_widget          # 腳手架
 # …寫 QML（bar.qml 根必須是視覺 Item；main.qml 根必須是 Scope/PanelWindow）
 iimod suggest my_widget/      # 自動推導 probes 與 capabilities 建議
+iimod i18n extract my_widget/ # 列出 Translation.tr 英文來源
+iimod i18n check my_widget/   # 可攜式最低要求：完整 zh_TW catalog
 iimod validate my_widget/ && iimod check my_widget/ && iimod install my_widget/
 iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 ```
 
 參考實作：[`modules/network_traffic/`](modules/network_traffic/)（含逐檔說明）、
 最小視窗範例 [`examples/hello_window/`](examples/hello_window/)。
+
+## 模塊國際化
+
+IIMP v1 不引入第二套翻譯 runtime。QML/JS 直接使用
+`Translation.tr("English source")`，模塊以
+`translations/<locale>.json` 提供平坦的英文來源到譯文字典；找不到目前語系或
+key 時，shell 顯示傳入的英文來源。這些字典由 `iimod` 安裝流程合併到 shell
+產生的語系字典，既有同值貢獻者會共同保留 reference，不同值維持可預測的
+first-value-wins runtime 行為。
+
+`iimod i18n` 是開發期工具，不改變 `protocolVersion: 1` 或 `module.json`
+schema：
+
+```bash
+# 單一 payload 或 .iimod；extract 為唯讀
+iimod i18n extract modules/my_widget
+iimod i18n check modules/my_widget                 # 預設要求 zh_TW
+iimod i18n check modules/my_widget --locale zh_CN  # 重複 flag 可指定其他集合
+
+# 本 repository 的一等模塊政策：zh_TW + zh_CN，且 catalog 必須完全精確
+iimod i18n extract --all
+iimod i18n check --all --deny-orphans
+```
+
+`extract` 以確定性順序掃描 payload 的 `.qml`、`.js` 與
+`module.json` 的 `patches[].content`。若 `Translation.tr(...)` 不是單一字面量，
+必須在 payload 根的 `i18n.sources.json` 宣告可證明的有限來源集合；此檔僅是
+開發 metadata，不參與 runtime lookup，也不是 manifest 欄位。未宣告的動態
+呼叫、插值／串接、重複或失效宣告、無法證明的來源都會失敗。
+
+可攜式模塊至少提供完整且格式正規的 `zh_TW`；本 repository 的一等模塊同時
+要求 `zh_TW` 與 `zh_CN`，並禁止兩個 catalog 出現 orphan。英文 key 與譯文
+不可為空或含控制字元，catalog 必須依 Unicode codepoint 排序、使用兩空格
+JSON 並只有一個結尾換行。`%1` 到 `%99`
+必須連續，譯文保留相同 placeholder multiset，呼叫端緊接的 `.arg()` 數量必須
+一致；目前 runtime 沒有 plural API，因此禁止 `%n`。一般 check 對 orphan
+提出警告，`--deny-orphans` 使其失敗；repository check 允許同 locale/key 的
+同值共享，但不同譯文是衝突錯誤。
+
+功能 owner 先凍結英文來源與動態來源 provenance，再把翻譯交給獨立 i18n
+subagent。該 subagent 只可修改目標模塊的 `translations/*.json` 與
+`i18n.sources.json`；不得改 QML/JS、manifest、版本、README 或測試來消除
+檢查錯誤，任何語意或來源歧義都必須退回功能 owner。
 
 ## 核心概念
 
@@ -93,9 +139,12 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 
 ## AI Agent Skills
 
-`.claude/skills/` 內含兩個 Claude Code project skills，讓這個專案裡的 agent 受協議約束：
+`.claude/skills/` 內含三個 Claude Code project skills，讓這個專案裡的
+agent 受協議約束：
 
 - **ii-module-author** — 開發紀律：命名規則、自包含、探針宣告、semver、發佈清單
+- **ii-module-i18n** — 翻譯隔離：只寫 catalog／動態來源 metadata，執行
+  target extract/check，歧義退回功能 owner
 - **ii-module-manage** — 安裝紀律：必跑 validate+check、Tier B 同意流程、exit code 對照、更新後 reapply
 
 > [!TIP]
@@ -223,11 +272,11 @@ HTTPS 位置（GitHub raw / Releases / 自架皆可）：
 
 ```text
 spec/            SPEC-1.0.md＋fixtures（規範與測試語料）
-tools/iimod/     Rust CLI（56 個單元測試＋21 個整合測試，涵蓋迷你 stock 樹與 host generation/lock 回歸）
+tools/iimod/     Rust CLI（含單元與整合測試，涵蓋翻譯、交易、host generation 與 lock 回歸）
 tools/release/   獨立 module / iimod CLI release build、verify 腳本
 .github/         namespaced tag release workflows 與 Pages release projection
-.claude/skills/  Claude Code project skills ×2
-skills/          portable skill copies ×2
+.claude/skills/  Claude Code project skills ×3
+skills/          portable skill copies ×3
 modules/         參考模塊（network_traffic）
 examples/        最小範例（hello_window）
 ```
