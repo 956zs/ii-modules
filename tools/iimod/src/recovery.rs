@@ -6,6 +6,7 @@ use anyhow::Result;
 
 use crate::exit::{self, bail};
 use crate::hostpatch;
+use crate::hoststate::{self, HostBundle, MutationMode};
 use crate::ops::{
     all_stock_targets, module_import_ids, project_enabled, recompose_all, write_index_projection,
 };
@@ -13,7 +14,7 @@ use crate::patch;
 use crate::paths;
 use crate::probe;
 use crate::qs;
-use crate::registry::{self, Lock, ModuleState, Registry};
+use crate::registry::{self, ModuleState, Registry};
 use crate::store;
 use crate::translations;
 
@@ -26,12 +27,13 @@ struct ReapplyIssue {
 }
 
 pub fn cmd_repair(id: Option<&str>) -> Result<()> {
-    let _lock = Lock::acquire()?;
+    let mutation = hoststate::mutation_preflight(MutationMode::Normal)?;
     let registry = registry::load()?;
     restore_one_module(id, &registry)?;
-    hostpatch::ensure_host(&|rel| registry.patches_for_file(rel))?;
+    hostpatch::ensure_host(mutation.host(), &|rel| registry.patches_for_file(rel))?;
     hostpatch::write_module_imports(&module_import_ids(&registry))?;
-    recompose_all(&registry, true)?;
+    recompose_all(mutation.host(), &registry, true)?;
+    mutation.activate_after_host_write()?;
     write_index_projection(&registry)?;
     let _ = qs::trigger_reload();
     println!("✓ repaired");
@@ -39,20 +41,21 @@ pub fn cmd_repair(id: Option<&str>) -> Result<()> {
 }
 
 pub fn cmd_reapply() -> Result<()> {
-    let _lock = Lock::acquire()?;
+    let mutation = hoststate::mutation_preflight(MutationMode::Reapply)?;
     let mut registry = registry::load()?;
     if registry.modules.is_empty() {
-        return reapply_empty_registry(&registry);
+        return reapply_empty_registry(&registry, &mutation);
     }
 
     let ii = paths::ii_root();
     let order = registry.topological_order()?;
     let mut issues = probe_modules(&mut registry, &order, &ii);
-    refresh_pristine_snapshots(&registry, &ii)?;
+    refresh_pristine_snapshots(mutation.host(), &registry, &ii)?;
     restore_surviving_payloads(&mut registry, &order, &mut issues)?;
-    recompose_surviving_patches(&mut registry, &mut issues)?;
+    recompose_surviving_patches(mutation.host(), &mut registry, &mut issues)?;
+    recompose_all(mutation.host(), &registry, true)?;
     remerge_translations(&mut registry, &order)?;
-    commit_reapply(&mut registry)?;
+    commit_reapply(&mut registry, &mutation)?;
     print_reapply_result(&issues);
     Ok(())
 }
@@ -73,10 +76,14 @@ fn restore_one_module(id: Option<&str>, registry: &Registry) -> Result<()> {
     Ok(())
 }
 
-fn reapply_empty_registry(registry: &Registry) -> Result<()> {
+fn reapply_empty_registry(
+    registry: &Registry,
+    mutation: &hoststate::MutationContext,
+) -> Result<()> {
     println!("no modules installed; ensuring host only if previously present");
-    if registry.host_version.is_some() {
-        hostpatch::ensure_host(&|_| Vec::new())?;
+    if registry.host_version.is_some() || paths::host_dir().exists() {
+        hostpatch::ensure_host(mutation.host(), &|_| Vec::new())?;
+        mutation.activate_after_host_write()?;
     }
     Ok(())
 }
@@ -160,8 +167,8 @@ fn reset_recovered_module(registry: &mut Registry, id: &str) {
     }
 }
 
-fn refresh_pristine_snapshots(registry: &Registry, ii: &Path) -> Result<()> {
-    for rel in all_stock_targets(registry, &[]) {
+fn refresh_pristine_snapshots(host: &HostBundle, registry: &Registry, ii: &Path) -> Result<()> {
+    for rel in all_stock_targets(host, registry, &[]) {
         let target = ii.join(&rel);
         if target.exists() {
             let current = std::fs::read_to_string(&target)?;
@@ -210,9 +217,13 @@ fn replace_module_dir(id: &str, src: &Path) -> Result<()> {
     Ok(())
 }
 
-fn recompose_surviving_patches(registry: &mut Registry, issues: &mut ReapplyIssues) -> Result<()> {
+fn recompose_surviving_patches(
+    host: &HostBundle,
+    registry: &mut Registry,
+    issues: &mut ReapplyIssues,
+) -> Result<()> {
     for _attempt in 0..2 {
-        match hostpatch::ensure_host(&|rel| registry.patches_for_file(rel)) {
+        match hostpatch::ensure_host(host, &|rel| registry.patches_for_file(rel)) {
             Ok(_) => return Ok(()),
             Err(e) if exit::code_of(&e) == exit::ANCHOR => {
                 let msg = format!("{e}");
@@ -254,8 +265,9 @@ fn remerge_translations(registry: &mut Registry, order: &[String]) -> Result<()>
     Ok(())
 }
 
-fn commit_reapply(registry: &mut Registry) -> Result<()> {
+fn commit_reapply(registry: &mut Registry, mutation: &hoststate::MutationContext) -> Result<()> {
     hostpatch::write_module_imports(&module_import_ids(registry))?;
+    mutation.activate_after_host_write()?;
     registry.host_version = Some(hostpatch::HOST_VERSION.to_string());
     registry::save(registry)?;
     write_index_projection(registry)?;
