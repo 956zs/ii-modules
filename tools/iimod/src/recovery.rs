@@ -46,6 +46,19 @@ pub fn cmd_reapply() -> Result<()> {
     if registry.modules.is_empty() {
         return reapply_empty_registry(&registry, &mutation);
     }
+    let previous_registry = registry.clone();
+    let previous_dicts = translations::load_registry_dicts(&previous_registry)?;
+    translations::validate_live_locales(
+        previous_registry
+            .modules
+            .iter()
+            .flat_map(|module| module.translation_keys.keys().cloned())
+            .chain(
+                previous_dicts
+                    .values()
+                    .flat_map(|dicts| dicts.keys().cloned()),
+            ),
+    )?;
 
     let ii = paths::ii_root();
     let order = registry.topological_order()?;
@@ -54,7 +67,7 @@ pub fn cmd_reapply() -> Result<()> {
     restore_surviving_payloads(&mut registry, &order, &mut issues)?;
     recompose_surviving_patches(mutation.host(), &mut registry, &mut issues)?;
     recompose_all(mutation.host(), &registry, true)?;
-    remerge_translations(&mut registry, &order)?;
+    remerge_translations(&previous_registry, &previous_dicts, &mut registry)?;
     commit_reapply(&mut registry, &mutation)?;
     print_reapply_result(&issues);
     Ok(())
@@ -250,17 +263,21 @@ fn anchor_owner(registry: &Registry, msg: &str) -> Option<String> {
         .find(|id| msg.contains(&format!("{id}/")))
 }
 
-fn remerge_translations(registry: &mut Registry, order: &[String]) -> Result<()> {
-    for id in order {
-        let module = registry.get(id).unwrap().clone();
-        if is_incompatible(module.state) {
-            continue;
-        }
-        let store_payload = store::store_path(id, &module.manifest.version);
-        let dicts = translations::load_module_dicts(&store_payload).unwrap_or_default();
-        let mut warn = Vec::new();
-        let owned = translations::merge(registry, id, &dicts, &mut warn)?;
-        registry.get_mut(id).unwrap().translation_keys = owned;
+fn remerge_translations(
+    previous: &Registry,
+    previous_dicts: &translations::RegistryDicts,
+    registry: &mut Registry,
+) -> Result<()> {
+    let mut warnings = Vec::new();
+    translations::reconcile(
+        previous,
+        previous_dicts,
+        registry,
+        &translations::RegistryDicts::new(),
+        &mut warnings,
+    )?;
+    for warning in warnings {
+        eprintln!("warning: {warning}");
     }
     Ok(())
 }
