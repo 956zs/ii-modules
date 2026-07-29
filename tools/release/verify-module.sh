@@ -83,6 +83,7 @@ PY
     WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ii-module-verify.XXXXXX")"
     trap cleanup EXIT
     "$IIMOD_BUILD_BIN" validate "$artifact_path"
+    "$IIMOD_BUILD_BIN" i18n check "$artifact_path" --locale zh_TW --locale zh_CN --deny-orphans
     run_with_fixture "$WORK_DIR" package "$IIMOD_BUILD_BIN" check "$artifact_path"
     printf 'module release verified: %s\n' "$release_dir"
 }

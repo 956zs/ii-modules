@@ -92,9 +92,11 @@ main() {
 
     cargo build --release --manifest-path "$IIMOD_MANIFEST"
     "$IIMOD_BUILD_BIN" validate "$MODULE_DIR"
+    "$IIMOD_BUILD_BIN" i18n check "$MODULE_DIR" --locale zh_TW --locale zh_CN --deny-orphans
     run_with_fixture "$WORK_DIR" module-dir "$IIMOD_BUILD_BIN" check "$MODULE_DIR"
     "$IIMOD_BUILD_BIN" pack --out "$artifact_path" --origin "$CANONICAL_MODULE_ORIGIN" "$MODULE_DIR"
     "$IIMOD_BUILD_BIN" validate "$artifact_path"
+    "$IIMOD_BUILD_BIN" i18n check "$artifact_path" --locale zh_TW --locale zh_CN --deny-orphans
     run_with_fixture "$WORK_DIR" module-package "$IIMOD_BUILD_BIN" check "$artifact_path"
     write_release_notes "$output_dir" "$module_id" "$module_version"
     write_single_artifact_checksum "$output_dir" "$artifact_name"
