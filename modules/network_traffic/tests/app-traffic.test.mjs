@@ -522,6 +522,7 @@ test('multi-monitor bars elect one accounting writer and keep readers read-only'
 test('pktz falls back through nethogs to ss without concurrent collectors', async () => {
   const source = await readFile(new URL('../AppTraffic.qml', import.meta.url), 'utf8')
   assert.match(source, /function startPktz\(\)/)
+  assert.doesNotMatch(source, /pktzStarted/)
   assert.match(source, /readonly property var pktzCandidates: AppTrafficLogic\.pktzCandidates\(Quickshell\.env\("HOME"\) \?\? ""\)/)
   assert.match(source, /command: AppTrafficLogic\.pktzCommand\(root\.pktzCandidates\[root\.pktzCandidateIndex\]\)/)
   assert.match(source, /function startNethogsFallback\(\)[\s\S]*pktz\.running = false/)
