@@ -8,6 +8,7 @@ use anyhow::Result;
 
 use crate::exit::{self, bail};
 use crate::hostpatch;
+use crate::hoststate::HostBundle;
 use crate::lint;
 use crate::manifest::{self, Manifest, Slot};
 use crate::patch::{self, PatchInstance};
@@ -160,14 +161,16 @@ pub(crate) fn check_deps_conflicts(m: &Manifest, registry: &Registry) -> Result<
 
 /// All patches for `rel` from host + registry (minus `exclude` module).
 pub(crate) fn full_patch_set(
+    host: &HostBundle,
     registry: &Registry,
     rel: &str,
     exclude: Option<&str>,
 ) -> Vec<PatchInstance> {
-    let mut set: Vec<PatchInstance> = hostpatch::host_patches()
-        .into_iter()
-        .filter(|(f, _)| *f == rel)
-        .map(|(_, p)| p)
+    let mut set: Vec<PatchInstance> = host
+        .patches
+        .iter()
+        .filter(|stored| stored.target == rel)
+        .map(|stored| stored.patch.clone())
         .collect();
     set.extend(
         registry
@@ -208,14 +211,17 @@ pub(crate) const HOST_FILES: [&str; 4] = [
 /// optional vertical-bar host target (only when the stock tree has it — older
 /// dots revisions do not, and its absence must not fail anything), plus all
 /// module patch targets.
-pub(crate) fn all_stock_targets(registry: &Registry, extra: &[String]) -> Vec<String> {
-    let mut files: Vec<String> = HOST_FILES.iter().map(|s| s.to_string()).collect();
-    if paths::ii_root()
-        .join(hostpatch::VERTICAL_BAR_FILE)
-        .is_file()
-    {
-        files.push(hostpatch::VERTICAL_BAR_FILE.to_string());
-    }
+pub(crate) fn all_stock_targets(
+    host: &HostBundle,
+    registry: &Registry,
+    extra: &[String],
+) -> Vec<String> {
+    let mut files: Vec<String> = host
+        .patches
+        .iter()
+        .filter(|stored| !stored.optional || paths::ii_root().join(&stored.target).is_file())
+        .map(|stored| stored.target.clone())
+        .collect();
     files.extend(registry.all_patched_files());
     files.extend(extra.iter().cloned());
     files.sort();
@@ -228,9 +234,13 @@ pub(crate) fn all_stock_targets(registry: &Registry, extra: &[String]) -> Vec<St
 
 /// Recompose every affected stock file (host files + all patch targets) from
 /// the registry's surviving patch sets. Dry-runs all files before writing any.
-pub(crate) fn recompose_all(registry: &Registry, write: bool) -> Result<Vec<String>> {
+pub(crate) fn recompose_all(
+    host: &HostBundle,
+    registry: &Registry,
+    write: bool,
+) -> Result<Vec<String>> {
     let ii = paths::ii_root();
-    let targets = all_stock_targets(registry, &[]);
+    let targets = all_stock_targets(host, registry, &[]);
     let mut planned: Vec<(PathBuf, String)> = Vec::new();
     let mut touched = Vec::new();
 
@@ -243,7 +253,7 @@ pub(crate) fn recompose_all(registry: &Registry, write: bool) -> Result<Vec<Stri
             continue;
         }
         let current = std::fs::read_to_string(&target)?;
-        let set = full_patch_set(registry, rel, None);
+        let set = full_patch_set(host, registry, rel, None);
         let composed = patch::recompose(&current, &set)?;
         if composed != current {
             planned.push((target, composed));

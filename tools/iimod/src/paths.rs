@@ -45,8 +45,24 @@ pub fn registry_path() -> PathBuf {
     state_root().join("registry.json")
 }
 
-pub fn lock_path() -> PathBuf {
+pub fn legacy_lock_path() -> PathBuf {
     state_root().join("lock")
+}
+
+pub fn mutation_lock_path() -> PathBuf {
+    state_root().join("mutation.lock.v2")
+}
+
+pub fn host_state_dir() -> PathBuf {
+    state_root().join("host")
+}
+
+pub fn host_current_path() -> PathBuf {
+    host_state_dir().join("current.json")
+}
+
+pub fn host_generations_dir() -> PathBuf {
+    host_state_dir().join("generations")
 }
 
 pub fn journal_path() -> PathBuf {
