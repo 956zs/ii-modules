@@ -43,6 +43,11 @@ fn write_stock_tree(ii: &Path) {
     )
     .unwrap();
     std::fs::write(ii.join("modules/ii/bar/BarGroup.qml"), "Item {}\n").unwrap();
+    std::fs::write(
+        ii.join("modules/common/Extra.qml"),
+        "Item { // ExtraAnchor\n}\n",
+    )
+    .unwrap();
     std::fs::create_dir_all(ii.join("modules/ii/verticalBar")).unwrap();
     std::fs::write(
         ii.join("modules/ii/verticalBar/VerticalBarContent.qml"),
@@ -160,6 +165,452 @@ fn hash_tree(root: &Path) -> BTreeMap<String, String> {
     map
 }
 
+fn sha256_bytes(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn rewrite_current_bundle(w: &World, generation: u64, protocol: u64) {
+    let state_host = w.root.join("state/host");
+    let current: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state_host.join("current.json")).unwrap()).unwrap();
+    let old_dir = state_host.join("generations").join(format!(
+        "{}-{}",
+        current["generation"].as_u64().unwrap(),
+        current["contentId"].as_str().unwrap()
+    ));
+    let module_host = std::fs::read(old_dir.join("assets/ModuleHost.qml")).unwrap();
+    let modules_config = std::fs::read(old_dir.join("assets/ModulesConfig.qml")).unwrap();
+    let patches: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(old_dir.join("patches.json")).unwrap()).unwrap();
+    let canonical = serde_json::to_vec(&serde_json::json!({
+        "generation": generation,
+        "protocolVersion": protocol,
+        "moduleHostQml": String::from_utf8_lossy(&module_host),
+        "modulesConfigQml": String::from_utf8_lossy(&modules_config),
+        "patches": patches,
+    }))
+    .unwrap();
+    let content_id = sha256_bytes(&canonical);
+    let dir = state_host
+        .join("generations")
+        .join(format!("{generation}-{content_id}"));
+    std::fs::create_dir_all(dir.join("assets")).unwrap();
+    std::fs::write(dir.join("assets/ModuleHost.qml"), &module_host).unwrap();
+    std::fs::write(dir.join("assets/ModulesConfig.qml"), &modules_config).unwrap();
+    let patch_bytes = serde_json::to_vec_pretty(&patches).unwrap();
+    std::fs::write(
+        dir.join("patches.json"),
+        [patch_bytes, b"\n".to_vec()].concat(),
+    )
+    .unwrap();
+    let manifest = serde_json::json!({
+        "generation": generation,
+        "protocolVersion": protocol,
+        "contentId": content_id,
+        "moduleHostSha256": sha256_bytes(&module_host),
+        "modulesConfigSha256": sha256_bytes(&modules_config),
+        "patchesSha256": sha256_bytes(&serde_json::to_vec(&patches).unwrap()),
+    });
+    std::fs::write(
+        dir.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest).unwrap() + "\n",
+    )
+    .unwrap();
+    std::fs::write(
+        state_host.join("current.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "generation": generation,
+            "protocolVersion": protocol,
+            "contentId": content_id,
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+}
+
+fn install_newer_host_bundle(w: &World) -> Vec<u8> {
+    let state_host = w.root.join("state/host");
+    let current_path = state_host.join("current.json");
+    let current: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&current_path).unwrap()).unwrap();
+    let old_dir = state_host.join("generations").join(format!(
+        "{}-{}",
+        current["generation"].as_u64().unwrap(),
+        current["contentId"].as_str().unwrap()
+    ));
+    let module_host = std::fs::read(old_dir.join("assets/ModuleHost.qml")).unwrap();
+    let mut modules_config = std::fs::read(old_dir.join("assets/ModulesConfig.qml")).unwrap();
+    modules_config.extend_from_slice(b"\n// persisted generation 3\n");
+    let patches: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(old_dir.join("patches.json")).unwrap()).unwrap();
+    let generation = 3_u64;
+    let protocol = current["protocolVersion"].as_u64().unwrap();
+    let canonical = serde_json::to_vec(&serde_json::json!({
+        "generation": generation,
+        "protocolVersion": protocol,
+        "moduleHostQml": String::from_utf8_lossy(&module_host),
+        "modulesConfigQml": String::from_utf8_lossy(&modules_config),
+        "patches": patches,
+    }))
+    .unwrap();
+    let content_id = sha256_bytes(&canonical);
+    let dir = state_host
+        .join("generations")
+        .join(format!("{generation}-{content_id}"));
+    std::fs::create_dir_all(dir.join("assets")).unwrap();
+    std::fs::write(dir.join("assets/ModuleHost.qml"), &module_host).unwrap();
+    std::fs::write(dir.join("assets/ModulesConfig.qml"), &modules_config).unwrap();
+    let patch_bytes = serde_json::to_vec_pretty(&patches).unwrap();
+    std::fs::write(
+        dir.join("patches.json"),
+        [patch_bytes, b"\n".to_vec()].concat(),
+    )
+    .unwrap();
+    let patch_canonical = serde_json::to_vec(&patches).unwrap();
+    let manifest = serde_json::json!({
+        "generation": generation,
+        "protocolVersion": protocol,
+        "contentId": content_id,
+        "moduleHostSha256": sha256_bytes(&module_host),
+        "modulesConfigSha256": sha256_bytes(&modules_config),
+        "patchesSha256": sha256_bytes(&patch_canonical),
+    });
+    std::fs::write(
+        dir.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest).unwrap() + "\n",
+    )
+    .unwrap();
+    let descriptor = serde_json::json!({
+        "generation": generation,
+        "protocolVersion": protocol,
+        "contentId": content_id,
+    });
+    std::fs::write(
+        current_path,
+        serde_json::to_string_pretty(&descriptor).unwrap() + "\n",
+    )
+    .unwrap();
+    modules_config
+}
+
+/// Simulate the released mutator ordering: acquire `$STATE/lock`, then load and
+/// write state/host bytes. The permanent PID-1 fence must stop it at step one.
+fn simulate_released_host_writer(w: &World) -> bool {
+    let lock_path = w.root.join("state/lock");
+    let holder = std::fs::read_to_string(&lock_path).unwrap_or_default();
+    let pid = holder.trim().parse::<u32>().ok();
+    if pid.is_some_and(|pid| Path::new(&format!("/proc/{pid}")).exists()) {
+        return false;
+    }
+    let _ = std::fs::remove_file(&lock_path);
+    std::fs::write(
+        w.ii().join("mod/iimp/ModulesConfig.qml"),
+        "// stale embedded ModulesConfig.qml\n",
+    )
+    .unwrap();
+    let registry_path = w.root.join("state/registry.json");
+    let mut registry: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&registry_path).unwrap()).unwrap();
+    registry["hostVersion"] = serde_json::Value::String("1.1.0".into());
+    std::fs::write(
+        registry_path,
+        serde_json::to_string_pretty(&registry).unwrap() + "\n",
+    )
+    .unwrap();
+    true
+}
+
+#[test]
+fn legacy_pid1_fence_blocks_released_host_downgrade() {
+    let w = World::new("host-downgrade");
+    let first = w.make_module("current_host", serde_json::json!({}));
+    w.expect(&["install", first.to_str().unwrap()], 0);
+
+    let host_path = w.ii().join("mod/iimp/ModulesConfig.qml");
+    let registry_path = w.root.join("state/registry.json");
+    let descriptor_path = w.root.join("state/host/current.json");
+    let host_before = std::fs::read(&host_path).unwrap();
+    let registry_before = std::fs::read(&registry_path).unwrap();
+    let descriptor_before = std::fs::read(&descriptor_path).unwrap();
+
+    assert_eq!(std::fs::read(w.root.join("state/lock")).unwrap(), b"1\n");
+    assert!(Path::new("/proc/1").exists(), "PID 1 must be live");
+    assert!(!simulate_released_host_writer(&w));
+    assert_eq!(std::fs::read(&host_path).unwrap(), host_before);
+    assert_eq!(std::fs::read(&registry_path).unwrap(), registry_before);
+    assert_eq!(std::fs::read(&descriptor_path).unwrap(), descriptor_before);
+}
+
+#[test]
+fn first_migration_adopts_exact_live_host_and_rejects_unknown_live_host() {
+    let matching = World::new("migration-match");
+    let module = matching.make_module("migration_mod", serde_json::json!({}));
+    matching.expect(&["install", module.to_str().unwrap()], 0);
+    std::fs::remove_file(matching.root.join("state/host/current.json")).unwrap();
+    matching.expect(&["disable", "migration_mod"], 0);
+    assert!(matching.root.join("state/host/current.json").exists());
+
+    let mismatch = World::new("migration-mismatch");
+    let module = mismatch.make_module("mismatch_mod", serde_json::json!({}));
+    mismatch.expect(&["install", module.to_str().unwrap()], 0);
+    std::fs::remove_file(mismatch.root.join("state/host/current.json")).unwrap();
+    std::fs::write(
+        mismatch.ii().join("mod/iimp/ModulesConfig.qml"),
+        "unknown live host\n",
+    )
+    .unwrap();
+    let registry_before = std::fs::read(mismatch.root.join("state/registry.json")).unwrap();
+    mismatch.expect(&["disable", "mismatch_mod"], 7);
+    assert_eq!(
+        std::fs::read(mismatch.root.join("state/registry.json")).unwrap(),
+        registry_before
+    );
+    mismatch.expect(&["reapply"], 0);
+    mismatch.expect(&["verify"], 0);
+}
+
+#[test]
+fn first_migration_rejects_stale_fence_version_before_same_version_noop() {
+    let w = World::new("migration-stale-version");
+    let module = w.make_module("same_version_mod", serde_json::json!({}));
+    w.expect(&["install", module.to_str().unwrap()], 0);
+    let current_path = w.root.join("state/host/current.json");
+    std::fs::remove_file(&current_path).unwrap();
+
+    let sentinel_path = w.ii().join("mod/iimp/.iimp-host");
+    let sentinel_before = std::fs::read(&sentinel_path).unwrap();
+    let host_targets = [
+        "shell.qml",
+        "modules/common/Config.qml",
+        "modules/ii/bar/BarContent.qml",
+        "settings.qml",
+        "modules/ii/verticalBar/VerticalBarContent.qml",
+    ];
+    let mut originals = Vec::new();
+    let mut expected_headers = 0;
+    let mut changed_headers = 0;
+    for rel in host_targets {
+        let path = w.ii().join(rel);
+        if !path.exists() {
+            continue;
+        }
+        let original = std::fs::read_to_string(&path).unwrap();
+        let mut rewritten = String::with_capacity(original.len());
+        for line in original.split_inclusive('\n') {
+            if line.contains("// >>> iimp host/") {
+                expected_headers += 1;
+                let changed = line.replace(" v2 >>>", " v1 >>>");
+                if changed != line {
+                    changed_headers += 1;
+                }
+                rewritten.push_str(&changed);
+            } else {
+                rewritten.push_str(line);
+            }
+        }
+        if rewritten != original {
+            originals.push((path.clone(), original.into_bytes()));
+            std::fs::write(path, rewritten).unwrap();
+        }
+    }
+    assert!(
+        expected_headers > 0,
+        "fixture must contain host fence headers"
+    );
+    assert_eq!(
+        changed_headers, expected_headers,
+        "every host fence header must become stale"
+    );
+    assert_eq!(std::fs::read(&sentinel_path).unwrap(), sentinel_before);
+
+    let out = w.expect(&["install", module.to_str().unwrap()], 7);
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("already installed"));
+    assert!(!current_path.exists());
+    assert_eq!(std::fs::read(&sentinel_path).unwrap(), sentinel_before);
+
+    for (path, bytes) in originals {
+        std::fs::write(path, bytes).unwrap();
+    }
+    let out = w.expect(&["install", module.to_str().unwrap()], 0);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("already installed"));
+    assert!(current_path.exists());
+    assert_eq!(std::fs::read(&sentinel_path).unwrap(), sentinel_before);
+}
+
+#[test]
+fn newer_generation_future_protocol_is_exit_10_without_mutation() {
+    let w = World::new("future-host-protocol");
+    let first = w.make_module("protocol_first", serde_json::json!({}));
+    w.expect(&["install", first.to_str().unwrap()], 0);
+    rewrite_current_bundle(&w, 3, 2);
+
+    let descriptor_path = w.root.join("state/host/current.json");
+    let descriptor_before = std::fs::read(&descriptor_path).unwrap();
+    let descriptor: serde_json::Value = serde_json::from_slice(&descriptor_before).unwrap();
+    assert_eq!(descriptor["protocolVersion"], 2);
+    let registry_before = std::fs::read(w.root.join("state/registry.json")).unwrap();
+    let module_host_before = std::fs::read(w.ii().join("mod/iimp/ModuleHost.qml")).unwrap();
+    let modules_config_before = std::fs::read(w.ii().join("mod/iimp/ModulesConfig.qml")).unwrap();
+
+    let second = w.make_module("protocol_second", serde_json::json!({}));
+    let out = w.expect(&["install", second.to_str().unwrap()], 10);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("protocolVersion") && stderr.contains("newer than supported"));
+    assert_eq!(std::fs::read(&descriptor_path).unwrap(), descriptor_before);
+    assert_eq!(
+        std::fs::read(w.root.join("state/registry.json")).unwrap(),
+        registry_before
+    );
+    assert_eq!(
+        std::fs::read(w.ii().join("mod/iimp/ModuleHost.qml")).unwrap(),
+        module_host_before
+    );
+    assert_eq!(
+        std::fs::read(w.ii().join("mod/iimp/ModulesConfig.qml")).unwrap(),
+        modules_config_before
+    );
+}
+
+#[test]
+fn newer_candidate_upgrades_older_descriptor() {
+    let w = World::new("candidate-upgrade");
+    let first = w.make_module("upgrade_first", serde_json::json!({}));
+    w.expect(&["install", first.to_str().unwrap()], 0);
+    rewrite_current_bundle(&w, 1, 1);
+    let second = w.make_module("upgrade_second", serde_json::json!({}));
+    w.expect(&["install", second.to_str().unwrap()], 0);
+    let current: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(w.root.join("state/host/current.json")).unwrap())
+            .unwrap();
+    assert_eq!(current["generation"], 2);
+    w.expect(&["verify"], 0);
+}
+
+#[test]
+fn stale_guard_aware_candidate_preserves_newer_host_on_install_and_reapply() {
+    let w = World::new("newer-host");
+    let first = w.make_module("first_mod", serde_json::json!({}));
+    w.expect(&["install", first.to_str().unwrap()], 0);
+    let newer_asset = install_newer_host_bundle(&w);
+
+    let second = w.make_module("second_mod", serde_json::json!({}));
+    w.expect(&["install", second.to_str().unwrap()], 0);
+    assert_eq!(
+        std::fs::read(w.ii().join("mod/iimp/ModulesConfig.qml")).unwrap(),
+        newer_asset
+    );
+    let descriptor: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(w.root.join("state/host/current.json")).unwrap())
+            .unwrap();
+    assert_eq!(descriptor["generation"], 3);
+
+    std::fs::remove_dir_all(w.ii()).unwrap();
+    write_stock_tree(&w.ii());
+    w.expect(&["reapply"], 0);
+    assert_eq!(
+        std::fs::read(w.ii().join("mod/iimp/ModulesConfig.qml")).unwrap(),
+        newer_asset
+    );
+    w.expect(&["verify"], 0);
+}
+
+#[test]
+fn host_tampering_is_reported_for_bundle_assets_sentinel_imports_and_fences() {
+    type TamperCase = (&'static str, Box<dyn Fn(&World)>);
+    let cases: Vec<TamperCase> = vec![
+        (
+            "bundle",
+            Box::new(|w| {
+                let current: serde_json::Value = serde_json::from_slice(
+                    &std::fs::read(w.root.join("state/host/current.json")).unwrap(),
+                )
+                .unwrap();
+                let dir = w.root.join("state/host/generations").join(format!(
+                    "{}-{}",
+                    current["generation"].as_u64().unwrap(),
+                    current["contentId"].as_str().unwrap()
+                ));
+                std::fs::write(dir.join("assets/ModuleHost.qml"), "tampered\n").unwrap();
+            }),
+        ),
+        (
+            "assets",
+            Box::new(|w| {
+                std::fs::write(w.ii().join("mod/iimp/ModulesConfig.qml"), "tampered\n").unwrap();
+            }),
+        ),
+        (
+            "sentinel",
+            Box::new(|w| {
+                std::fs::write(w.ii().join("mod/iimp/.iimp-host"), "{}\n").unwrap();
+            }),
+        ),
+        (
+            "imports",
+            Box::new(|w| {
+                std::fs::write(w.ii().join("mod/iimp/ModuleImports.qml"), "tampered\n").unwrap();
+            }),
+        ),
+        (
+            "fence",
+            Box::new(|w| {
+                let path = w.ii().join("shell.qml");
+                let text = std::fs::read_to_string(&path).unwrap();
+                std::fs::write(
+                    path,
+                    text.replace("ModuleHost {}", "ModuleHost { visible: false }"),
+                )
+                .unwrap();
+            }),
+        ),
+    ];
+    for (name, tamper) in cases {
+        let w = World::new(&format!("tamper-{name}"));
+        let module = w.make_module("tamper_mod", serde_json::json!({}));
+        w.expect(&["install", module.to_str().unwrap()], 0);
+        tamper(&w);
+        w.expect(&["verify"], 7);
+    }
+}
+
+#[test]
+fn module_only_patch_target_survives_toggle_and_reapply() {
+    let w = World::new("module-only-target");
+    let payload = w.make_module(
+        "extra_patcher",
+        serde_json::json!({
+            "patches": [{
+                "file": "modules/common/Extra.qml",
+                "op": "insert-after",
+                "anchor": "Item { // ExtraAnchor",
+                "content": "    property bool patched: true\n"
+            }]
+        }),
+    );
+    w.expect(
+        &["install", payload.to_str().unwrap(), "--allow-patches"],
+        0,
+    );
+    let target = w.ii().join("modules/common/Extra.qml");
+    assert!(std::fs::read_to_string(&target)
+        .unwrap()
+        .contains("extra_patcher/0"));
+    w.expect(&["disable", "extra_patcher"], 0);
+    assert!(!std::fs::read_to_string(&target)
+        .unwrap()
+        .contains("extra_patcher/0"));
+    w.expect(&["enable", "extra_patcher"], 0);
+    std::fs::remove_dir_all(w.ii()).unwrap();
+    write_stock_tree(&w.ii());
+    w.expect(&["reapply"], 0);
+    assert!(std::fs::read_to_string(&target)
+        .unwrap()
+        .contains("extra_patcher/0"));
+    w.expect(&["verify"], 0);
+}
+
 #[test]
 fn tier_a_install_uninstall_byte_clean() {
     let w = World::new("tier-a-clean");
@@ -175,6 +626,7 @@ fn tier_a_install_uninstall_byte_clean() {
     assert!(shell.contains("import qs.mod.iimp") && shell.contains("ModuleHost {}"));
     assert!(w.ii().join("mod/hello_widget/bar.qml").exists());
     assert!(w.ii().join("mod/iimp/ModuleHost.qml").exists());
+    assert!(w.ii().join("mod/iimp/ModulesConfig.qml").exists());
     let config = std::fs::read_to_string(w.root.join("shellconfig/config.json")).unwrap();
     assert!(config.contains("hello_widget"));
     let translations =
