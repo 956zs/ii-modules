@@ -1,110 +1,139 @@
-# memory_center — 記憶體中心
+# memory_center - 記憶體中心
 
-視覺化 RAM/swap 檢視與清理工具（Tier B，一個側欄磁貼補丁）。不是清單式監控看板：
-組成一目了然的比例條 + treemap 式程序方塊，外加兩個真正有用的清理動作。
+Tier B RAM/swap 檢視與清理工具。提供可隱藏的 bar 狀態、hover 組成摘要、
+RSS treemap 程序面板，以及需認證的 swap 整理與 page-cache 清理。
+
+側欄整合是一項功能，但由兩個 insert-only patches 組成：磁貼 delegate，以及
+編輯模式的新增／重新加入列。
+
+> [!WARNING]
+> 結束程序會送出 `SIGTERM`。整理 swap 與清除 cache 是需系統管理員認證的
+> 全系統操作；請先理解影響，不要把 cache 釋放量當成永久節省的記憶體。
+
+## 需求
+
+| 工具 | 用途 | 必要性 |
+|---|---|---|
+| `ps` | 面板開啟時取樣 top processes | `iimod check/install` 必要 |
+| `pkexec` | 執行需認證的 cleanup actions | `iimod check/install` 必要 |
+| shell polkit agent | 顯示 `pkexec` 認證 UI | stock ii 提供並由 probe 驗證 |
+| `sudo -A` | `pkexec` 非取消失敗時的一次 fallback | 可選，需 `SUDO_ASKPASS` |
+| `sh`, `sync`, `swapoff`, `swapon` | 執行 cleanup script | 使用對應 action 時需要 |
+| `id`, `kill` | 辨識使用者並送出 `SIGTERM` | 程序操作時需要 |
+
+模塊宣告 `exec` capability。它不會無提示重試或在背景靜默執行 privileged action。
+
+## 安裝
+
+從 repository 根目錄執行：
+
+```bash
+iimod validate modules/memory_center/
+iimod check modules/memory_center/
+iimod install modules/memory_center/ --allow-patches
+```
 
 ## 互動
 
 | 操作 | 效果 |
 |---|---|
-| hover bar 元件 | 彈窗：使用率、組成迷你條（應用程式／快取與緩衝／可用）、swap 一行 |
-| 點 bar 元件／側欄磁貼（或 IPC） | 開啟/關閉詳細面板 |
-| 面板：點程序方塊 | 自己的程序→武裝（變紅），再點一次→送 SIGTERM；別人的程序只顯示資訊 |
-| 面板：整理 swap | `swapoff -a && swapon -a`（需認證；swap 空或可用 RAM 不足時停用並附說明） |
-| 面板：清除快取 | `sync; echo 3 > /proc/sys/vm/drop_caches`（需認證） |
+| Hover bar 元件 | 顯示使用率、組成迷你條與 swap 摘要 |
+| 點擊 bar 元件、側欄磁貼或 IPC | 切換詳細面板 |
+| 點自己的程序方塊兩次 | 武裝後送出 `SIGTERM` |
+| 點別人的程序方塊 | 只顯示資訊，不提供結束動作 |
+| 整理 swap | 認證後執行 `swapoff -a && swapon -a` |
+| 清除快取 | 認證後執行 `sync; echo 3 > /proc/sys/vm/drop_caches` |
 
-Bar 元件顏色跟隨 Material You：正常為文字色，使用率超過警示門檻（預設 85%，可調）
-後線性漂向 error 色——即使關掉百分比只留圖示，壓力狀態仍看得到。
+IPC 入口：
 
-## 隱藏 bar 元件（省 bar 空間）
+```bash
+qs -c ii ipc --any-display call memory_center toggle
+```
 
-多模塊同時佔 bar 右區時空間吃緊，且 stock 的 Resources 元件本來就有記憶體儀表。
-設定 `showBar: false`（設定 app 有開關）即可隱藏 bar 藥丸——host layout 會跳過
-不可見子項，不留幽靈間距。IPC handler 與面板 LazyLoader 都掛在 bar entry 內、
-不隨可見性銷毀，面板仍可從側欄磁貼或 IPC 開啟。bar 元件隱藏且面板關閉時
-`/proc/meminfo` 輪詢完全停止，重新開啟面板時立即補採一次樣。
+## Bar 與側欄
 
-## 側欄磁貼（Tier B 補丁）
+`showBar: false` 會讓 host layout 跳過 bar 元件，不留下空白。IPC handler 與 detail
+panel 仍可使用；bar 隱藏且面板關閉時，`/proc/meminfo` 輪詢也會停止。
 
-安裝時在 stock 的 `AndroidToggleDelegateChooser.qml`（`antiFlashbang` 錨點前）
-插入一個 `DelegateChoice`，包裝 stock `AndroidQuickToggleButton`（圖示
-`memory`），點擊經 `execDetached` 呼叫本模塊 IPC 開啟面板——manifest 宣告
-`exec` 的另一個原因。多個模塊可在同一錨點並存（依模塊 id 排序）。
-
-1.2 起，加入或重新加入磁貼的主要方式是進入快速開關的**編輯模式**。當
-`memory_center` 尚未設定時，記憶體磁貼會出現在分隔線下方的「未使用」區；
-點一下即透過 stock `AndroidQuickToggleButton` 流程加入，並立刻從未使用區消失。
-停用後也可用同一路徑加回，不需手改設定檔。
-
-若舊版 shell 的編輯器無法使用，可退回手動把下列項目加入
-`~/.config/illogical-impulse/config.json` 的
-`sidebar.quickToggles.android.toggles` 陣列（`size: 2` 可換寬版，顯示名稱）：
+快速開關編輯模式會在磁貼缺席時，於「未使用」區提供 `memory_center`。舊版 shell
+可手動把以下項目加入 `sidebar.quickToggles.android.toggles`：
 
 ```json
 {"type": "memory_center", "size": 1}
 ```
 
-設定 app 的 **Modules → Memory Center** 頁也保留這行作為手動備援。移除磁貼即從
-陣列刪掉該項；`iimod uninstall` 後殘留的該項只會被 DelegateChooser 靜默略過。
-
-## 誠實的組成分類
-
-疊加條的三段不是把 `Cached+Buffers+SReclaimable` 加起來（`Cached` 含不可回收的
-shmem，直接相加會重複計算、高估可回收量），而是恆等式拆分：
-
-```
-應用程式（使用中） = MemTotal − MemAvailable   ← 核心真正給不出來的部分
-快取與緩衝（可回收）= MemAvailable − MemFree    ← 壓力下核心會回收的 page cache/buffers/slab
-可用               = MemFree
-```
-
-三段總和恆等於 `MemTotal`，比例條永遠不說謊。程序方塊為 flow-treemap：
-列高∝該列 RSS 佔比、方塊寬∝列內佔比，**面積全域正比於 RSS**；
-超出設定數量的長尾摺疊進「其他」。
-
-## 誠實的 drop_caches 說明
-
-快取是效能的朋友：核心在記憶體吃緊時本來就會自動回收快取，`drop_caches`
-不會「變出」可用記憶體，主要用途是量測（benchmark 前歸零快取狀態）。
-面板照做也照說——執行後重新取樣並回報 **實測** 的 `MemFree` 增量，
-不假裝這是省下來的記憶體。「整理 swap」則在記憶體壓力解除後把滯留 swap 的
-頁面搬回 RAM，這是真正有感的動作；當 swap 為空或可用 RAM < swap 佔用
-（swapoff 會反覆換頁）時按鈕停用並以 tooltip 說明原因。
-
-## Root 認證機制
-
-清理動作經 `pkexec sh -c '…'` 執行：illogical-impulse shell **內建 polkit
-agent**（`modules/ii/polkit`，`module.json` 有對應 probe），會彈出全螢幕認證
-對話框。pkexec 失敗（且非使用者按取消，exit 126）時退回嘗試一次
-`sudo -A sh -c '…'`（askpass，需自行設定 `SUDO_ASKPASS`）；兩者都失敗則把
-stderr 原文顯示在面板內。不重試、不背景靜默執行。
-
-## 資料來源與成本
-
-- `/proc/meminfo`：FileView 直讀（零 capability 語意；預設 2 秒，bar 與彈窗共用）。
-- `ps -eo pid,euser,rss,comm --sort=-rss`：**只在面板開啟時** 輪詢（預設 4 秒），
-  關閉即停。kernel thread（RSS 0）過濾。
-- SIGTERM 只提供給 `euser == $USER` 的程序；kill 用 `kill -15`，無 root。
-
-## 安裝
-
-```bash
-iimod validate memory_center/
-iimod check memory_center/
-iimod install memory_center/ --allow-patches   # Tier B：側欄磁貼補丁需明示允許
-```
-
-測試鉤子：`qs -c ii ipc --any-display call memory_center toggle` 開關面板。
+移除磁貼與卸載模塊是兩件事。卸載後，殘留的 config 項目只會被 stock delegate
+忽略；建議一併從快速開關設定移除。
 
 ## 設定
 
-`~/.config/illogical-impulse/modules/memory_center.json`：
+設定檔位於：
 
-| Key | 預設 | 說明 |
-|---|---|---|
-| `showBar` | `true` | 顯示 bar 元件；關閉省 bar 空間，面板仍可從側欄磁貼／IPC 開啟 |
-| `meminfoInterval` | 2000 | /proc/meminfo 輪詢間隔（毫秒） |
-| `procInterval` | 4000 | 面板開啟時 ps 輪詢間隔（毫秒） |
-| `showBarPercent` | `true` | bar 上顯示百分比（關閉只留圖示） |
-| `blockCount` | 12 | 面板程序方塊數，長尾摺疊進「其他」 |
-| `warnPercent` | 85 | 使用率超過此值 bar 開始警示變色 |
+```text
+~/.config/illogical-impulse/modules/memory_center.json
+```
+
+| Key | 類型 | 預設 | 範圍 | 說明 |
+|---|---|---:|---:|---|
+| `showBar` | boolean | `true` | - | 顯示 bar 元件 |
+| `meminfoInterval` | integer | `2000` | 500-10000 ms | `/proc/meminfo` 輪詢間隔 |
+| `procInterval` | integer | `4000` | 1000-15000 ms | 面板開啟時的 `ps` 間隔 |
+| `showBarPercent` | boolean | `true` | - | 在 bar 顯示百分比 |
+| `blockCount` | integer | `12` | 4-24 | 程序方塊數量，長尾摺疊為「其他」 |
+| `warnPercent` | integer | `85` | 50-100% | 開始向 error 色過渡的門檻 |
+
+## 資料與行為
+
+### 記憶體組成
+
+模塊使用可驗證的恆等式，不直接相加可能重疊的 `Cached`、`Buffers` 與
+`SReclaimable`：
+
+```text
+應用程式（使用中） = MemTotal - MemAvailable
+快取與緩衝（可回收） = MemAvailable - MemFree
+可用 = MemFree
+```
+
+三段總和恆等於 `MemTotal`。程序 flow-treemap 的方塊面積全域正比於 RSS，超出
+`blockCount` 的長尾合併成「其他」。
+
+### Cleanup actions
+
+`drop_caches` 主要適合 benchmark 前歸零 cache 狀態；Linux 本來會在記憶體壓力下
+回收 cache。模塊執行後重新取樣並顯示實測 `MemFree` 增量，不宣稱那是永久節省。
+
+整理 swap 會把 swap pages 搬回 RAM。swap 為空，或 `MemAvailable` 小於 swap
+使用量時，按鈕會停用以避免反覆換頁。
+
+認證先嘗試 `pkexec sh -c ...`。使用者取消（exit 126）時立即停止；其他失敗才嘗試
+一次 `sudo -A sh -c ...`，兩者失敗時在面板顯示錯誤。
+
+### 取樣成本
+
+- `/proc/meminfo` 由 `FileView` 讀取，bar 與 popup 共用。
+- `ps -eo pid,euser,rss,comm --sort=-rss` 只在面板開啟時執行。
+- kernel threads（RSS 0）會被過濾。
+- 只有 `euser == $USER` 的程序能從面板送出 `kill -15`。
+
+## 相容性與限制
+
+模塊在 dots commit `446504ad42`、Quickshell `0.2.1` 測試。兩個 sidebar patches
+依賴 stock delegate 與 unused-row 錨點；上游改動錨點時，`iimod check` 會拒絕套用。
+
+Treemap 顯示 RSS，不等於 process 的完整 PSS 或所有 shared-memory 成本。Cleanup
+結果受當時 workload、kernel reclaim 與 swap 狀態影響。
+
+## 卸載與資料
+
+```bash
+iimod uninstall memory_center
+```
+
+卸載會移除 bar/side-panel integration 並還原 stock QML，但不會刪除：
+
+```text
+~/.config/illogical-impulse/modules/memory_center.json
+```
+
+不再需要設定時可由使用者自行移除該檔，並從 sidebar quick-toggle config 刪除殘留項目。
