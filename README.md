@@ -53,6 +53,14 @@ iimod update             # 全部更新（Tier B 更新需再次 --allow-patches
 
 設定 app（`Ctrl+Super+,`）會多出 **Modules** 頁：開關模塊、看各模塊設定。
 
+`iimod` 1.2.0+ 第一次執行 mutating command 時會在
+`~/.local/share/iimp/lock` 安裝永久 legacy fence，並改由
+`mutation.lock.v2` 協調新版交易。這會讓 1.1.x 等舊 binary 在任何 host
+寫入前失敗；若舊 CLI 顯示 `another iimod is running (pid 1)`，請升級 CLI，
+**不要刪除 lock**。權威 host generation 與不可變 bundle 位於
+`~/.local/share/iimp/host/`，`verify` 會檢查 bundle、live assets、sentinel、
+imports 與 host fences，避免舊 UI 被覆寫後仍誤報 intact。
+
 ## 快速開始（模塊作者）
 
 ```bash
@@ -74,7 +82,8 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 | **Tier B 補丁模塊** | 以結構化 insert-only 補丁修改 stock 檔；安裝需 `--allow-patches` 明確同意 |
 | **探針（probe）** | ii 沒有版本號——相容性用「檔案存在／包含字面字串」直接驗證 API 表面 |
 | **圍欄重組引擎** | 所有補丁包在 `// >>> iimp id/n >>>` 圍欄內；每次變更從乾淨基底重算全部，安裝順序不影響結果 |
-| **母本庫（store）** | 完整狀態存在 `~/.local/share/iimp/`（rsync 清除區之外）；`reapply` 隨時可整批重建 |
+| **母本庫（store）** | 完整模塊狀態存在 `~/.local/share/iimp/`（rsync 清除區之外）；`reapply` 隨時可整批重建 |
+| **Host generation** | `iimod` 1.2.0+ 以不可變 generation bundle 保存 host QML/圍欄；舊 binary 在寫入前被永久 legacy lock fence 阻擋，較舊的新協定 binary 也不得降級 host |
 | **capabilities** | 模塊必須誠實宣告 exec/network/filesystem-write/dbus；靜態 lint 交叉查核，不符拒裝 |
 
 完整規格：[`spec/SPEC-1.0.md`](spec/SPEC-1.0.md)。
@@ -94,14 +103,26 @@ iimod pack my_widget/         # 產出 my_widget-0.1.0.iimod 分享給朋友
 
 ## Release workflow（獨立產品版本）
 
-CLI 與每個模塊都是獨立產品，不共用版本號或 GitHub Release：
+CLI 與每個模塊都是獨立產品，不共用版本號或 GitHub Release。日常發布只需使用單一入口；它會從 manifest/Cargo 自動推導版本與 tag，先完整建置、驗證，再於明確指定 `--push` 時建立 annotated tag 並推送以觸發 GitHub Actions：
+
+```bash
+# 本機完整 dry-run，不建 tag
+tools/release/publish.sh module animation_tuner
+tools/release/publish.sh cli
+
+# 已合併至乾淨且同步的 main 後正式發布
+tools/release/publish.sh module animation_tuner --push
+tools/release/publish.sh cli --push
+```
+
+`--push` 要求工作樹乾淨、目前分支為 `main`，且 `HEAD` 精確等於 `origin/main`；本地或遠端已有同名 tag 也會拒絕。只需在 dirty 開發樹試跑時使用 `--allow-dirty`，它不能與 `--push` 並用。
 
 | 產品 | Tag | Release 內容 |
 |---|---|---|
 | 模塊 | `module/<id>/v<semver>` | `<id>-<semver>.iimod`、`SHA256SUMS` |
 | iimod CLI | `iimod/v<semver>` | `iimod-linux-x86_64`、`SHA256SUMS` |
 
-每個 namespaced tag 只建置並發布對應產品，Release 一律不取代 repository-wide Latest。正式 release 只從已存在且指向目前 commit 的 tag 產生，例如：
+每個 namespaced tag 只建置並發布對應產品，Release 一律不取代 repository-wide Latest。正式 Release 由 `publish.sh --push` 處理。底層機制是建立一個已存在且指向目前 commit 的 namespaced tag；以下手動 tag 指令只供維護／故障排查，不是日常發布流程：
 
 ```bash
 git tag module/network_traffic/v1.5.0
@@ -120,14 +141,7 @@ Pages 會在 Release 變更後掃描所有 namespaced Releases，驗證精確資
 
 因此合併模塊版本 bump 只會更新原始碼 catalog；對應的 `module/<id>/v<version>` Release 成功後，網站才會啟用下載。
 
-首次啟用此流程時，建議先發布目前 Cargo 版本的 CLI，再發布模塊。Pages projection 會按目前存在的穩定 Releases 完整重建輸出：尚無 CLI 時不提供穩定 binary，尚無模塊時則輸出合法的空索引；刪除 Release 也會在下一次部署移除對應產品。以目前版本為例：
-
-```bash
-git tag iimod/v1.1.0
-git push origin iimod/v1.1.0
-git tag module/network_traffic/v1.5.0
-git push origin module/network_traffic/v1.5.0
-```
+首次啟用此流程時，建議先以 `tools/release/publish.sh cli --push` 發布目前 Cargo 版本的 CLI，再以 `tools/release/publish.sh module <id> --push` 發布模塊。Pages projection 會按目前存在的穩定 Releases 完整重建輸出：尚無 CLI 時不提供穩定 binary，尚無模塊時則輸出合法的空索引；刪除 Release 也會在下一次部署移除對應產品。
 
 ### Legacy `v1.4.0` 更新來源遷移
 
@@ -209,7 +223,7 @@ HTTPS 位置（GitHub raw / Releases / 自架皆可）：
 
 ```text
 spec/            SPEC-1.0.md＋fixtures（規範與測試語料）
-tools/iimod/     Rust CLI（50 tests：單元＋對迷你 stock 樹的整合矩陣）
+tools/iimod/     Rust CLI（56 個單元測試＋21 個整合測試，涵蓋迷你 stock 樹與 host generation/lock 回歸）
 tools/release/   獨立 module / iimod CLI release build、verify 腳本
 .github/         namespaced tag release workflows 與 Pages release projection
 .claude/skills/  Claude Code project skills ×2
