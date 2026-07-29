@@ -2,6 +2,7 @@ mod commands;
 mod doctor;
 mod exit;
 mod hostpatch;
+mod hoststate;
 mod install;
 mod lint;
 mod manifest;
