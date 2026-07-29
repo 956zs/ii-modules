@@ -206,10 +206,10 @@
         "zh_CN": "屏幕使用时间"
       },
       "description": {
-        "en_US": "Phone-style screen time tracking. Focus accounting via Quickshell's native ToplevelManager (event-driven, pauses while locked, suspend gaps not counted): today's per-app seconds, hourly histogram, and a 30-day daily history. A separate 'AI work time' dimension samples the CPU of agent process trees (claude/codex by default) every 10s and counts sessions actually working — even unfocused or locked — with parallel-session peak and sum. Bar pill with today's total and a hover popup (top apps, yesterday comparison, AI work time); detail panel via IPC with hourly/7-day/30-day charts, per-app ranking, and an AI section; optional sidebar quick-toggle tile (Tier B patch) that opens the detail panel.",
-        "zh_TW": "手機風格的螢幕使用時間統計。以 Quickshell 原生 ToplevelManager 做焦點記帳（事件驅動、鎖屏暫停、休眠時段不入帳）：今日各應用秒數、每小時直方圖、30 天每日歷史。另有獨立的「AI 工作時長」維度：每 10 秒取樣 agent 程序樹（預設 claude/codex）的 CPU，統計真正在工作的 session——即使未聚焦甚至鎖屏——含並行峰值與合計。Bar 藥丸顯示今日總時長，hover 彈窗含 Top 應用、昨日比較與 AI 工作時長；IPC 開啟詳情面板（時段/7 天/30 天圖表、應用排行與 AI 區塊）；可選側欄快速開關磁貼（Tier B 補丁），點擊開啟詳情面板。"
+        "en_US": "Phone-style screen time tracking with Daily and Trends tabs. Focus accounting via Quickshell's native ToplevelManager (event-driven, pauses while locked, suspend gaps not counted) keeps a browsable 30-day history. Daily shows a selected day's total, app ranking, AI work summary, and today's hourly histogram. Trends shows recorded-complete-day averages with coverage and previous-period comparison, honest missing-day charts, and a Monday-to-Sunday hourly heatmap accumulated from v1.3 onward. A separate AI work-time dimension samples agent process trees even while unfocused or locked. Bar pill, IPC detail panel, and optional Tier B sidebar tile included.",
+        "zh_TW": "手機風格的螢幕使用時間統計，詳情分成「每日／趨勢」。以 Quickshell 原生 ToplevelManager 做焦點記帳（事件驅動、鎖屏暫停、休眠時段不入帳），保留可瀏覽的 30 天歷史。「每日」顯示選定日期總時長、應用排行、AI 工作摘要與今日時段圖；「趨勢」顯示有紀錄完整日平均、覆蓋率、前期比較、誠實標示缺日的圖表，以及從 1.3 起累積的週一至週日時段熱力圖。另有獨立 AI 工作時長維度，即使未聚焦或鎖屏仍會取樣 agent 程序樹。含 Bar 藥丸、IPC 詳情面板與可選 Tier B 側欄磁貼。"
       },
-      "sourceVersion": "1.2.1",
+      "sourceVersion": "1.3.0",
       "authors": [
         "nlcat"
       ],
