@@ -1665,11 +1665,13 @@ fn is_regex_start(source: &str, text: &str, slash: usize) -> Result<bool> {
         word_start -= 1;
     }
     let keyword = &text[word_start..=previous_index];
-    Ok(matches!(keyword, "return" | "throw" | "case" | "else")
-        && bytes[..word_start]
-            .iter()
-            .rfind(|byte| !byte.is_ascii_whitespace())
-            .is_none_or(|byte| *byte != b'.'))
+    Ok(matches!(
+        keyword,
+        "return" | "throw" | "case" | "else" | "typeof" | "void" | "delete"
+    ) && bytes[..word_start]
+        .iter()
+        .rfind(|byte| !byte.is_ascii_whitespace())
+        .is_none_or(|byte| *byte != b'.'))
 }
 
 fn closes_control_header(source: &str, text: &str, close: usize) -> Result<bool> {

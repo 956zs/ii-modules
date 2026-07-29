@@ -754,6 +754,34 @@ fn shared_same_value_translations_survive_uninstall_in_either_order_until_last_r
 }
 
 #[test]
+fn preexisting_same_value_user_translation_remains_unowned_after_install_and_uninstall() {
+    let w = World::new("preexisting-same-value-user-translation");
+    let payload = w.make_module("same_value_candidate", serde_json::json!({}));
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Existing greeting": "既有值"}),
+    );
+    let live = w.root.join("shellconfig/translations/zh_TW.json");
+    std::fs::create_dir_all(live.parent().unwrap()).unwrap();
+    std::fs::write(
+        &live,
+        serde_json::to_string_pretty(&serde_json::json!({"Existing greeting": "既有值"})).unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+    assert!(w.registry()["modules"][0]["translationKeys"]
+        .as_object()
+        .unwrap()
+        .is_empty());
+
+    w.expect(&["uninstall", "same_value_candidate"], 0);
+    assert_eq!(w.translations("zh_TW")["Existing greeting"], "既有值");
+}
+
+#[test]
 fn uninstall_repairs_pre_migration_exclusive_translation_records() {
     let w = World::new("pre-migration-exclusive");
     let first = w.make_module("legacy_first", serde_json::json!({}));
@@ -908,6 +936,7 @@ fn reapply_rebuilds_shared_translation_references() {
     w.expect(&["install", first.to_str().unwrap()], 0);
     w.expect(&["install", second.to_str().unwrap()], 0);
     let mut registry = w.registry();
+    registry["schemaVersion"] = serde_json::json!(1);
     for module in registry["modules"].as_array_mut().unwrap() {
         module["translationKeys"] = serde_json::json!({});
     }
@@ -1059,6 +1088,158 @@ fn uninstall_rolls_back_when_translation_write_fails_mid_transaction() {
     );
     assert!(live_module.join("bar.qml").is_file());
     assert!(stored_module.join("bar.qml").is_file());
+}
+
+#[test]
+fn reapply_rolls_back_all_state_when_later_translation_write_fails() {
+    let w = World::new("translation-reapply-write-failure");
+    let payload = w.make_module(
+        "reapply_write_failure",
+        serde_json::json!({
+            "patches": [{
+                "file": "modules/ii/bar/BarContent.qml",
+                "op": "insert-before",
+                "anchor": "            // Weather",
+                "content": "            ReapplyWriteFailure {}\n"
+            }]
+        }),
+    );
+    w.write_module_dict(
+        &payload,
+        "zh_CN",
+        serde_json::json!({"Managed key": "简体值"}),
+    );
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Managed key": "繁體值"}),
+    );
+    w.expect(
+        &["install", payload.to_str().unwrap(), "--allow-patches"],
+        0,
+    );
+
+    std::fs::write(
+        w.ii().join("modules/ii/bar/BarContent.qml"),
+        "Item {\n    property string updatedStock: \"before failed reapply\"\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        w.ii().join("mod/reapply_write_failure/bar.qml"),
+        "Item { property string localState: \"before failed reapply\" }\n",
+    )
+    .unwrap();
+    for locale in ["zh_CN", "zh_TW"] {
+        std::fs::write(
+            w.root
+                .join("shellconfig/translations")
+                .join(format!("{locale}.json")),
+            "{}\n",
+        )
+        .unwrap();
+    }
+    std::fs::create_dir(w.root.join("shellconfig/translations/zh_TW.json.tmp")).unwrap();
+
+    let ii_before = hash_tree(&w.ii());
+    let shellconfig_before = hash_tree(&w.root.join("shellconfig"));
+    let store_before = hash_tree(&w.root.join("state/store"));
+    let pristine_before = hash_tree(&w.root.join("state/pristine"));
+    let host_state_before = hash_tree(&w.root.join("state/host"));
+    let registry_before = std::fs::read(w.root.join("state/registry.json")).unwrap();
+
+    w.expect(&["reapply"], 1);
+
+    assert_eq!(hash_tree(&w.ii()), ii_before, "live ii tree changed");
+    assert_eq!(
+        hash_tree(&w.root.join("shellconfig")),
+        shellconfig_before,
+        "translation, index, or config projection changed"
+    );
+    assert_eq!(
+        hash_tree(&w.root.join("state/store")),
+        store_before,
+        "immutable store changed"
+    );
+    assert_eq!(
+        hash_tree(&w.root.join("state/pristine")),
+        pristine_before,
+        "pristine stock snapshots changed"
+    );
+    assert_eq!(
+        hash_tree(&w.root.join("state/host")),
+        host_state_before,
+        "host projection state changed"
+    );
+    assert_eq!(
+        std::fs::read(w.root.join("state/registry.json")).unwrap(),
+        registry_before,
+        "registry changed"
+    );
+}
+
+#[test]
+fn reapply_rolls_back_host_state_when_registry_load_fails_after_preflight() {
+    let w = World::new("reapply-early-registry-failure");
+    std::fs::create_dir_all(w.root.join("state")).unwrap();
+    std::fs::write(w.root.join("state/registry.json"), "{not json\n").unwrap();
+    assert!(!w.root.join("state/host").exists());
+
+    w.expect(&["reapply"], 7);
+
+    assert!(
+        !w.root.join("state/host").exists(),
+        "preflight host state survived a later registry failure"
+    );
+}
+
+#[test]
+fn empty_registry_reapply_rolls_back_host_state_after_projection_failure() {
+    let w = World::new("reapply-empty-registry-rollback");
+    let payload = w.make_module("empty_reapply_seed", serde_json::json!({}));
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+    w.expect(&["uninstall", "empty_reapply_seed"], 0);
+    assert!(w.registry()["modules"].as_array().unwrap().is_empty());
+
+    rewrite_current_bundle(&w, 1, 1);
+    let host_state = w.root.join("state/host");
+    let current: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(host_state.join("current.json")).unwrap()).unwrap();
+    let authoritative = format!(
+        "{}-{}",
+        current["generation"].as_u64().unwrap(),
+        current["contentId"].as_str().unwrap()
+    );
+    for entry in std::fs::read_dir(host_state.join("generations"))
+        .unwrap()
+        .flatten()
+    {
+        if entry.file_name() != authoritative.as_str() {
+            std::fs::remove_dir_all(entry.path()).unwrap();
+        }
+    }
+    std::fs::write(w.ii().join("shell.qml"), "ShellRoot {}\n").unwrap();
+
+    let ii_before = hash_tree(&w.ii());
+    let host_state_before = hash_tree(&host_state);
+    let registry_before = std::fs::read(w.root.join("state/registry.json")).unwrap();
+
+    w.expect(&["reapply"], 8);
+
+    assert_eq!(
+        hash_tree(&w.ii()),
+        ii_before,
+        "live host projection changed"
+    );
+    assert_eq!(
+        hash_tree(&host_state),
+        host_state_before,
+        "durable host state changed"
+    );
+    assert_eq!(
+        std::fs::read(w.root.join("state/registry.json")).unwrap(),
+        registry_before,
+        "empty registry changed"
+    );
 }
 
 #[test]

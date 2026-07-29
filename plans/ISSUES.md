@@ -3,7 +3,10 @@
 ## Module i18n consistency
 
 - ✅ P1 resolved: Registry v2 translation ownership now records contributor references, preserves same-value sharers and user edits, validates immutable store references, and makes uninstall rollback transactional.
+- ✅ P1 Codex follow-up resolved: `reapply` now snapshots durable host state before preflight and journals stock/pristine, live/store payloads, host projections, dictionaries, registry, index, and config. Later-locale, empty-registry projection, and post-preflight registry failures restore the complete pre-transaction state.
+- ✅ P1 Codex follow-up resolved: Installing a contributor whose value equals an existing unmanaged user translation no longer claims or later deletes that entry; references require a newly projected key, prior managed evidence, or schema-v1 legacy repair.
 - ✅ P1 resolved: Scanner review regressions cover template interpolation, nested `.arg()` arguments, unrelated grouped postfix calls, expression-keyword regexes, control-flow statement regexes, regex character classes, and division expressions.
+- ✅ P2 Codex follow-up resolved: Regex recognition now also covers whole-word non-member `typeof`, `void`, and `delete` prefix expressions without regressing control-flow or division contexts.
 - ✅ P2 resolved: All first-party modules now pass exact canonical `zh_TW` and `zh_CN` checks with no orphans; CI and release source/package workflows enforce the same policy.
 
 ## Concurrent iimod transactions

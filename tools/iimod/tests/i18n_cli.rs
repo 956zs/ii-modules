@@ -156,6 +156,9 @@ fn extract_ignores_regex_literals_after_expression_keywords() {
     const returned = function() { return /Translation.tr("Ignored return")/; }
     try { throw /Translation.tr("Ignored throw")/; } catch (error) {}
     switch (value) { case /Translation.tr("Ignored case")/: break; }
+    const typed = typeof /Translation.tr("Ignored typeof")/
+    const discarded = void /Translation.tr("Ignored void")/
+    const deleted = delete /Translation.tr("Ignored delete")/.unused
     const ratio = total / count / divisor
     const previousRegex = (/Translation.tr("Ignored previous regex")/).test(value)
     return returned() && ratio && previousRegex

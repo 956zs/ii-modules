@@ -1,7 +1,12 @@
+import qs.modules.ii.bar.weather
 import QtQuick
 import QtQuick.Layouts
 
 Item {
+    id: root
+
+    readonly property int centerSideModuleWidth: 360
+
     RippleButton {
         id: rightSidebarButton
 
@@ -19,5 +24,23 @@ Item {
     RowLayout {
             // Weather
             Loader {}
+    }
+
+    Row {
+        Item {
+            id: leftCenterGroup
+        }
+
+        Item {
+            id: rightCenterGroup
+
+            RowLayout {
+                id: rightCenterGroupContent
+
+                ClockWidget {
+                    Layout.fillWidth: true
+                }
+            }
+        }
     }
 }

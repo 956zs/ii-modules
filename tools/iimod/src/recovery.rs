@@ -15,7 +15,7 @@ use crate::paths;
 use crate::probe;
 use crate::qs;
 use crate::registry::{self, ModuleState, Registry};
-use crate::store;
+use crate::store::{self, BackupSet};
 use crate::translations;
 
 type ReapplyIssues = Vec<(String, String)>;
@@ -41,14 +41,31 @@ pub fn cmd_repair(id: Option<&str>) -> Result<()> {
 }
 
 pub fn cmd_reapply() -> Result<()> {
-    let mutation = hoststate::mutation_preflight(MutationMode::Reapply)?;
-    let mut registry = registry::load()?;
-    if registry.modules.is_empty() {
-        return reapply_empty_registry(&registry, &mutation);
-    }
+    let backups = BackupSet::create()?;
+    backups.add_tree("host-state", &paths::host_state_dir())?;
+    let mutation = match hoststate::mutation_preflight(MutationMode::Reapply) {
+        Ok(mutation) => mutation,
+        Err(error) => {
+            rollback_reapply_host_state(&backups);
+            return Err(error);
+        }
+    };
+    let mut registry = match registry::load() {
+        Ok(registry) => registry,
+        Err(error) => {
+            rollback_reapply_host_state(&backups);
+            return Err(error);
+        }
+    };
     let previous_registry = registry.clone();
-    let previous_dicts = translations::load_registry_dicts(&previous_registry)?;
-    translations::validate_live_locales(
+    let previous_dicts = match translations::load_registry_dicts(&previous_registry) {
+        Ok(dicts) => dicts,
+        Err(error) => {
+            rollback_reapply_host_state(&backups);
+            return Err(error);
+        }
+    };
+    if let Err(error) = translations::validate_live_locales(
         previous_registry
             .modules
             .iter()
@@ -58,19 +75,183 @@ pub fn cmd_reapply() -> Result<()> {
                     .values()
                     .flat_map(|dicts| dicts.keys().cloned()),
             ),
-    )?;
+    ) {
+        rollback_reapply_host_state(&backups);
+        return Err(error);
+    }
 
     let ii = paths::ii_root();
-    let order = registry.topological_order()?;
-    let mut issues = probe_modules(&mut registry, &order, &ii);
-    refresh_pristine_snapshots(mutation.host(), &registry, &ii)?;
-    restore_surviving_payloads(&mut registry, &order, &mut issues)?;
-    recompose_surviving_patches(mutation.host(), &mut registry, &mut issues)?;
-    recompose_all(mutation.host(), &registry, true)?;
-    remerge_translations(&previous_registry, &previous_dicts, &mut registry)?;
-    commit_reapply(&mut registry, &mutation)?;
-    print_reapply_result(&issues);
+    let order = match registry.topological_order() {
+        Ok(order) => order,
+        Err(error) => {
+            rollback_reapply_host_state(&backups);
+            return Err(error);
+        }
+    };
+    let stock_targets = all_stock_targets(mutation.host(), &registry, &[]);
+    let module_ids: Vec<String> = registry
+        .modules
+        .iter()
+        .map(|module| module.manifest.id.clone())
+        .collect();
+    let translation_locales: Vec<String> = previous_registry
+        .modules
+        .iter()
+        .flat_map(|module| module.translation_keys.keys().cloned())
+        .chain(
+            previous_dicts
+                .values()
+                .flat_map(|dicts| dicts.keys().cloned()),
+        )
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if let Err(error) =
+        begin_reapply_journal(&backups, &module_ids, &translation_locales, &stock_targets)
+    {
+        rollback_reapply_host_state(&backups);
+        let _ = std::fs::remove_file(paths::journal_path());
+        return Err(error);
+    }
+    let result = (|| {
+        if registry.modules.is_empty() {
+            reapply_empty_registry(&registry, &mutation)?;
+            return Ok(Vec::new());
+        }
+        let mut issues = probe_modules(&mut registry, &order, &ii);
+        refresh_pristine_snapshots(mutation.host(), &registry, &ii)?;
+        restore_surviving_payloads(&mut registry, &order, &mut issues)?;
+        recompose_surviving_patches(mutation.host(), &mut registry, &mut issues)?;
+        recompose_all(mutation.host(), &registry, true)?;
+        remerge_translations(&previous_registry, &previous_dicts, &mut registry)?;
+        commit_reapply(&mut registry, &mutation)?;
+        Ok(issues)
+    })();
+    let issues = match result {
+        Ok(issues) => issues,
+        Err(error) => {
+            eprintln!("reapply failed — rolling back: {error}");
+            rollback_reapply(&backups, &module_ids, &translation_locales, &stock_targets);
+            return Err(error);
+        }
+    };
+    let _ = std::fs::remove_file(paths::journal_path());
+    store::prune_backups(10)?;
+    if !registry.modules.is_empty() {
+        print_reapply_result(&issues);
+    }
     Ok(())
+}
+
+fn begin_reapply_journal(
+    backups: &BackupSet,
+    module_ids: &[String],
+    translation_locales: &[String],
+    stock_targets: &[String],
+) -> Result<()> {
+    let ii = paths::ii_root();
+    for rel in stock_targets {
+        backups.add(&format!("stock/{rel}"), &ii.join(rel))?;
+        backups.add(&format!("pristine/{rel}"), &paths::pristine_dir().join(rel))?;
+    }
+    backups.add("registry.json", &paths::registry_path())?;
+    backups.add("index.json", &paths::index_projection_path())?;
+    backups.add(
+        "config.json",
+        &paths::shell_config_root().join("config.json"),
+    )?;
+    for locale in translation_locales {
+        backups.add(
+            &format!("translations/{locale}.json"),
+            &paths::translations_dir().join(format!("{locale}.json")),
+        )?;
+    }
+    for id in module_ids {
+        backups.add_tree(&format!("modules/{id}"), &paths::mod_root().join(id))?;
+        backups.add_tree(&format!("store/{id}"), &paths::store_dir().join(id))?;
+    }
+    for (label, path) in [
+        (
+            "host/ModuleHost.qml",
+            paths::host_dir().join("ModuleHost.qml"),
+        ),
+        (
+            "host/ModulesConfig.qml",
+            paths::host_dir().join("ModulesConfig.qml"),
+        ),
+        (
+            "host/ModuleImports.qml",
+            paths::host_dir().join("ModuleImports.qml"),
+        ),
+        ("host/sentinel", paths::host_sentinel()),
+        ("host/current.json", paths::host_current_path()),
+    ] {
+        backups.add(label, &path)?;
+    }
+    std::fs::write(
+        paths::journal_path(),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "op": "reapply",
+            "backups": &backups.dir,
+            "stockTargets": stock_targets,
+            "moduleIds": module_ids,
+            "translationLocales": translation_locales,
+        }))? + "\n",
+    )?;
+    Ok(())
+}
+
+fn rollback_reapply_host_state(backups: &BackupSet) {
+    let _ = backups.restore_tree("host-state", &paths::host_state_dir());
+}
+
+fn rollback_reapply(
+    backups: &BackupSet,
+    module_ids: &[String],
+    translation_locales: &[String],
+    stock_targets: &[String],
+) {
+    let ii = paths::ii_root();
+    for rel in stock_targets {
+        let _ = backups.restore(&format!("stock/{rel}"), &ii.join(rel));
+        let _ = backups.restore(&format!("pristine/{rel}"), &paths::pristine_dir().join(rel));
+    }
+    let _ = backups.restore("registry.json", &paths::registry_path());
+    let _ = backups.restore("index.json", &paths::index_projection_path());
+    let _ = backups.restore(
+        "config.json",
+        &paths::shell_config_root().join("config.json"),
+    );
+    for locale in translation_locales {
+        let _ = backups.restore(
+            &format!("translations/{locale}.json"),
+            &paths::translations_dir().join(format!("{locale}.json")),
+        );
+    }
+    for id in module_ids {
+        let _ = backups.restore_tree(&format!("modules/{id}"), &paths::mod_root().join(id));
+        let _ = backups.restore_tree(&format!("store/{id}"), &paths::store_dir().join(id));
+    }
+    for (label, path) in [
+        (
+            "host/ModuleHost.qml",
+            paths::host_dir().join("ModuleHost.qml"),
+        ),
+        (
+            "host/ModulesConfig.qml",
+            paths::host_dir().join("ModulesConfig.qml"),
+        ),
+        (
+            "host/ModuleImports.qml",
+            paths::host_dir().join("ModuleImports.qml"),
+        ),
+        ("host/sentinel", paths::host_sentinel()),
+        ("host/current.json", paths::host_current_path()),
+    ] {
+        let _ = backups.restore(label, &path);
+    }
+    let _ = backups.restore_tree("host-state", &paths::host_state_dir());
+    let _ = std::fs::remove_file(paths::journal_path());
 }
 
 fn restore_one_module(id: Option<&str>, registry: &Registry) -> Result<()> {

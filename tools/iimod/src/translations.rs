@@ -157,21 +157,31 @@ pub fn reconcile(
             let contributors = contributors_for(target, &target_dicts, &locale, &key);
             let managed_values = previous_managed_values(previous, previous_dicts, &locale, &key);
             let current = output.get(&key).cloned();
+            let previously_managed = current
+                .as_ref()
+                .is_some_and(|value| managed_values.contains(value));
+            let repair_legacy_references = previous.schema_version < 2
+                && current.as_ref().is_some_and(|value| {
+                    contributors
+                        .iter()
+                        .any(|contributor| contributor.value == *value)
+                });
 
-            let selected = match current.as_ref() {
-                Some(value) if contributors.iter().any(|c| c.value == *value) => {
-                    Some(value.clone())
+            let (selected, record_references) = match current.as_ref() {
+                Some(value) if contributors.iter().any(|c| c.value == *value) => (
+                    Some(value.clone()),
+                    previously_managed || repair_legacy_references,
+                ),
+                None if !contributors.is_empty() => (Some(contributors[0].value.clone()), true),
+                Some(_) if previously_managed && !contributors.is_empty() => {
+                    (Some(contributors[0].value.clone()), true)
                 }
-                None if !contributors.is_empty() => Some(contributors[0].value.clone()),
-                Some(value) if managed_values.contains(value) && !contributors.is_empty() => {
-                    Some(contributors[0].value.clone())
-                }
-                Some(value) if managed_values.contains(value) => {
+                Some(_) if previously_managed => {
                     output.remove(&key);
                     changed = true;
-                    None
+                    (None, false)
                 }
-                _ => None,
+                _ => (None, false),
             };
 
             let Some(selected) = selected else {
@@ -180,6 +190,10 @@ pub fn reconcile(
             if output.get(&key) != Some(&selected) {
                 output.insert(key.clone(), selected.clone());
                 changed = true;
+            }
+
+            if !record_references {
+                continue;
             }
 
             let distinct_values: BTreeSet<&str> =
