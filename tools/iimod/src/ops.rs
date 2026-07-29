@@ -9,6 +9,7 @@ use anyhow::Result;
 use crate::exit::{self, bail};
 use crate::hostpatch;
 use crate::hoststate::HostBundle;
+use crate::i18n;
 use crate::lint;
 use crate::manifest::{self, Manifest, Slot};
 use crate::patch::{self, PatchInstance};
@@ -59,6 +60,25 @@ pub(crate) fn load_payload(source: &Path, max_size: u64) -> Result<Payload> {
 /// Parse + validate manifest, payload layout, lint, translations. Returns
 /// (manifest, warnings).
 pub(crate) fn validate_payload(payload: &Path) -> Result<(Manifest, Vec<String>)> {
+    validate_payload_with_policy(payload, None, true)
+}
+
+/// Validate a store payload for registry recovery without applying the current
+/// first-party authoring policy that requires a complete zh_TW catalog. Store
+/// payloads live under `<id>/<version>`, so the expected id comes from the
+/// outer store directory rather than the payload directory basename.
+pub(crate) fn validate_stored_payload(
+    payload: &Path,
+    expected_id: &str,
+) -> Result<(Manifest, Vec<String>)> {
+    validate_payload_with_policy(payload, Some(expected_id), false)
+}
+
+fn validate_payload_with_policy(
+    payload: &Path,
+    expected_id: Option<&str>,
+    require_author_i18n: bool,
+) -> Result<(Manifest, Vec<String>)> {
     let manifest_path = payload.join("module.json");
     let bytes = std::fs::read(&manifest_path).map_err(|_| {
         bail(
@@ -69,10 +89,12 @@ pub(crate) fn validate_payload(payload: &Path) -> Result<(Manifest, Vec<String>)
     let m = manifest::parse(&bytes)?;
     let mut warnings = manifest::validate(&m)?;
 
-    let dir_name = payload
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or_default();
+    let dir_name = expected_id.unwrap_or_else(|| {
+        payload
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+    });
     if dir_name != m.id {
         return Err(bail(
             exit::VALIDATION,
@@ -102,6 +124,9 @@ pub(crate) fn validate_payload(payload: &Path) -> Result<(Manifest, Vec<String>)
     lint::require_clean(&report)?;
 
     translations::load_module_dicts(payload)?; // parse/locale validation
+    if require_author_i18n {
+        warnings.extend(i18n::validate_payload_i18n(payload)?);
+    }
     Ok((m, warnings))
 }
 

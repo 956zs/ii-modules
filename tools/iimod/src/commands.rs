@@ -10,8 +10,8 @@ use crate::hoststate::{self, MutationMode};
 use crate::lint;
 use crate::manifest::{self, Manifest};
 use crate::ops::{
-    check_deps_conflicts, full_patch_set, load_payload, module_import_ids, project_enabled,
-    recompose_all, validate_payload, wipe_banner, write_index_projection,
+    all_stock_targets, check_deps_conflicts, full_patch_set, load_payload, module_import_ids,
+    project_enabled, recompose_all, validate_payload, wipe_banner, write_index_projection,
 };
 use crate::patch::{self, PatchInstance};
 use crate::paths;
@@ -19,7 +19,7 @@ use crate::pkg;
 use crate::probe;
 use crate::qs;
 use crate::registry::{self, ModuleState};
-use crate::store;
+use crate::store::{self, BackupSet};
 use crate::translations;
 
 // ---------------------------------------------------------------------------
@@ -106,35 +106,165 @@ pub fn cmd_uninstall(id: &str, cascade: bool) -> Result<()> {
     // Reverse topological: dependents before dependencies.
     let topo = registry.topological_order()?;
     victims.sort_by_key(|v| std::cmp::Reverse(topo.iter().position(|t| t == v)));
+    let previous_registry = registry.clone();
+    let previous_dicts = translations::load_registry_dicts(&previous_registry)?;
+    let translation_locales: Vec<String> = previous_registry
+        .modules
+        .iter()
+        .flat_map(|module| module.translation_keys.keys().cloned())
+        .chain(
+            previous_dicts
+                .values()
+                .flat_map(|dicts| dicts.keys().cloned()),
+        )
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    translations::validate_live_locales(translation_locales.iter().cloned())?;
+    let stock_targets = all_stock_targets(mutation.host(), &previous_registry, &[]);
+    let backups = begin_uninstall_backup(&victims, &translation_locales, &stock_targets)?;
     println!("removing: {victims:?}");
 
-    let ii = paths::ii_root();
-    for victim in &victims {
-        let module = registry.remove(victim).expect("present");
-        let dicts_dir = paths::store_dir()
-            .join(victim)
-            .join(&module.manifest.version);
-        let dicts = translations::load_module_dicts(&dicts_dir).unwrap_or_default();
-        translations::unmerge(&dicts, &module.translation_keys)?;
-        let dir = paths::mod_root().join(victim);
-        if dir.exists() {
-            std::fs::remove_dir_all(&dir)?;
+    let result = (|| {
+        for victim in &victims {
+            registry.remove(victim).expect("present");
+            let dir = paths::mod_root().join(victim);
+            if dir.exists() {
+                std::fs::remove_dir_all(&dir)?;
+            }
+            store::remove_from_store(victim)?;
         }
-        store::remove_from_store(victim)?;
+        let mut warnings = Vec::new();
+        translations::reconcile(
+            &previous_registry,
+            &previous_dicts,
+            &mut registry,
+            &translations::RegistryDicts::new(),
+            &mut warnings,
+        )?;
+        for warning in warnings {
+            eprintln!("warning: {warning}");
+        }
+        hostpatch::ensure_host(mutation.host(), &|rel| registry.patches_for_file(rel))?;
+        recompose_all(mutation.host(), &registry, true)?;
+        if paths::host_dir().exists() {
+            hostpatch::write_module_imports(&module_import_ids(&registry))?;
+        }
+        mutation.activate_after_host_write()?;
+        registry::save(&registry)?;
+        write_index_projection(&registry)?;
+        project_enabled(&registry)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("uninstall failed — rolling back: {error}");
+        rollback_uninstall(&backups, &victims, &translation_locales, &stock_targets);
+        return Err(error);
     }
-    hostpatch::ensure_host(mutation.host(), &|rel| registry.patches_for_file(rel))?;
-    recompose_all(mutation.host(), &registry, true)?;
-    if paths::host_dir().exists() {
-        hostpatch::write_module_imports(&module_import_ids(&registry))?;
-    }
-    mutation.activate_after_host_write()?;
-    registry::save(&registry)?;
-    write_index_projection(&registry)?;
-    project_enabled(&registry)?;
+
+    store::prune_backups(10)?;
     let _ = qs::trigger_reload();
-    let _ = ii;
     println!("✓ uninstalled");
     Ok(())
+}
+
+fn begin_uninstall_backup(
+    victims: &[String],
+    translation_locales: &[String],
+    stock_targets: &[String],
+) -> Result<BackupSet> {
+    let backups = BackupSet::create()?;
+    let ii = paths::ii_root();
+    for rel in stock_targets {
+        backups.add(&format!("stock/{rel}"), &ii.join(rel))?;
+    }
+    backups.add("registry.json", &paths::registry_path())?;
+    backups.add("index.json", &paths::index_projection_path())?;
+    backups.add(
+        "config.json",
+        &paths::shell_config_root().join("config.json"),
+    )?;
+    for locale in translation_locales {
+        backups.add(
+            &format!("translations/{locale}.json"),
+            &paths::translations_dir().join(format!("{locale}.json")),
+        )?;
+    }
+    for victim in victims {
+        backups.add_tree(
+            &format!("modules/{victim}"),
+            &paths::mod_root().join(victim),
+        )?;
+        backups.add_tree(&format!("store/{victim}"), &paths::store_dir().join(victim))?;
+    }
+    for (label, path) in [
+        (
+            "host/ModuleHost.qml",
+            paths::host_dir().join("ModuleHost.qml"),
+        ),
+        (
+            "host/ModulesConfig.qml",
+            paths::host_dir().join("ModulesConfig.qml"),
+        ),
+        (
+            "host/ModuleImports.qml",
+            paths::host_dir().join("ModuleImports.qml"),
+        ),
+        ("host/sentinel", paths::host_sentinel()),
+        ("host/current.json", paths::host_current_path()),
+    ] {
+        backups.add(label, &path)?;
+    }
+    Ok(backups)
+}
+
+fn rollback_uninstall(
+    backups: &BackupSet,
+    victims: &[String],
+    translation_locales: &[String],
+    stock_targets: &[String],
+) {
+    let ii = paths::ii_root();
+    for rel in stock_targets {
+        let _ = backups.restore(&format!("stock/{rel}"), &ii.join(rel));
+    }
+    let _ = backups.restore("registry.json", &paths::registry_path());
+    let _ = backups.restore("index.json", &paths::index_projection_path());
+    let _ = backups.restore(
+        "config.json",
+        &paths::shell_config_root().join("config.json"),
+    );
+    for locale in translation_locales {
+        let _ = backups.restore(
+            &format!("translations/{locale}.json"),
+            &paths::translations_dir().join(format!("{locale}.json")),
+        );
+    }
+    for victim in victims {
+        let _ = backups.restore_tree(
+            &format!("modules/{victim}"),
+            &paths::mod_root().join(victim),
+        );
+        let _ = backups.restore_tree(&format!("store/{victim}"), &paths::store_dir().join(victim));
+    }
+    for (label, path) in [
+        (
+            "host/ModuleHost.qml",
+            paths::host_dir().join("ModuleHost.qml"),
+        ),
+        (
+            "host/ModulesConfig.qml",
+            paths::host_dir().join("ModulesConfig.qml"),
+        ),
+        (
+            "host/ModuleImports.qml",
+            paths::host_dir().join("ModuleImports.qml"),
+        ),
+        ("host/sentinel", paths::host_sentinel()),
+        ("host/current.json", paths::host_current_path()),
+    ] {
+        let _ = backups.restore(label, &path);
+    }
 }
 
 pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {

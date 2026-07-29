@@ -52,6 +52,8 @@ struct PreparedInstall {
     next: Registry,
     candidate: InstallCandidate,
     module_dicts: ModuleDicts,
+    previous_dicts: translations::RegistryDicts,
+    translation_locales: Vec<String>,
     stock_targets: Vec<String>,
     module_dir: std::path::PathBuf,
     upgrading: Option<String>,
@@ -158,7 +160,13 @@ fn prepare_install(
         eprintln!("note: this package carries no update origin — `iimod update` will not cover it");
     }
     dry_run_stock_composition(host, &next)?;
+    let previous_dicts = translations::load_registry_dicts(&registry)?;
     let module_dicts = translations::load_module_dicts(&candidate.payload.dir)?;
+    let translation_locales: Vec<String> =
+        translations::reconciliation_locales(&registry, &previous_dicts, &module_dicts)
+            .into_iter()
+            .collect();
+    translations::validate_live_locales(translation_locales.iter().cloned())?;
     let stock_targets = all_stock_targets(host, &next, &[]);
     let module_dir = paths::mod_root().join(&candidate.manifest.id);
 
@@ -167,6 +175,8 @@ fn prepare_install(
         next,
         candidate,
         module_dicts,
+        previous_dicts,
+        translation_locales,
         stock_targets,
         module_dir,
         upgrading,
@@ -286,7 +296,7 @@ fn begin_install_journal(prepared: &PreparedInstall) -> Result<BackupSet> {
         "config.json",
         &paths::shell_config_root().join("config.json"),
     )?;
-    for locale in prepared.module_dicts.keys() {
+    for locale in &prepared.translation_locales {
         backups.add(
             &format!("translations/{locale}.json"),
             &paths::translations_dir().join(format!("{locale}.json")),
@@ -385,12 +395,19 @@ fn refresh_pristine_snapshots(prepared: &PreparedInstall) -> Result<()> {
 
 fn merge_install_translations(prepared: &mut PreparedInstall) -> Result<()> {
     let id = prepared.candidate.manifest.id.clone();
-    let mut warn = Vec::new();
-    let owned = translations::merge(&prepared.registry, &id, &prepared.module_dicts, &mut warn)?;
-    for w in warn {
-        eprintln!("warning: {w}");
+    let mut overrides = translations::RegistryDicts::new();
+    overrides.insert(id, prepared.module_dicts.clone());
+    let mut warnings = Vec::new();
+    translations::reconcile(
+        &prepared.registry,
+        &prepared.previous_dicts,
+        &mut prepared.next,
+        &overrides,
+        &mut warnings,
+    )?;
+    for warning in warnings {
+        eprintln!("warning: {warning}");
     }
-    prepared.next.get_mut(&id).unwrap().translation_keys = owned;
     Ok(())
 }
 
@@ -406,7 +423,7 @@ fn rollback_install(prepared: &PreparedInstall, backups: &BackupSet) {
         "config.json",
         &paths::shell_config_root().join("config.json"),
     );
-    for locale in prepared.module_dicts.keys() {
+    for locale in &prepared.translation_locales {
         let _ = backups.restore(
             &format!("translations/{locale}.json"),
             &paths::translations_dir().join(format!("{locale}.json")),
