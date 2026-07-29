@@ -7,7 +7,7 @@ async function loadLogic() {
   const source = await readFile(new URL('../AppTrafficLogic.js', import.meta.url), 'utf8')
   const context = vm.createContext({})
   vm.runInContext(
-    `${source}\nglobalThis.api = { restoreAccounting, ranking, pruneAccounting, drainResolvedPending, finalizePending, nethogsCommand, parseNethogsLine, commitNethogsBatch, migrateStatsPeriod }`,
+    `${source}\nglobalThis.api = { restoreAccounting, ranking, pruneAccounting, drainResolvedPending, finalizePending, pktzTimestampMs, pktzCandidates, pktzCommand, parsePktzLine, commitPktzBatch, nethogsCommand, parseNethogsLine, commitNethogsBatch, migrateStatsPeriod }`,
     context,
   )
   return context.api
@@ -101,6 +101,100 @@ test('restore clamps a current day into its month when the stored month key is s
       mk: '2026-07', mrx: 900, mtx: 90, brx: 900, btx: 90,
     },
   })
+})
+
+test('pktz RFC3339Nano timestamps normalize to millisecond frame time', async () => {
+  const logic = await loadLogic()
+  assert.equal(logic.pktzTimestampMs('2026-07-29T00:06:22.956315598Z'), 1785283582956)
+  assert.equal(logic.pktzTimestampMs('2026-07-29T00:06:22Z'), 1785283582000)
+  assert.equal(logic.pktzTimestampMs(''), -1)
+  assert.equal(logic.pktzTimestampMs('2026-07-29 00:06:22Z'), -1)
+})
+
+test('pktz command requests the stable NDJSON stream', async () => {
+  const logic = await loadLogic()
+  assert.deepEqual(plain(logic.pktzCandidates('/home/tester')), [
+    'pktz',
+    '/home/tester/go/bin/pktz',
+    '/home/tester/.local/bin/pktz',
+  ])
+  assert.deepEqual(plain(logic.pktzCandidates('')), ['pktz'])
+  assert.deepEqual(plain(logic.pktzCommand('/tmp/pktz')), ['/tmp/pktz', '--log'])
+})
+
+test('pktz cumulative NDJSON replays exact app totals, directions, rates, and sorting', async () => {
+  const logic = await loadLogic()
+  const trace = await readFile(new URL('./fixtures/pktz-process.ndjson', import.meta.url), 'utf8')
+  let batch = []
+  let timestamp = ''
+  let lastCum = {}
+  let result = null
+
+  for (const line of trace.split('\n')) {
+    const parsed = logic.parsePktzLine(line)
+    if (!parsed) continue
+    if (timestamp !== '' && parsed.ts !== timestamp) {
+      result = logic.commitPktzBatch(batch, lastCum, 0.5)
+      lastCum = result.lastCum
+      batch = []
+    }
+    timestamp = parsed.ts
+    batch.push(parsed)
+  }
+  result = logic.commitPktzBatch(batch, lastCum, 0.5)
+
+  assert.deepEqual(plain(result.accounting), [
+    { name: 'spotify', rx: 1200, tx: 200 },
+    { name: 'udp-client', rx: 400, tx: 100 },
+  ])
+  assert.deepEqual(sum(plain(result.accounting)), { rx: 1600, tx: 300 })
+  assert.deepEqual(plain(result.rates), [
+    { name: 'spotify', down: 2400, up: 400 },
+    { name: 'udp-client', down: 800, up: 200 },
+  ])
+})
+
+test('pktz process disappearance drops its old baseline before identity reuse', async () => {
+  const logic = await loadLogic()
+  let state = logic.commitPktzBatch([
+    { pid: '1', comm: 'one', rx: 100, tx: 10 },
+    { pid: '2', comm: 'two', rx: 200, tx: 20 },
+  ], {}, 0)
+  state = logic.commitPktzBatch([
+    { pid: '1', comm: 'one', rx: 150, tx: 15 },
+  ], state.lastCum, 0.5)
+  assert.deepEqual(plain(state.lastCum), {
+    '1/one': { rx: 150, tx: 15 },
+  })
+
+  state = logic.commitPktzBatch([
+    { pid: '2', comm: 'two', rx: 260, tx: 30 },
+  ], state.lastCum, 0.5)
+  assert.deepEqual(plain(state.accounting), [])
+})
+
+test('pktz parser rejects malformed records and counter discontinuities establish a baseline', async () => {
+  const logic = await loadLogic()
+  assert.equal(logic.parsePktzLine(null), null)
+  assert.equal(logic.parsePktzLine(''), null)
+  assert.equal(logic.parsePktzLine('{bad'), null)
+  assert.equal(logic.parsePktzLine('{"type":"conn","pid":1}'), null)
+  assert.equal(logic.parsePktzLine('{"type":"process","ts":"bad","pid":1,"comm":"app","rx_bps":1,"tx_bps":2,"rx_bytes":1,"tx_bytes":2,"conns":1}'), null)
+  assert.equal(logic.parsePktzLine('{"type":"process","ts":"t","pid":0,"comm":"app","rx_bytes":1,"tx_bytes":2}'), null)
+  assert.equal(logic.parsePktzLine('{"type":"process","ts":"t","pid":1,"comm":"","rx_bytes":1,"tx_bytes":2}'), null)
+  assert.equal(logic.parsePktzLine('{"type":"process","ts":"t","pid":1,"comm":"app","rx_bytes":-1,"tx_bytes":2}'), null)
+
+  const first = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:00Z","pid":42,"comm":"app","rx_bps":1,"tx_bps":2,"rx_bytes":1000,"tx_bytes":500,"conns":1}')
+  let state = logic.commitPktzBatch([first], {}, 0)
+  const shrunk = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:00.5Z","pid":42,"comm":"app","rx_bps":999999,"tx_bps":999999,"rx_bytes":20,"tx_bytes":10,"conns":1}')
+  state = logic.commitPktzBatch([shrunk], state.lastCum, 0.5)
+  assert.deepEqual(plain(state.accounting), [])
+  assert.deepEqual(plain(state.rates), [])
+
+  const resumed = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:01.5Z","pid":42,"comm":"app","rx_bps":999999,"tx_bps":999999,"rx_bytes":50,"tx_bytes":20,"conns":1}')
+  state = logic.commitPktzBatch([resumed], state.lastCum, 1)
+  assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 30, tx: 10 }])
+  assert.deepEqual(plain(state.rates), [{ name: 'app', down: 30, up: 10 }])
 })
 
 test('collector requests TCP and UDP cumulative bytes', async () => {
@@ -425,16 +519,48 @@ test('multi-monitor bars elect one accounting writer and keep readers read-only'
   assert.match(configSource, /root\.reload\(\);[\s\S]*const latest = root\.text\(\)/)
 })
 
+test('pktz falls back through nethogs to ss without concurrent collectors', async () => {
+  const source = await readFile(new URL('../AppTraffic.qml', import.meta.url), 'utf8')
+  assert.match(source, /function startPktz\(\)/)
+  assert.match(source, /readonly property var pktzCandidates: AppTrafficLogic\.pktzCandidates\(Quickshell\.env\("HOME"\) \?\? ""\)/)
+  assert.match(source, /command: AppTrafficLogic\.pktzCommand\(root\.pktzCandidates\[root\.pktzCandidateIndex\]\)/)
+  assert.match(source, /function startNethogsFallback\(\)[\s\S]*pktz\.running = false/)
+  assert.match(source, /pktzStopping = pktzStopping \|\| pktz\.running/)
+  assert.doesNotMatch(source, /pktzFrameTimer/)
+  assert.match(source, /if \(root\.pktzTimestamp !== "" && record\.ts !== root\.pktzTimestamp\)\s*root\.commitPktzBatch\(root\.pktzTimestamp\)/)
+  assert.match(source, /onRead: data => \{\s*if \(root\.pktzStopping\) return/)
+  assert.match(source, /onRunningChanged:[\s\S]*pktzStartFailure\.restart\(\)/)
+  assert.match(source, /id:\s*pktzStartFailure[\s\S]*interval:\s*0[\s\S]*root\.pktzCandidateIndex \+ 1 < root\.pktzCandidates\.length[\s\S]*root\.pktzCandidateIndex\+\+[\s\S]*root\.startPktz\(\)[\s\S]*root\.startNethogsFallback\(\)/)
+  assert.match(source, /onExited:[\s\S]*pktzStartFailure\.stop\(\)[\s\S]*root\.startNethogsFallback\(\)/)
+  assert.match(source, /function startSsFallback\(\)[\s\S]*nethogs\.running = false/)
+  assert.match(source, /source = "pktz"/)
+})
+
 test('inactive and fallback lifecycle guards prevent late callbacks and concurrent collectors', async () => {
   const source = await readFile(new URL('../AppTraffic.qml', import.meta.url), 'utf8')
   assert.match(source, /else \{[\s\S]*startupTimeout\.stop\(\)[\s\S]*nethogs\.running = false[\s\S]*ssTimer\.stop\(\)[\s\S]*ssProc\.running = false/)
   assert.match(source, /function startSsFallback\(\) \{[\s\S]*if \(!root\.active\) return[\s\S]*startupTimeout\.stop\(\)[\s\S]*nethogs\.running = false/)
   assert.match(source, /onTriggered: \{\s*if \(!root\.active\) return;/)
-  assert.match(source, /onRead: data => \{\s*if \(!root\.active \|\| root\.source === "ss"\) return;/)
+  assert.match(source, /onRead: data => \{\s*if \(!root\.active \|\| root\.nethogsStopping \|\| root\.source === "ss"\) return;/)
   assert.match(source, /ssStopping = ssStopping \|\| ssProc\.running/)
   assert.match(source, /nethogsStopping = nethogsStopping \|\| nethogs\.running/)
   assert.match(source, /onStreamFinished: \{\s*if \(root\.active && root\.source === "ss"\)/)
-  assert.match(source, /const requestedStop = root\.nethogsStopping[\s\S]*if \(root\.fallbackPending\)[\s\S]*else if \(requestedStop && root\.source === "starting"[\s\S]*root\.startNethogs\(\)[\s\S]*else \{[\s\S]*root\.startSsFallback\(\)/)
+  assert.match(source, /const requestedStop = root\.nethogsStopping[\s\S]*if \(root\.fallbackPending\)[\s\S]*else if \(requestedStop && root\.source === "starting"[\s\S]*root\.startPktz\(\)[\s\S]*else \{[\s\S]*root\.startSsFallback\(\)/)
+})
+
+test('popup labels pktz as a best-effort estimate in every user-facing surface', async () => {
+  const popupSource = await readFile(new URL('../TrafficPopup.qml', import.meta.url), 'utf8')
+  const settingsSource = await readFile(new URL('../settings.qml', import.meta.url), 'utf8')
+  const manifest = JSON.parse(await readFile(new URL('../module.json', import.meta.url), 'utf8'))
+  const zhTW = JSON.parse(await readFile(new URL('../translations/zh_TW.json', import.meta.url), 'utf8'))
+  const zhCN = JSON.parse(await readFile(new URL('../translations/zh_CN.json', import.meta.url), 'utf8'))
+
+  assert.match(popupSource, /Translation\.tr\("eBPF estimate"\)/)
+  assert.match(settingsSource, /Translation\.tr\("Uses pktz for a best-effort eBPF payload estimate/)
+  assert.match(manifest.description.en_US, /best-effort pktz eBPF payload estimate/)
+  assert.match(manifest.description.zh_TW, /盡力估算/)
+  assert.equal(zhTW['eBPF estimate'], 'eBPF 估算')
+  assert.equal(zhCN['eBPF estimate'], 'eBPF 估算')
 })
 
 test('popup translates unattributed sentinel labels in supported locales', async () => {
@@ -706,6 +832,7 @@ test('QML finalizes pending bytes before inactive reset and ownership flush', as
   const appSource = await readFile(new URL('../AppTraffic.qml', import.meta.url), 'utf8')
   const barSource = await readFile(new URL('../bar.qml', import.meta.url), 'utf8')
   assert.match(appSource, /function finalizePendingAccounting\(\)/)
+  assert.doesNotMatch(appSource, /function finalizePendingAccounting\(\)[\s\S]*?commitPktzBatch\(root\.pktzTimestamp\)[\s\S]*?const finalized/)
   assert.match(appSource, /else \{[\s\S]*finalizePendingAccounting\(\)[\s\S]*pendingDelta = \{\}/)
   assert.match(barSource, /onRelinquishing: \{[\s\S]*appTraffic\.finalizePendingAccounting\(\)[\s\S]*appTraffic\.flushAcct\(\)/)
 })
