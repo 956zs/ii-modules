@@ -32,6 +32,17 @@ Operate modules only through `iimod`. Exit codes are the contract.
    `qs -c ii ipc --any-display ...`; `iimod` already handles this.
 10. Do not use `pkill`/`killall` for Quickshell reloads. Use
     `qs -c ii ipc --any-display call iimp reload`.
+11. During multi-agent work, assign one live mutation owner. Other agents may
+    validate, check, pack, and inspect logs, but must not run install, uninstall,
+    enable, disable, repair, reapply, or update concurrently.
+12. `iimod` 1.2.0+ persists a monotonic host generation and permanently fences
+    legacy mutators. If an older PATH binary reports `another iimod is running
+    (pid 1)`, upgrade `iimod`; never delete `~/.local/share/iimp/lock` or bypass
+    it. A missing/corrupt host generation or same-generation content collision
+    is a hard state error, not a reason to force an install.
+13. New mutators still use a fail-fast `mutation.lock.v2`; keep exactly one live
+    mutation owner until bounded/FIFO waiting ships. Freshness-aware older
+    binaries preserve the selected newer host bundle during module operations.
 
 ## Exit Codes
 
