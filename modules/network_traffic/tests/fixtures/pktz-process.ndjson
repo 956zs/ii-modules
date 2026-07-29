@@ -1,0 +1,5 @@
+{"type":"process","ts":"2026-07-29T00:00:00Z","pid":25186,"comm":"spotify","rx_bps":0,"tx_bps":0,"rx_bytes":1000,"tx_bytes":200,"conns":2}
+{"type":"conn","ts":"2026-07-29T00:00:00Z","pid":25186,"comm":"spotify","src_ip":"192.0.2.1","src_port":40000,"dst_ip":"198.51.100.1","dst_port":443,"proto":"UDP","rx_bps":0,"tx_bps":0,"rx_bytes":1000,"tx_bytes":200}
+{"type":"process","ts":"2026-07-29T00:00:00Z","pid":31415,"comm":"udp-client","rx_bps":0,"tx_bps":0,"rx_bytes":100,"tx_bytes":50,"conns":1}
+{"type":"process","ts":"2026-07-29T00:00:00.5Z","pid":25186,"comm":"spotify","rx_bps":2400,"tx_bps":400,"rx_bytes":2200,"tx_bytes":400,"conns":2}
+{"type":"process","ts":"2026-07-29T00:00:00.5Z","pid":31415,"comm":"udp-client","rx_bps":800,"tx_bps":200,"rx_bytes":500,"tx_bytes":150,"conns":1}
