@@ -1,150 +1,160 @@
-# battery_trend — 電量趨勢與分析
+# Battery Trend - 電量趨勢
 
-手機級的長期電量歷史（Tier B）。**stock 電池指示器是主要 bar 入口**：
-原生 BatteryPopup 會被完整停用，hover 只顯示 battery_trend 的資訊超集，
-點擊 stock 電量環直接開啟詳情面板。`showBar` 仍預設為 `false`；它只控制
-額外的 3 小時趨勢線藥丸，不影響 stock 指示器、背景取樣或 IPC。
+Tier B 長期電量歷史與分析模塊。stock 電池指示器是主要入口：原生 popup 由
+Battery Trend 的資訊超集取代，點擊電量環會開啟詳細面板。
 
-## 緣起
-
-筆電電池到底掉多快、哪天掉最兇、健康度一年衰減多少，桌面上一直沒有
-手機「電池」設定頁那種答案。資料其實都在：UPower 有即時狀態，
-`/sys/class/power_supply/` 有精確電量、瞬時功耗、設計容量與循環數——
-缺的只是有人長期記下來、算出來、畫出來。
+可選的 3 小時 bar sparkline 預設關閉。`showBar` 不影響 stock 指示器、背景取樣、
+側欄磁貼或 IPC。
 
 ## 互動
 
-| 操作 | 效果 |
+| 入口 | 效果 |
 |---|---|
-| stock 電池指示器 hover | **只顯示 battery_trend 替代彈窗**：充電狀態、平滑功耗、回歸法剩餘時間、UPower 對照、健康度/循環及今日耗電/充電摘要；原生 BatteryPopup 不會在底下出現 |
-| stock 電池指示器左鍵 | 開/關詳情面板；`clickToShow` 開或關都只執行此動作，不會與 tooltip 競速 |
-| 側欄快速開關磁貼（`battery_horiz_075` 圖示） | 可在快速開關編輯模式加入；點擊時關閉側欄並開啟詳情面板 |
-| `qs -c ii ipc --any-display call battery_trend toggle` | 切換詳情面板 |
-| 額外 bar 元件（選開 `showBar` 後） | 近 3 小時迷你曲線；`showPercent` 開啟時加百分比 |
+| Hover stock 電池指示器 | 顯示充電狀態、平滑功耗、時間估計、健康度與今日摘要 |
+| 左鍵點擊 stock 電池指示器 | 切換詳細面板 |
+| 側欄快速開關磁貼 | 關閉側欄並開啟詳細面板 |
+| `qs -c ii ipc --any-display call battery_trend toggle` | 切換詳細面板 |
+| 可選 bar 元件 | 顯示近 3 小時曲線；可加百分比 |
 
-## 側欄磁貼
+快速開關編輯模式會在磁貼缺席時，於「未使用」區提供 `battery_trend`。點擊即可
+加入，無需手動修改 `config.json`。
 
-進入右側欄快速開關的編輯模式；當設定中沒有 `battery_trend` 時，「未使用」
-區會提供一格 `{type: battery_trend, size: 1}` 磁貼，點一下即加入且立即從候選
-區消失。不再需要以手動 JSON 作為主要安裝方式；IPC 仍可供腳本使用。
+## 詳細面板
 
-詳情面板由上而下：即時標頭（大字百分比、功耗、兩種時間估計）、24 小時
-曲線（0–100 固定刻度；充電段描邊＋面積填色、放電段中性墨色、休眠/關機
-斷點以淡色帶＋虛線端點連接，既保持線段可追蹤也不假裝有中間樣本；hover
-十字線讀值）、30 天每日最低–最高區間柱＋平均刻度（hover 讀值）、健康趨勢線（設計容量佔比，
-縱軸自動放大到資料所在的窄帶並標明刻度）、使用分析（今日/7 天/30 天
-在用耗電速率 %/h、循環當量、平均放電深度、常用充電區間）、近期充放電段列表。
+| 區塊 | 內容 |
+|---|---|
+| 即時標頭 | 百分比、平滑功耗、回歸估計與 UPower 原生估計 |
+| 24 小時 | 充放電曲線、休眠／關機斷點與 hover 讀值 |
+| 30 天 | 每日最低－最高區間、平均刻度與 hover 讀值 |
+| 健康趨勢 | 設計容量占比、循環數與窄幅自適應刻度 |
+| 使用分析 | 今日／7 天／30 天耗電速率、循環當量、放電深度與充電區間 |
+| 近期 sessions | 近期插電／拔電段的起訖時間與電量 |
 
-顏色跟隨 Material You 主題：充電＝`colPrimary`（正向強調）、放電＝中性
-墨色、健康＝警示色調（`colError`）。充電段除色相外還有面積填色作第二
-編碼，斷點以位置（空隙＋色帶）表達——色覺缺陷下語意不丟失。
+顏色跟隨 Material You。充電使用 `colPrimary`，放電使用中性色，健康趨勢使用
+`colError`；充電區段另以面積填色、斷點以空隙和淡色帶表達，不只依賴色相。
 
-## 資料來源與取樣
+## 需求與權限
 
-歷史資料全部原生（`exec` capability 用於 stock 指示器點擊與側欄磁貼的 IPC 呼叫）：
+模塊不需要額外系統 package。資料來自 Quickshell UPower service 與
+`/sys/class/power_supply`。
 
-- **UPower**（`Quickshell.Services.UPower`）：百分比後備、充放電狀態、
-  `changeRate`、`timeToEmpty`/`timeToFull`（拿來對照）、電池自動偵測
-  （`nativePath`）
-- **sysfs**（FileView 直讀 `/sys/class/power_supply/<bat>/`）：精確電量
-  （`energy_now/energy_full`，或 `charge_now/charge_full` 家族——兩種
-  單位族都支援，`charge_*` 機型功耗以 `current_now × voltage_now` 求得）、
-  設計容量、`cycle_count`
+| 整合 | 用途 |
+|---|---|
+| Tier B stock battery patches | 取代 hover popup，將 stock 指示器點擊導向模塊面板 |
+| Tier B sidebar patches | 提供磁貼 delegate 與編輯模式新增／重新加入列 |
+| `exec` capability | 僅供側欄磁貼以 `execDetached` 呼叫 `qs ... ipc` |
 
-取樣：常駐實例（非單例）每 60 秒（可調 15–600）取一次樣，插拔電源／
-狀態翻轉時立即補一樣本，讓充放電段的邊界落在事件上而不是最多一分鐘後。
-彈窗/面板開啟時另以 3 秒節奏刷新即時數字（不入歷史）。
-
-多螢幕：bar slot 每個螢幕都會實例化，但歷史檔只能有一個寫入者——
-第一個螢幕的實例當選 primary（取樣＋落盤＋補齊設定預設值＋註冊 IPC
-target），其餘實例以讀者模式跑，跟著設定檔的 watchChanges 重建畫面。
-
-`showBar: false`（預設）只把根元件設為不可見（layout 會整個跳過，
-不留幽靈邊距）——底下的 ConfigLoader、取樣邏輯、IPC handler 照常
-實例化，歷史一秒都不斷。bar 入口是「掛載點」而不是「畫面」。
-
-## 保留策略（分層降採樣）
-
-| 層 | 保留 | 粒度 | 內容 |
-|---|---|---|---|
-| raw | 24 小時 | 取樣間隔 | `[t, %, W, 狀態]`（迷你曲線、24h 圖、回歸估計的原料） |
-| hourly | 30 天 | 1 小時 | min/max/avg %、放電平均 W、充電時間佔比、在用耗電 %、在用秒數 |
-| daily | 365 天 | 1 天 | 同上（30 天區間圖與長期統計的原料） |
-| health | 365 天 | 1 天 | `full/design` %、循環數（每日一張快照） |
-| sessions | 最近 120 段 | 事件 | 插電/拔電交替段：種類、起訖時間、起訖 % |
-
-換層在整點/跨日的第一個樣本觸發：把累計器定稿進上一層並立即落盤
-（key 與值同 blob 旅行，不存在「新 key 配舊值」的視窗）。整個歷史是
-**單一 JSON 字串**（`histState`）、單次賦值寫入、每分鐘至多一次——
-分欄位儲存會在熱重載時被讀到撕裂快照（network_traffic 的教訓，見其
-README）；JsonAdapter 內宣告 `property var` 會讓 quickshell 段錯誤，
-所以是字串。粗估檔案上限 ~100 KB。
-
-休眠/關機表現為相鄰樣本的牆鐘跳躍（> 3× 取樣間隔）：圖上斷線＋淡色帶，
-且該段掉電**不計入**在用耗電速率——%/h 才不會被幾小時休眠稀釋。
-
-## 分析公式
-
-- **平滑功耗**：sysfs 瞬時 W 的 EMA（α=0.3）
-- **剩餘時間**：對最近 30 分鐘、同狀態、無斷點的 raw 樣本做最小平方
-  線性回歸，斜率外推到 0%（或 100%）；樣本 < 5 或斜率方向不對時誠實
-  顯示「量測中」。彈窗同時列出 UPower 的原生估計作對照
-- **在用耗電速率**：清醒且放電的相鄰樣本 % 差之和 ÷ 清醒放電時數
-- **循環當量**：清醒放電 % 累計 ÷ 100
-- **健康**：`full/design`；趨勢列 30 天差與全記錄跨度差（百分點）
-- **平均放電深度**：拔電段（≥10 分鐘、掉 ≥3%）的起訖 % 差平均
-- **常用充電區間**：插電段起始 % 平均 → 結束 % 平均（例如 25% → 85%）
+stock 指示器點擊直接呼叫模塊 QML，不經 `exec`。
 
 ## 安裝
 
+從 repository 根目錄執行：
+
 ```bash
-iimod validate battery_trend/
-iimod check battery_trend/
-iimod install battery_trend/ --allow-patches   # 磁貼補丁需要 --allow-patches
+iimod validate modules/battery_trend/
+iimod check modules/battery_trend/
+iimod install modules/battery_trend/ --allow-patches
 ```
 
 ## 設定
 
-`~/.config/illogical-impulse/modules/battery_trend.json`：
+設定檔位於：
 
-| Key | 預設 | 說明 |
-|---|---|---|
-| `showBar` | `false` | 顯示 bar 元件（stock bar 已有電池指示器，預設不佔 bar 空間；無論開關取樣與歷史照常） |
-| `showPercent` | `false` | `showBar` 開啟時在 bar 加百分比文字（stock 指示器已有數字，預設不重複） |
-| `samplingIntervalSec` | 60 | 取樣間隔（秒，15–600） |
-| `keepHourly` | `true` | 保留 30 天小時級歷史 |
-| `keepDaily` | `true` | 保留 365 天日級歷史與健康快照 |
-| `keepSessions` | `true` | 記錄充放電段 |
-| `batteryName` | `auto` | sysfs 電池名；`auto` 走 UPower `nativePath`，再退回探測 BAT0/BAT1/… |
+```text
+~/.config/illogical-impulse/modules/battery_trend.json
+```
 
-升級注意：設定檔裡已經有 `showBar` 的既有使用者維持自己的選擇（模塊
-只補缺失的 key，不覆寫既有值）；全新安裝預設沒有 bar 元件。
+| Key | 類型 | 預設 | 範圍／選項 | 說明 |
+|---|---|---:|---|---|
+| `showBar` | boolean | `false` | - | 顯示額外 bar sparkline |
+| `showPercent` | boolean | `false` | - | sparkline 旁顯示百分比 |
+| `samplingIntervalSec` | integer | `60` | 15-600 秒 | 歷史取樣間隔 |
+| `keepHourly` | boolean | `true` | - | 保留 30 天小時級歷史 |
+| `keepDaily` | boolean | `true` | - | 保留 365 天日級歷史與健康快照 |
+| `keepSessions` | boolean | `true` | - | 保留近期充放電 sessions |
+| `batteryName` | string | `auto` | sysfs 名稱或 `auto` | 指定電池；自動模式優先採 UPower `nativePath` |
 
-`histState` 是模塊自管的歷史 blob（上表五層），非使用者設定。
-全部選項在設定 app 的 **Modules → Battery Trend** 頁有對應控件。
+既有設定檔中的 `showBar` 會保留原值；只有缺少該 key 的新安裝使用 `false`。
+`histState` 是模塊管理的內部歷史 blob，不是一般使用者設定。
 
-## 實作說明（給模塊作者的參考）
+## 資料來源與取樣
 
-- `BatteryLogic.qml`：取樣＋累計＋分析**實例**（非單例），由 `bar.qml`
-  建立並向下傳遞；`sampling` 旗標區分 primary（寫）與 reader（讀）模式
-- `ConfigLoader.qml`：FileView＋JsonAdapter 寫自己的設定檔；`ready`
-  旗標讓歷史初始化等檔案真正載入；`owner` 綁 primary 當選，遲到的當選
-  會補 `writeAdapter()`
-- `TrendGraph.qml`：時間軸感知的迷你曲線——X 是牆鐘時間（10 分鐘的
-  資料不會被拉滿整幅）、斷點斷線、充電段換色；Y 用留白 min–max 窗
-  （最小跨度 8 個百分點），固定 0–100 會把正常的下午壓成直線
-- `DayChart.qml` / `BandChart.qml` / `HealthChart.qml`：Canvas 圖表，
-  皆含 hover 讀值；軸線用 `colOutlineVariant` 退居背景，文字一律用
-  文字墨色（不用系列色染文字）
-- sysfs 單位族偵測一次定案（energy_* 優先，退 charge_*），之後每 tick
-  只 reload 命中的那一族；`readInstant()` 同時服務取樣與快速輪詢
-- `StockBatteryPopup.qml`：stock 指示器所建立的模塊自有替代包裝；內含
-  `owner:false`、`sampling:false` 的 reader ConfigLoader/BatteryLogic，絕不成為
-  第二個記帳寫入者；`clickToShow` 模式下停用 hover 視窗，點擊前也先抑制彈窗
-- Tier B 補丁全部 insert-only：BatteryIndicator 加 alias import、唯一 click IPC、
-  模塊替代 popup，並把原生 BatteryPopup 的 `active` 固定為 false；另在
-  AndroidToggleDelegateChooser 加磁貼 delegate，以及在 AndroidQuickPanel 的
-  `id: unusedRows` 後加入缺席時的 edit-mode 候選。所有錨點都有精確 probe
-- 每個用到的 stock API（BarGroup、StyledPopup、StyledPopupValueRow、
-  StyledRectangularShadow、Config* 控件、GlobalStates、BatteryIndicator/BatteryPopup、
-  兩個側欄補丁錨點與磁貼元件）都在 manifest 宣告探針
+| 來源 | 用途 |
+|---|---|
+| Quickshell UPower | 狀態、百分比 fallback、`changeRate`、時間估計與電池偵測 |
+| sysfs `energy_*` | 精確能量、容量與功耗 |
+| sysfs `charge_*` + `voltage_now` | 不提供 `energy_*` 機型的容量與功耗 fallback |
+| `cycle_count` | 循環數與健康歷史 |
+
+primary bar instance 每 60 秒取樣一次，插拔電源或充放電狀態變化時立即補樣。
+Popup／面板開啟期間的 3 秒刷新只更新即時數字，不寫入歷史。
+
+每個螢幕都有 bar instance，但只有第一個螢幕的 primary 負責取樣、寫盤、補齊設定
+預設與 IPC。其他 instance 以 watched-reader 模式顯示同一份資料。
+
+`showBar: false` 只隱藏版面；ConfigLoader、取樣與 IPC 仍持續運作，不留下 bar
+空白。這讓 stock 電池環保留主要入口，同時避免重複占用 bar。
+
+## 保留策略
+
+| 層 | 保留時間 | 粒度 | 主要內容 |
+|---|---:|---:|---|
+| raw | 24 小時 | 取樣間隔 | 時間、百分比、功耗與狀態 |
+| hourly | 30 天 | 1 小時 | min/max/avg、功耗、充電占比與在用耗電 |
+| daily | 365 天 | 1 天 | 長期區間與耗電統計 |
+| health | 365 天 | 1 天 | `full/design` 與循環數 |
+| sessions | 最近 120 段 | 事件 | 充放電種類、起訖時間與百分比 |
+
+歷史以單一 JSON 字串 `histState` 寫入，避免熱重載時讀到跨欄位撕裂快照。整點或
+跨日的第一個樣本會先定稿上一層，再立即寫盤；一般取樣寫入會節流。
+
+相鄰樣本間隔超過三倍取樣週期時視為休眠或關機斷點。圖表會顯示斷線，且該段
+電量差不納入「在用耗電速率」。
+
+## 分析語意
+
+- **平滑功耗**：sysfs 瞬時功耗的 EMA，`alpha = 0.3`。
+- **剩餘時間**：最近 30 分鐘、同狀態且無斷點樣本的最小平方法回歸；少於五個
+  樣本或斜率方向不合理時顯示「量測中」。
+- **在用耗電速率**：清醒放電期間的百分比差，除以清醒放電時數。
+- **循環當量**：清醒放電百分比累計除以 100。
+- **健康**：目前 full capacity 除以 design capacity。
+- **平均放電深度**：至少 10 分鐘且下降至少 3% 的拔電 sessions。
+- **常用充電區間**：插電 sessions 的平均起始百分比到平均結束百分比。
+
+## 限制
+
+- sysfs 欄位依硬體與 kernel driver 而異；缺少必要欄位時使用 UPower fallback，
+  不會捏造健康度或功耗。
+- 剩餘時間是近期趨勢外推，不是保證值；負載快速改變時會隨新樣本調整。
+- 關機與休眠期間沒有中間樣本，模塊只標示斷點，不猜測過程。
+- Tier B patches 依賴目前 stock battery 與 sidebar anchors；上游改動時
+  `iimod check` 會拒絕安裝。
+
+## 實作說明
+
+| 檔案 | 職責 |
+|---|---|
+| `BatteryLogic.qml` | primary/reader lifecycle、取樣、累計與分析 |
+| `ConfigLoader.qml` | 設定與單一歷史 blob 持久化 |
+| `StockBatteryPopup.qml` | stock 指示器使用的模塊 popup 與 detail-panel 入口 |
+| `TrendGraph.qml` | 時間軸感知的 3 小時 sparkline |
+| `DayChart.qml` | 24 小時充放電與斷點圖 |
+| `BandChart.qml` | 30 天最低－最高區間圖 |
+| `HealthChart.qml` | 健康趨勢圖 |
+
+所有 patches 都是 insert-only。卸載或停用後，IIMP 會從乾淨基底還原 stock popup
+與點擊行為。
+
+## 卸載與資料
+
+```bash
+iimod uninstall battery_trend
+```
+
+卸載會還原 stock 電池 UI 並移除 sidebar integration，但不刪除歷史設定檔。需要完全
+移除資料時，再由使用者刪除：
+
+```text
+~/.config/illogical-impulse/modules/battery_trend.json
+```

@@ -1,44 +1,43 @@
-# indicator_tools — Applet 模塊面板（Tier B）
+# indicator_tools - 指示器 Applet 選單
 
-保留 stock bar 的 Wi-Fi／藍牙狀態圖示與左鍵側欄行為。右鍵兩個圖示會開啟
-Material 風格的模組面板；面板直接渲染 `nm-applet`／`blueman-applet` 提供的
-即時 D-Bus Menu，保留原生排序、disabled／check／radio 狀態、動作與遞迴子選單。
-模組不建立第二套 NetworkManager 或 BlueZ 狀態機；兩個 applet 自帶的重複托盤
-圖示會從 bar 顯示模型中精確隱藏。
+Tier B 模塊，為 stock Wi-Fi 與藍牙圖示提供 Material 選單。模塊直接渲染
+`nm-applet` 與 `blueman-applet` 的 D-Bus Menu，不建立第二套 NetworkManager
+或 BlueZ 狀態機。
 
-| stock 圖示 | 右鍵 UI | 後端／StatusNotifier ID |
+stock 圖示與左鍵開側欄的行為保持不變。兩個 applet 的重複托盤圖示會從 bar
+顯示模型隱藏，但底層 StatusNotifier item 仍保留供模塊使用。
+
+## 使用方式
+
+| stock 圖示 | 左鍵 | 右鍵 |
 |---|---|---|
-| Wi-Fi | Material 選單：保留 nm-applet 原生順序、狀態、網路、VPN 與子選單 | `nm-applet` |
-| 藍牙 | Material 面板：控制、已連線裝置、快速操作、管理、更多；音訊 profile 以子頁呈現 | Blueman `blueman` |
+| Wi-Fi | 開啟 stock 側欄 | 顯示 nm-applet 網路、VPN 與子選單 |
+| 藍牙 | 開啟 stock 側欄 | 顯示 Blueman 裝置、操作、管理與 audio profiles |
 
-水平／垂直、上／下／左／右 bar 都使用同一個橋。若 applet 尚未啟動，右鍵不
-執行動作；stock 圖示與左鍵行為仍正常。
+選單保留 applet 原生排序、disabled、check、radio、動作與遞迴子選單。水平、
+垂直與四種 bar 位置共用同一組 bridge；同一時間只會開啟一個選單。
 
-## 依賴與啟動
+## 需求
+
+`module.json` 要求以下 binaries：
 
 ```bash
 sudo pacman -S network-manager-applet blueman
 ```
 
-模塊只消費 SNI 選單，**不管理 applet 行程生命週期**，避免模塊重載時重複
-啟動。使用者 session 應各啟動一次：
+模塊只消費 applet 發布的 StatusNotifier/D-Bus Menu，不管理 process lifecycle。
+請由桌面 session、Hyprland autostart 或 user service 各啟動一次：
 
 ```bash
 nm-applet --indicator
 blueman-applet
 ```
 
-本機 Hyprland Lua 配置在 `custom/execs.lua` 的 `hyprland.start` handler 內以
-`pgrep -x` 守衛後啟動；`blueman-applet` 會再產生 `blueman-tray` 輔助程序，
-這是正常的一組 applet，不是重複實例。
-
-本機驗證版本：`network-manager-applet 1.36.0-2`、`blueman 2.4.6-2`。運行時
-實測兩者均為 `Status=Active` 且提供 D-Bus Menu：
-
-- `nm-applet`：`/org/ayatana/NotificationItem/nm_applet/Menu`
-- `blueman`：`/org/blueman/sni/menu`
+模塊宣告 `dbus` capability，沒有使用者設定檔。
 
 ## 安裝
+
+從 repository 根目錄執行：
 
 ```bash
 iimod validate modules/indicator_tools/
@@ -46,43 +45,49 @@ iimod check modules/indicator_tools/
 iimod install modules/indicator_tools/ --allow-patches
 ```
 
-## 實作
+## 相容性與限制
 
-- `AppletMenuBridge.qml` 直接從 `SystemTray.items.values` 以精確 `item.id` 找 applet，
-  並把同一個 `item.menu` 分別交給 `WifiAppletMenu.qml` 與 `AppletMenu.qml`。
-- Wi-Fi renderer 保留原始項目順序與動作，只壓縮首尾／連續 separator；空 label 依
-  項目類型提供 fallback，未知新項目仍會顯示，check／radio 與遞迴子選單保持原樣。
-- Blueman 根頁依穩定動作前綴分成控制、已連線裝置、快速操作、管理與更多；
-  Disconnect／Audio Profiles 會依裝置名稱配對，主機音訊設定不再誤當連線裝置。
-- Blueman 面板的動作使用一致的 Material Symbols；音訊 profile 子頁保留服務端
-  選取狀態。每列使用 RippleButton 的 theme hover、快速色彩過渡與 ripple，
-  不做造成布局位移的縮放動畫。
-- 沒有命令輸出解析、密碼 argv 或第二套網路／藍牙狀態機。
-- 四個圖示補丁（水平／垂直 × Wi-Fi／藍牙）用 path Loader 掛載 hover-only bridge；
-  stock `RippleButton` 是唯一 pointer owner，右鍵由其 `altAction` 依座標只分派給命中的
-  Wi-Fi／Bluetooth bridge，避免父子 `MouseArea` 競爭；stock 左鍵仍開側欄。
-- `SysTray.qml` 的 pinned／unpinned 顯示陣列只排除精確 ID `nm-applet`、`blueman`；
-  `TrayService` 和底層 `SystemTray.items` 保持完整，所以橋仍可取得選單。
-- separator 改以過濾後陣列判斷，避免托盤只剩兩個被隱藏 applet 時留下孤立圓點。
-- 3.0.0 是破壞性重寫：2.x 的自製 `WifiPanel`／`BtPanel`、nmcli parser、IPC 面板
-  與舊翻譯已移除；3.3.0 完成兩個 applet 的 Material renderer 並修正 Blueman
-  裝置配對與空 label 顯示；3.4.1 依 Quickshell 0.2.1 的 `LazyLoader.activeAsync`
-  在 spare frame 建立 renderer，並在 menu/layout 尺寸穩定後才播放原本的 opacity 與
-  elementResize 動畫。Popup window 幾何不再被 D-Bus model 更新逐幀改寫，renderer
-  也不再反覆銷毀重建；anchor 使用 window-relative rect，避免綁住易失的 bar item。
-  3.4.2 把右鍵 ownership 上移到 stock `RippleButton.altAction`，bridge 改為 hover-only；
-  3.4.3 再讓 Wi-Fi／Bluetooth 開啟流程互斥，開啟一側前會取消另一側的 pending
-  open 並關閉既有 popup，確保只顯示一個選單；3.4.4 將兩個 popup 註冊到 shell
-  共用的 `GlobalFocusGrab` dismiss lifecycle，點擊其他 window／桌面空白處會走同一個
-  `close()` 清理路徑；3.4.5 讓選單 action 觸發後保持面板開啟，等待 applet 的 D-Bus
-  model 更新狀態，不再在 `releaseAction` 後無條件關閉；3.4.6 保留 stock tray 同型的
-  anchored `PopupWindow`，但將 shell-wide dismiss lifecycle 換成 bridge 協調的
-  `HyprlandFocusGrab`；3.4.7 改用 `menuOpened(qsWindow)` 回傳的真實 popup window handle，
-  而不是 LazyLoader proxy，讓內部 action、同圖示 toggle 與點外關閉真正共存。已知的
-  Wi-Fi／Blueman actions 也改為優先使用 end-4 `MaterialSymbol`，避免 GTK native icon name
-  無法解析時留下空白 icon 欄；未知的 applet 專屬 icon 才保留 native fallback。裝置列的
-  Profiles／Disconnect compact buttons 固定同寬，文字用獨立 overlay 錨定按鈕中心；左右
-  icon／chevron 不再參與 label 排版。成熟 applet 仍是功能與 secret-agent 的唯一 owner。
+| 項目 | 值 |
+|---|---|
+| Tested dots commit | `446504ad42` |
+| Tested Quickshell | `0.2.1` |
+| Tier | B，stock bar 與 tray insert-only patches |
+| Applet IDs | `nm-applet`、`blueman` |
 
-卸載模塊後，stock 圖示不再接管 applet 選單，兩個 applet 的托盤圖示也會由
-IIMP 重組自動恢復顯示；appet 行程本身由 session 啟動配置管理，不受模塊卸載影響。
+- 若 applet 尚未啟動或沒有發布 D-Bus Menu，右鍵不執行動作；stock 左鍵仍正常。
+- 已知 Wi-Fi/Blueman actions 優先使用 Material Symbols；未知 applet icon 才使用
+  native icon fallback。
+- 模塊依賴目前 stock `RippleButton`、SystemTray models 與 menu contracts；錨點或
+  probes 失效時，`iimod check` 會拒絕安裝。
+
+## 疑難排解
+
+| 症狀 | 檢查 |
+|---|---|
+| 右鍵沒有反應 | 確認對應 applet process 正在執行 |
+| 選單不存在 | 確認 applet 已發布 StatusNotifier item 與 D-Bus Menu |
+| 同一 applet 出現多份 | 檢查 session autostart 是否重複啟動 process |
+| 安裝後 probe 失敗 | 更新模塊或使用相符的 dots/Quickshell 版本 |
+
+## 實作說明
+
+| 元件 | 職責 |
+|---|---|
+| `AppletMenuBridge.qml` | 依精確 item ID 取得 applet menu，協調 popup 與 focus lifecycle |
+| `WifiAppletMenu.qml` | 依 nm-applet 原始順序渲染網路與 VPN menu |
+| `AppletMenu.qml` | 渲染 Blueman 分組、裝置操作與 profile 子頁 |
+| bar patches | 把右鍵 `altAction` 分派給命中的 Wi-Fi/Bluetooth bridge |
+| `SysTray.qml` patches | 只從可見模型排除精確 applet IDs，保留底層 items |
+
+stock `RippleButton` 是唯一 pointer owner。Renderer 透過 `LazyLoader.activeAsync`
+建立，popup 在 layout 尺寸穩定後才播放既有動畫；真實 popup window handle 會加入
+focus grab，讓內部 action、同圖示 toggle 與點外關閉能共存。
+
+## 卸載
+
+```bash
+iimod uninstall indicator_tools
+```
+
+IIMP 重組後，stock 圖示不再開啟 applet 選單，`nm-applet` 與 `blueman` 托盤圖示會
+恢復顯示。Applet processes 仍由使用者的 session 啟動配置管理，不會因卸載而停止。

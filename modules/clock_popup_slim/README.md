@@ -1,67 +1,99 @@
-# clock_popup_slim - Bar 時鐘客製化（實驗性 Tier B）
+# Bar 時鐘客製化（實驗性）
 
 > [!WARNING]
-> **實驗性／可能棄用**：此模塊以 Tier B 補丁依賴目前 stock bar 的中央群組結構。
-> 若上游重做該版面，或 repository 提供更安全的替代方案，本模塊可能停止維護並棄用。
-> 安裝與下載目前仍保留，但不應視為穩定介面。
+> 這是依賴目前 stock bar 中央群組結構的 Tier B 模塊。若上游重做該版面，
+> 或 repository 提供更安全的替代方案，本模塊可能停止維護並棄用。
 
-客製化水平 bar 中央時鐘的顯示內容與密度。技術 ID 保留為
-`clock_popup_slim`，因此既有「精簡時鐘彈窗」安裝可以原地升級；使用者可見名稱自
-2.0.0 起改為「Bar 時鐘客製化」。2.1.0 新增對稱中央區寬度設定，用來減少工作區
-左右的空白，同時保持工作區位於螢幕正中央。
+客製化水平 bar 的時間／日期格式、密度與 hover popup。技術 ID 保留為
+`clock_popup_slim`，既有精簡時鐘彈窗安裝可原地升級。
 
-## 可調整項目
+## 功能
 
-- 只顯示時間，或顯示時間、分隔符與日期
-- Qt 時間格式，例如 `HH:mm`、`hh:mm AP`、`HH:mm:ss`
-- Qt 日期格式，例如 `ddd, dd/MM`、`MM/dd`
-- 分隔符、內容間距、時鐘左右留白
-- 對稱調整工作區左右兩個中央區域的寬度（280–360 px）
-- 時間與日期的文字尺寸偏移
-- hover 彈窗是否隱藏 System uptime 與 To Do
+- 只顯示時間，或顯示時間、分隔符與日期。
+- 使用 Qt time/date format，例如 `HH:mm:ss`、`hh:mm AP`、`ddd, dd/MM`。
+- 調整內容間距、水平 padding 與時間／日期字級偏移。
+- 以相同上限調整工作區左右的中央區寬度，保持 workspaces 在螢幕中央。
+- 選擇是否在共用 stock popup 隱藏 System uptime 與 To Do。
+- 時間格式包含未被引號包住的 seconds token 時，以每秒精度更新模塊時鐘。
 
-預設值是只顯示 `HH:mm`、時鐘左右留白 0 px、中央左右區域各 280 px，並維持原模塊的精簡 hover。加入 `:ss`
-時，模塊會自動把自己的時鐘更新精度提高到每秒；不會改動 shell 的全域時間設定。
+## 設定
 
-目前只替換水平 bar 的 `ClockWidget`。垂直 bar 的堆疊式時鐘維持 stock 版面，以免自訂
-單行格式破壞其固定寬度設計。
-
-設定儲存在：
+設定檔位於：
 
 ```text
 ~/.config/illogical-impulse/modules/clock_popup_slim.json
 ```
 
-模塊不寫入 shell 的 `config.json`，因此鎖定畫面、桌面時鐘和其他使用全域
+預設只顯示 `HH:mm`、水平 padding 為 `0`，並啟用精簡 popup。
+`centerSideWidth` 可設為 280-360 px；它是左右兩側的上限，不是固定寬度。
+實作使用 `Math.min(stockResponsiveWidth, centerSideWidth)`，所以較窄 viewport 仍由
+stock responsive width 決定。
+
+模塊不修改 shell `config.json` 或全域時間格式。Lock screen、桌面時鐘與其他使用
 `DateTime.time` 的元件不受影響。
+
+## 適用範圍與限制
+
+- 自訂 time/date layout 只取代水平 bar 的 `ClockWidget`。
+- 垂直 bar 保留 stock 堆疊式時鐘，避免單行格式破壞固定寬度版面。
+- `slimPopup` 修改水平與垂直 bar 共用的 stock popup visibility。
+- 中央區寬度依賴目前 `leftCenterGroup` 與 `rightCenterGroup` 結構。
+- 模塊沒有 capabilities，也不執行外部命令。
+
+| 相容性 | 值 |
+|---|---|
+| Tested dots commit | `446504ad42` |
+| Tested Quickshell | `0.2.1` |
+| Tier | B，九個 insert-only patches |
+
+錨點或 probes 因上游改動而失效時，`iimod check` 或 `reapply` 會停止，不會靜默
+套用部分客製化。
 
 ## 安裝
 
+從 repository 根目錄執行：
+
 ```bash
 iimod validate modules/clock_popup_slim/
-iimod check    modules/clock_popup_slim/
-iimod install  modules/clock_popup_slim/ --allow-patches
+iimod check modules/clock_popup_slim/
+iimod install modules/clock_popup_slim/ --allow-patches
 ```
 
-安裝後在 Settings > Modules > Bar 時鐘客製化調整選項。
+安裝後在 **Settings > Modules > Bar 時鐘客製化** 調整選項。
 
-要完全回到 stock 時鐘與完整 popup：
+## 停用與卸載
+
+暫時回到 stock 時鐘與完整 popup：
 
 ```bash
 iimod disable clock_popup_slim
 ```
 
-重組引擎會從乾淨基底移除本模塊的所有圍欄補丁。
+完整卸載：
+
+```bash
+iimod uninstall clock_popup_slim
+```
+
+IIMP 會從乾淨基底重組 stock QML。設定檔會保留，重新安裝時可繼續使用。
 
 ## 實作說明
 
-IIMP v1 的 bar slot 只能加入額外元件，不能替換位於 stock 中央群組內的既有時鐘；本模塊
-因此是 Tier B：
+| Patch surface | 行為 |
+|---|---|
+| `BarContent.qml` import | 載入模塊元件 |
+| stock `ClockWidget` | 隱藏 stock instance，在相同 layout 位置插入 `ClockBar` |
+| 左右中央群組 | 以兩個對稱 `Binding` 套用相同 responsive width 上限 |
+| `ClockWidgetPopup.qml` import/reader | 載入 readonly `ConfigLoader` |
+| Uptime / To Do | 以兩個 visibility patches 跟隨 `slimPopup` |
 
-- 在 `BarContent.qml` 匯入模塊元件、隱藏 stock `ClockWidget`，並在相同 layout 位置插入
-  `ClockBar`。
-- 在 `ClockWidgetPopup.qml` 插入唯讀設定載入器，讓 uptime 與 To Do 的可見性即時跟隨
-  `slimPopup`。
-- 所有修改都是 insert-only，沒有內嵌或取代 stock 檔案。
-- 每個補丁錨點都有精確 `file-contains` probe；上游改寫導致錨點失效時，安裝或 `reapply`
-  會以相容性／錨點錯誤停止，不會靜默套出半套。
+所有變更都是 insert-only，沒有內嵌或取代 stock 檔案。
+
+## 開發驗證
+
+```bash
+node --test modules/clock_popup_slim/tests/*.test.mjs
+iimod validate modules/clock_popup_slim/
+iimod suggest modules/clock_popup_slim/
+iimod check modules/clock_popup_slim/
+```
