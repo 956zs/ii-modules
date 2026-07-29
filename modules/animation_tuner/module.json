@@ -1,0 +1,80 @@
+{
+  "protocolVersion": 1,
+  "id": "animation_tuner",
+  "name": {
+    "en_US": "Animation Tuner",
+    "zh_TW": "動畫曲線調校器",
+    "zh_CN": "动画曲线调校器"
+  },
+  "description": {
+    "en_US": "Visually tunes the shell's central animation tokens with validated cubic Bezier curves, duration, velocity, reduced motion, and real QML previews for Bezier, delay, and spring parameters.",
+    "zh_TW": "以視覺化方式調校 shell 中央動畫 token：經驗證的 cubic Bezier 曲線、時長、速度、減少動態效果，以及 Bezier、延遲與彈簧參數的真實 QML 預覽。",
+    "zh_CN": "以可视化方式调校 shell 中央动画 token：经验证的 cubic Bezier 曲线、时长、速度、减少动态效果，以及 Bezier、延迟与弹簧参数的真实 QML 预览。"
+  },
+  "version": "1.0.1",
+  "authors": ["nlcat"],
+  "license": "MIT",
+  "slots": ["window"],
+  "entries": {
+    "window": "main.qml",
+    "settings": "settings.qml"
+  },
+  "compat": {
+    "probes": [
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject elementMove:",
+        "reason": "elementMove writable animation token"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject elementMoveSmall:",
+        "reason": "elementMoveSmall writable animation token"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject elementMoveEnter:",
+        "reason": "elementMoveEnter writable animation token"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject elementMoveExit:",
+        "reason": "elementMoveExit writable animation token"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject elementMoveFast:",
+        "reason": "elementMoveFast writable animation token"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject elementResize:",
+        "reason": "elementResize writable animation token"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject clickBounce:",
+        "reason": "clickBounce writable animation token"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject scroll:",
+        "reason": "scroll writable animation token"
+      }
+    ],
+    "testedOn": {
+      "dotsCommit": "446504ad42",
+      "qsVersion": "0.2.1"
+    }
+  },
+  "capabilities": [],
+  "patches": []
+}
