@@ -1,5 +1,5 @@
 import { defineConfig, type DefaultTheme, type HeadConfig } from 'vitepress'
-import { loadModuleCatalog } from '../../scripts/module-catalog.mjs'
+import { documentationEditUrl, loadModuleCatalog } from '../../scripts/module-catalog.mjs'
 
 const modules = await loadModuleCatalog()
 const firstModuleId = modules[0].id
@@ -68,12 +68,7 @@ const zhThemeConfig: DefaultTheme.Config = {
   darkModeSwitchLabel: '外觀',
   langMenuLabel: '切換語言',
   editLink: {
-    pattern: ({ filePath }) => {
-      const dynamicModule = filePath.match(/^(?:en\/)?modules\/([^/]+)\.md$/)
-      return dynamicModule
-        ? `https://github.com/956zs/ii-modules/edit/main/modules/${dynamicModule[1]}/README.md`
-        : `https://github.com/956zs/ii-modules/edit/main/site/docs/${filePath}`
-    },
+    pattern: documentationEditUrl,
     text: '在 GitHub 上編輯此頁',
   },
 }
@@ -120,12 +115,7 @@ const enThemeConfig: DefaultTheme.Config = {
     },
   ],
   editLink: {
-    pattern: ({ filePath }) => {
-      const dynamicModule = filePath.match(/^(?:en\/)?modules\/([^/]+)\.md$/)
-      return dynamicModule
-        ? `https://github.com/956zs/ii-modules/edit/main/modules/${dynamicModule[1]}/README.md`
-        : `https://github.com/956zs/ii-modules/edit/main/site/docs/${filePath}`
-    },
+    pattern: documentationEditUrl,
     text: 'Edit this page on GitHub',
   },
 }

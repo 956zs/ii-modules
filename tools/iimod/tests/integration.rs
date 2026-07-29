@@ -124,12 +124,43 @@ impl World {
         )
         .unwrap();
         std::fs::write(payload.join("bar.qml"), "Item { }\n").unwrap();
+        self.write_module_dict(
+            &payload,
+            "zh_TW",
+            serde_json::json!({format!("{id} greeting"): "你好"}),
+        );
+        payload
+    }
+
+    fn write_module_dict(&self, payload: &Path, locale: &str, dict: serde_json::Value) {
+        let path = payload.join("translations").join(format!("{locale}.json"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, serde_json::to_string_pretty(&dict).unwrap() + "\n").unwrap();
+    }
+
+    fn translations(&self, locale: &str) -> serde_json::Value {
+        serde_json::from_slice(
+            &std::fs::read(
+                self.root
+                    .join("shellconfig/translations")
+                    .join(format!("{locale}.json")),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn registry(&self) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(self.root.join("state/registry.json")).unwrap())
+            .unwrap()
+    }
+
+    fn write_registry(&self, registry: &serde_json::Value) {
         std::fs::write(
-            payload.join("translations/zh_TW.json"),
-            format!("{{\"{id} greeting\": \"你好\"}}\n"),
+            self.root.join("state/registry.json"),
+            serde_json::to_string_pretty(registry).unwrap() + "\n",
         )
         .unwrap();
-        payload
     }
 }
 
@@ -673,6 +704,456 @@ fn tier_a_install_uninstall_byte_clean() {
             pristine_content_hash,
             "{rel} not byte-clean after strip"
         );
+    }
+}
+
+#[test]
+fn shared_same_value_translations_survive_uninstall_in_either_order_until_last_reference() {
+    for (name, first_removed) in [
+        ("shared-translation-first-owner", "translation_first"),
+        ("shared-translation-second-owner", "translation_second"),
+    ] {
+        let w = World::new(name);
+        let first = w.make_module("translation_first", serde_json::json!({}));
+        let second = w.make_module("translation_second", serde_json::json!({}));
+        for payload in [&first, &second] {
+            w.write_module_dict(
+                payload,
+                "zh_TW",
+                serde_json::json!({"Shared greeting": "共同問候"}),
+            );
+        }
+
+        w.expect(&["install", first.to_str().unwrap()], 0);
+        w.expect(&["install", second.to_str().unwrap()], 0);
+        let registry = w.registry();
+        for module in registry["modules"].as_array().unwrap() {
+            assert_eq!(
+                module["translationKeys"]["zh_TW"],
+                serde_json::json!(["Shared greeting"])
+            );
+        }
+
+        w.expect(&["uninstall", first_removed], 0);
+        assert_eq!(w.translations("zh_TW")["Shared greeting"], "共同問候");
+        let survivor = if first_removed == "translation_first" {
+            "translation_second"
+        } else {
+            "translation_first"
+        };
+        let registry = w.registry();
+        assert_eq!(registry["modules"][0]["manifest"]["id"], survivor);
+        assert_eq!(
+            registry["modules"][0]["translationKeys"]["zh_TW"],
+            serde_json::json!(["Shared greeting"])
+        );
+
+        w.expect(&["uninstall", survivor], 0);
+        assert!(w.translations("zh_TW").get("Shared greeting").is_none());
+    }
+}
+
+#[test]
+fn uninstall_repairs_pre_migration_exclusive_translation_records() {
+    let w = World::new("pre-migration-exclusive");
+    let first = w.make_module("legacy_first", serde_json::json!({}));
+    let second = w.make_module("legacy_second", serde_json::json!({}));
+    for payload in [&first, &second] {
+        w.write_module_dict(
+            payload,
+            "zh_TW",
+            serde_json::json!({"Legacy shared": "舊共享值"}),
+        );
+    }
+    w.expect(&["install", first.to_str().unwrap()], 0);
+    w.expect(&["install", second.to_str().unwrap()], 0);
+
+    let mut registry = w.registry();
+    registry["schemaVersion"] = serde_json::json!(1);
+    registry["modules"][1]["translationKeys"] = serde_json::json!({});
+    w.write_registry(&registry);
+
+    w.expect(&["uninstall", "legacy_first"], 0);
+    assert_eq!(w.translations("zh_TW")["Legacy shared"], "舊共享值");
+    let repaired = w.registry();
+    assert_eq!(repaired["schemaVersion"], 2);
+    assert_eq!(
+        repaired["modules"][0]["translationKeys"]["zh_TW"],
+        serde_json::json!(["Legacy shared"])
+    );
+}
+
+#[test]
+fn user_translation_edits_survive_reapply_and_last_owner_uninstall() {
+    let w = World::new("translation-user-edit");
+    let payload = w.make_module("editable_translation", serde_json::json!({}));
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Editable greeting": "模組值"}),
+    );
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+
+    std::fs::write(
+        w.root.join("shellconfig/translations/zh_TW.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "Editable greeting": "使用者修改"
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+    w.expect(&["reapply"], 0);
+    assert_eq!(w.translations("zh_TW")["Editable greeting"], "使用者修改");
+    assert!(w.registry()["modules"][0]["translationKeys"]
+        .as_object()
+        .unwrap()
+        .is_empty());
+
+    w.expect(&["uninstall", "editable_translation"], 0);
+    assert_eq!(w.translations("zh_TW")["Editable greeting"], "使用者修改");
+}
+
+#[test]
+fn conflicting_translations_keep_oldest_then_promote_survivor() {
+    let w = World::new("translation-conflict");
+    let older = w.make_module("conflict_older", serde_json::json!({}));
+    let newer = w.make_module("conflict_newer", serde_json::json!({}));
+    w.write_module_dict(
+        &older,
+        "zh_TW",
+        serde_json::json!({"Conflict key": "較舊值"}),
+    );
+    w.write_module_dict(
+        &newer,
+        "zh_TW",
+        serde_json::json!({"Conflict key": "較新值"}),
+    );
+    w.expect(&["install", older.to_str().unwrap()], 0);
+    let mut registry = w.registry();
+    registry["modules"][0]["installedAtEpoch"] = serde_json::json!(10);
+    w.write_registry(&registry);
+    let out = w.expect(&["install", newer.to_str().unwrap()], 0);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("conflicting contributors"));
+    assert_eq!(w.translations("zh_TW")["Conflict key"], "較舊值");
+
+    let mut registry = w.registry();
+    registry["modules"][1]["installedAtEpoch"] = serde_json::json!(20);
+    w.write_registry(&registry);
+    w.expect(&["reapply"], 0);
+    assert_eq!(w.translations("zh_TW")["Conflict key"], "較舊值");
+    assert_eq!(
+        w.registry()["modules"][0]["translationKeys"]["zh_TW"],
+        serde_json::json!(["Conflict key"])
+    );
+    assert!(w.registry()["modules"][1]["translationKeys"]
+        .as_object()
+        .unwrap()
+        .is_empty());
+
+    w.expect(&["uninstall", "conflict_older"], 0);
+    assert_eq!(w.translations("zh_TW")["Conflict key"], "較新值");
+}
+
+#[test]
+fn sole_owner_upgrade_replaces_unchanged_value_and_preserves_user_edit() {
+    for (name, user_edit) in [("sole-upgrade-managed", false), ("sole-upgrade-user", true)] {
+        let w = World::new(name);
+        let payload = w.make_module("upgrade_translation", serde_json::json!({}));
+        w.write_module_dict(
+            &payload,
+            "zh_TW",
+            serde_json::json!({"Upgrade key": "舊值"}),
+        );
+        w.expect(&["install", payload.to_str().unwrap()], 0);
+        if user_edit {
+            std::fs::write(
+                w.root.join("shellconfig/translations/zh_TW.json"),
+                serde_json::to_string_pretty(&serde_json::json!({"Upgrade key": "使用者值"}))
+                    .unwrap()
+                    + "\n",
+            )
+            .unwrap();
+        }
+        let manifest_path = payload.join("module.json");
+        let manifest = std::fs::read_to_string(&manifest_path)
+            .unwrap()
+            .replace("\"1.0.0\"", "\"1.1.0\"");
+        std::fs::write(manifest_path, manifest).unwrap();
+        w.write_module_dict(
+            &payload,
+            "zh_TW",
+            serde_json::json!({"Upgrade key": "新值"}),
+        );
+        w.expect(&["install", payload.to_str().unwrap()], 0);
+        assert_eq!(
+            w.translations("zh_TW")["Upgrade key"],
+            if user_edit { "使用者值" } else { "新值" }
+        );
+    }
+}
+
+#[test]
+fn reapply_rebuilds_shared_translation_references() {
+    let w = World::new("translation-reapply-references");
+    let first = w.make_module("reapply_first", serde_json::json!({}));
+    let second = w.make_module("reapply_second", serde_json::json!({}));
+    for payload in [&first, &second] {
+        w.write_module_dict(
+            payload,
+            "zh_TW",
+            serde_json::json!({"Reapply shared": "重新套用共享"}),
+        );
+    }
+    w.expect(&["install", first.to_str().unwrap()], 0);
+    w.expect(&["install", second.to_str().unwrap()], 0);
+    let mut registry = w.registry();
+    for module in registry["modules"].as_array_mut().unwrap() {
+        module["translationKeys"] = serde_json::json!({});
+    }
+    w.write_registry(&registry);
+
+    w.expect(&["reapply"], 0);
+    for module in w.registry()["modules"].as_array().unwrap() {
+        assert_eq!(
+            module["translationKeys"]["zh_TW"],
+            serde_json::json!(["Reapply shared"])
+        );
+    }
+}
+
+#[test]
+fn failed_upgrade_rolls_back_changed_added_and_removed_translation_locales() {
+    let w = World::new("translation-rollback-locales");
+    let payload = w.make_module("locale_upgrade", serde_json::json!({}));
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Locale key": "舊語系值"}),
+    );
+    w.write_module_dict(
+        &payload,
+        "zh_CN",
+        serde_json::json!({"Locale key": "旧语系值"}),
+    );
+    w.write_module_dict(
+        &payload,
+        "ja_JP",
+        serde_json::json!({"Locale key": "古い値"}),
+    );
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+    let old_tw = std::fs::read(w.root.join("shellconfig/translations/zh_TW.json")).unwrap();
+    let old_cn = std::fs::read(w.root.join("shellconfig/translations/zh_CN.json")).unwrap();
+    let old_ja = std::fs::read(w.root.join("shellconfig/translations/ja_JP.json")).unwrap();
+
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Locale key": "新語系值"}),
+    );
+    w.write_module_dict(
+        &payload,
+        "zh_CN",
+        serde_json::json!({"Locale key": "新语系值"}),
+    );
+    std::fs::remove_file(payload.join("translations/ja_JP.json")).unwrap();
+    w.write_module_dict(
+        &payload,
+        "ko_KR",
+        serde_json::json!({"Locale key": "새 값"}),
+    );
+    let manifest_path = payload.join("module.json");
+    let manifest = std::fs::read_to_string(&manifest_path)
+        .unwrap()
+        .replace("\"1.0.0\"", "\"1.1.0\"");
+    std::fs::write(manifest_path, manifest).unwrap();
+
+    let modules_dir = w.root.join("shellconfig/modules");
+    std::fs::remove_dir_all(&modules_dir).unwrap();
+    std::fs::write(&modules_dir, "blocks index projection\n").unwrap();
+    w.expect(&["install", payload.to_str().unwrap()], 1);
+
+    assert_eq!(
+        std::fs::read(w.root.join("shellconfig/translations/zh_TW.json")).unwrap(),
+        old_tw
+    );
+    assert_eq!(
+        std::fs::read(w.root.join("shellconfig/translations/zh_CN.json")).unwrap(),
+        old_cn
+    );
+    assert_eq!(
+        std::fs::read(w.root.join("shellconfig/translations/ja_JP.json")).unwrap(),
+        old_ja
+    );
+    assert!(!w.root.join("shellconfig/translations/ko_KR.json").exists());
+    assert_eq!(w.registry()["modules"][0]["manifest"]["version"], "1.0.0");
+}
+
+#[test]
+fn malformed_live_translation_dictionary_fails_closed_and_uninstall_rolls_back() {
+    let w = World::new("translation-live-corruption");
+    let payload = w.make_module("corrupt_live", serde_json::json!({}));
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Managed key": "模組值"}),
+    );
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+
+    let live = w.root.join("shellconfig/translations/zh_TW.json");
+    let corrupt = b"{not json\n";
+    std::fs::write(&live, corrupt).unwrap();
+    let registry_before = std::fs::read(w.root.join("state/registry.json")).unwrap();
+    let live_module = w.ii().join("mod/corrupt_live");
+    let stored_module = w.root.join("state/store/corrupt_live/1.0.0");
+
+    let manifest_path = payload.join("module.json");
+    let manifest = std::fs::read_to_string(&manifest_path)
+        .unwrap()
+        .replace("\"1.0.0\"", "\"1.1.0\"");
+    std::fs::write(&manifest_path, manifest).unwrap();
+    w.expect(&["install", payload.to_str().unwrap()], 6);
+    assert!(!w.root.join("state/store/corrupt_live/1.1.0").exists());
+    assert_eq!(w.registry()["modules"][0]["manifest"]["version"], "1.0.0");
+
+    w.expect(&["reapply"], 6);
+    assert_eq!(std::fs::read(&live).unwrap(), corrupt);
+    assert_eq!(
+        std::fs::read(w.root.join("state/registry.json")).unwrap(),
+        registry_before
+    );
+
+    w.expect(&["uninstall", "corrupt_live"], 6);
+    assert_eq!(std::fs::read(&live).unwrap(), corrupt);
+    assert_eq!(
+        std::fs::read(w.root.join("state/registry.json")).unwrap(),
+        registry_before
+    );
+    assert!(live_module.join("bar.qml").is_file());
+    assert!(stored_module.join("bar.qml").is_file());
+}
+
+#[test]
+fn uninstall_rolls_back_when_translation_write_fails_mid_transaction() {
+    let w = World::new("translation-uninstall-write-failure");
+    let payload = w.make_module("write_failure", serde_json::json!({}));
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Managed key": "模組值"}),
+    );
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+
+    let live = w.root.join("shellconfig/translations/zh_TW.json");
+    let live_before = std::fs::read(&live).unwrap();
+    let registry_before = std::fs::read(w.root.join("state/registry.json")).unwrap();
+    let live_module = w.ii().join("mod/write_failure");
+    let stored_module = w.root.join("state/store/write_failure/1.0.0");
+    std::fs::create_dir(live.with_extension("json.tmp")).unwrap();
+
+    w.expect(&["uninstall", "write_failure"], 1);
+    assert_eq!(std::fs::read(&live).unwrap(), live_before);
+    assert_eq!(
+        std::fs::read(w.root.join("state/registry.json")).unwrap(),
+        registry_before
+    );
+    assert!(live_module.join("bar.qml").is_file());
+    assert!(stored_module.join("bar.qml").is_file());
+}
+
+#[test]
+fn missing_referenced_store_translation_fails_reapply_without_state_loss() {
+    let w = World::new("translation-store-corruption");
+    let payload = w.make_module("corrupt_store", serde_json::json!({}));
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Stored key": "母本值"}),
+    );
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+    let live_before = std::fs::read(w.root.join("shellconfig/translations/zh_TW.json")).unwrap();
+    let registry_before = std::fs::read(w.root.join("state/registry.json")).unwrap();
+    std::fs::remove_file(
+        w.root
+            .join("state/store/corrupt_store/1.0.0/translations/zh_TW.json"),
+    )
+    .unwrap();
+
+    w.expect(&["reapply"], 6);
+    assert_eq!(
+        std::fs::read(w.root.join("shellconfig/translations/zh_TW.json")).unwrap(),
+        live_before
+    );
+    assert_eq!(
+        std::fs::read(w.root.join("state/registry.json")).unwrap(),
+        registry_before
+    );
+}
+
+#[test]
+fn malformed_store_translation_fails_reapply_as_integrity_error() {
+    let w = World::new("translation-malformed-store");
+    let payload = w.make_module("malformed_store", serde_json::json!({}));
+    w.write_module_dict(
+        &payload,
+        "zh_TW",
+        serde_json::json!({"Stored key": "母本值"}),
+    );
+    w.expect(&["install", payload.to_str().unwrap()], 0);
+    let live_before = std::fs::read(w.root.join("shellconfig/translations/zh_TW.json")).unwrap();
+    let registry_before = std::fs::read(w.root.join("state/registry.json")).unwrap();
+    std::fs::write(
+        w.root
+            .join("state/store/malformed_store/1.0.0/translations/zh_TW.json"),
+        "{not json\n",
+    )
+    .unwrap();
+
+    w.expect(&["reapply"], 6);
+    assert_eq!(
+        std::fs::read(w.root.join("shellconfig/translations/zh_TW.json")).unwrap(),
+        live_before
+    );
+    assert_eq!(
+        std::fs::read(w.root.join("state/registry.json")).unwrap(),
+        registry_before
+    );
+}
+
+#[test]
+fn doctor_rebuild_recovers_legacy_store_payload_without_translation_catalogs() {
+    let w = World::new("doctor-legacy-store");
+    let payload = w.make_module("legacy_store", serde_json::json!({}));
+    std::fs::remove_dir_all(payload.join("translations")).unwrap();
+    let stored = w.root.join("state/store/legacy_store/1.0.0");
+    std::fs::create_dir_all(stored.parent().unwrap()).unwrap();
+    copy_tree_for_test(&payload, &stored);
+
+    let output = w.expect(&["doctor", "--rebuild-registry"], 0);
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("registry rebuilt (1 modules"),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let registry = w.registry();
+    assert_eq!(registry["modules"][0]["manifest"]["id"], "legacy_store");
+    assert_eq!(registry["modules"][0]["state"], "disabled");
+    assert!(registry["modules"][0]["translationKeys"]
+        .as_object()
+        .unwrap()
+        .is_empty());
+}
+
+fn copy_tree_for_test(src: &Path, dest: &Path) {
+    for entry in walkdir::WalkDir::new(src) {
+        let entry = entry.unwrap();
+        let rel = entry.path().strip_prefix(src).unwrap();
+        let target = dest.join(rel);
+        if entry.file_type().is_dir() {
+            std::fs::create_dir_all(target).unwrap();
+        } else if entry.file_type().is_file() {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
     }
 }
 

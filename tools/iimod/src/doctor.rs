@@ -7,7 +7,7 @@ use anyhow::Result;
 
 use crate::hostpatch;
 use crate::hoststate::{self, MutationMode};
-use crate::ops::{patch_records_for, validate_payload, wipe_banner};
+use crate::ops::{patch_records_for, validate_stored_payload, wipe_banner};
 use crate::paths;
 use crate::qs;
 use crate::registry::{self, InstalledModule, ModuleState, Registry};
@@ -78,9 +78,7 @@ fn recover_store_entry(entry: &std::fs::DirEntry) -> Result<Option<InstalledModu
     let Some(payload) = best_version_payload(&entry.path()) else {
         return Ok(None);
     };
-    let Ok(module) = installed_module_from_payload(&payload) else {
-        return Ok(None);
-    };
+    let module = installed_module_from_payload(&payload, &id)?;
     println!("recovered from store: {id}");
     Ok(Some(module))
 }
@@ -99,8 +97,8 @@ fn best_version_payload(module_store_dir: &Path) -> Option<PathBuf> {
     best.map(|(_, payload)| payload)
 }
 
-fn installed_module_from_payload(payload: &Path) -> Result<InstalledModule> {
-    let (manifest, _) = validate_payload(payload)?;
+fn installed_module_from_payload(payload: &Path, expected_id: &str) -> Result<InstalledModule> {
+    let (manifest, _) = validate_stored_payload(payload, expected_id)?;
     let patch_records = patch_records_for(&manifest);
     Ok(InstalledModule {
         files: store::hash_tree(payload)?,

@@ -46,8 +46,12 @@ Author modules under IIMP SPEC 1.0. `iimod` is the reference tool and
     features bump minor, fixes bump patch.
 13. No `.qml` basename may collide with stock files under `$II/services/` or
     `$II/modules/common/**`.
-14. User-visible text uses `Translation.tr("English source")`; provide
-    `translations/zh_TW.json` when shipping to this community.
+14. User-visible text uses `Translation.tr("English source")`; runtime misses
+    display that English source. Portable modules provide a complete, canonical
+    `translations/zh_TW.json`; this repository also requires exact `zh_CN` and
+    denies orphans in both first-party catalogs. Literal calls are preferred.
+    Finite nonliteral calls require exact payload-root `i18n.sources.json`
+    development metadata; it is not a manifest field and has no runtime role.
 15. Lua is authoring glue only in IIMP v1. Lua may generate deterministic
     `module.json`/QML before packaging, but the packaged module must validate as
     static artifacts. Do not require `iimod` or Quickshell to execute
@@ -58,6 +62,10 @@ Author modules under IIMP SPEC 1.0. `iimod` is the reference tool and
     tables for settings and backend matrices, and split paragraphs that contain
     three or more independent facts. Verify commands, paths, defaults,
     capabilities, tier, and version claims against `module.json` and source.
+17. The feature owner owns QML/JS, English wording, dynamic-source provenance,
+    manifest/version, README, and tests. Freeze source strings before delegating
+    to an independent `ii-module-i18n` subagent. Do not ask that subagent to
+    change feature files or weaken checks; resolve any ambiguity it returns.
 
 ## Release Checklist
 
@@ -66,6 +74,8 @@ Complete source and live verification first:
 ```bash
 iimod validate <dir>
 iimod suggest <dir>
+iimod i18n extract <dir>
+iimod i18n check <dir> --locale zh_TW --locale zh_CN --deny-orphans
 iimod check <dir>
 iimod install <dir>
 qs -c ii ipc --any-display call iimp ping

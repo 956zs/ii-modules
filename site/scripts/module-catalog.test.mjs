@@ -3,7 +3,13 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { loadModuleCatalog, moduleDocPaths, moduleFromManifest, registryJson } from './module-catalog.mjs'
+import {
+  documentationEditUrl,
+  loadModuleCatalog,
+  moduleDocPaths,
+  moduleFromManifest,
+  registryJson,
+} from './module-catalog.mjs'
 
 function manifest(overrides = {}) {
   return {
@@ -74,14 +80,32 @@ test('moduleDocPaths uses English README and documents the Chinese fallback', as
   const modulesDir = await fixture({
     sample: { manifest: manifest(), readme: '# 中文標題\n\n中文。' },
   })
+  const [chinese] = await moduleDocPaths('zh_TW', { modulesDir })
   const [english] = await moduleDocPaths('en_US', { modulesDir })
+  assert.equal(chinese.params.editPath, 'modules/sample/README.md')
   assert.match(english.content, /^# Sample/)
   assert.match(english.content, /Translation status/)
   assert.match(english.content, /中文。/)
+  assert.equal(english.params.editPath, 'modules/sample/README.md')
 
   await writeFile(path.join(modulesDir, 'sample', 'README.en.md'), '# English details\n')
   const [translated] = await moduleDocPaths('en_US', { modulesDir })
   assert.equal(translated.content, '# English details\n')
+  assert.equal(translated.params.editPath, 'modules/sample/README.en.md')
+})
+
+test('documentationEditUrl resolves generated and ordinary documentation sources', () => {
+  assert.equal(
+    documentationEditUrl({
+      filePath: 'modules/[id].md',
+      params: { id: 'sample', editPath: 'modules/sample/README.md' },
+    }),
+    'https://github.com/956zs/ii-modules/edit/main/modules/sample/README.md',
+  )
+  assert.equal(
+    documentationEditUrl({ filePath: 'guide/install.md' }),
+    'https://github.com/956zs/ii-modules/edit/main/site/docs/guide/install.md',
+  )
 })
 
 test('registryJson excludes build-only paths and stays deterministic', () => {

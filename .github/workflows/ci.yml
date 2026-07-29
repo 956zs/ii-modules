@@ -52,6 +52,9 @@ jobs:
       - name: Test module contracts
         run: node --test modules/*/tests/*.test.mjs
 
+      - name: Check module translations
+        run: tools/iimod/target/debug/iimod i18n check --all --deny-orphans
+
       - name: Check release scripts
         run: |
           bash -n tools/release/*.sh

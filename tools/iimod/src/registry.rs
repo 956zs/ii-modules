@@ -38,7 +38,7 @@ pub struct InstalledModule {
     pub files: BTreeMap<String, String>,
     /// Patches as applied (owner == manifest.id), targets are $II-relative
     pub patch_records: BTreeMap<String, Vec<PatchInstance>>,
-    /// locale → keys this module owns in the merged translation dicts
+    /// locale → translation keys this module references in generated dictionaries
     pub translation_keys: BTreeMap<String, Vec<String>>,
     pub installed_at_epoch: u64,
     /// Update index URL (`iimod install --origin`); consulted by `iimod update`.
@@ -207,6 +207,8 @@ pub fn save(registry: &Registry) -> Result<()> {
 }
 
 pub fn save_to(path: &Path, registry: &Registry) -> Result<()> {
+    let mut registry = registry.clone();
+    registry.schema_version = REGISTRY_SCHEMA_VERSION;
     let parent = path.parent().expect("registry path has a parent");
     std::fs::create_dir_all(parent)?;
     if path.exists() {
@@ -214,7 +216,7 @@ pub fn save_to(path: &Path, registry: &Registry) -> Result<()> {
     }
     let tmp = path.with_extension("json.tmp");
     let mut f = std::fs::File::create(&tmp)?;
-    f.write_all(serde_json::to_string_pretty(registry)?.as_bytes())?;
+    f.write_all(serde_json::to_string_pretty(&registry)?.as_bytes())?;
     f.write_all(b"\n")?;
     f.sync_all()?;
     std::fs::rename(&tmp, path)?;
