@@ -3,6 +3,7 @@ mod doctor;
 mod exit;
 mod hostpatch;
 mod hoststate;
+mod i18n;
 mod install;
 mod lint;
 mod manifest;
@@ -36,6 +37,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Extract and validate module translation catalogs
+    I18n {
+        #[command(subcommand)]
+        command: I18nCommand,
+    },
     /// Scaffold a new module payload directory
     Init {
         /// Module id (^[a-z][a-z0-9_]{1,30}$, no trailing _ or __)
@@ -139,9 +145,52 @@ enum Command {
     },
 }
 
+#[derive(Subcommand)]
+enum I18nCommand {
+    /// Extract English translation sources
+    Extract {
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        source: Option<PathBuf>,
+        /// Discover direct modules under the current repository
+        #[arg(long)]
+        all: bool,
+    },
+    /// Check translation dictionaries against extracted sources
+    Check {
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        source: Option<PathBuf>,
+        /// Discover direct modules under the current repository
+        #[arg(long)]
+        all: bool,
+        /// Required locale; repeated values replace command defaults
+        #[arg(long = "locale")]
+        locales: Vec<String>,
+        /// Treat orphan dictionary keys as errors
+        #[arg(long)]
+        deny_orphans: bool,
+    },
+}
+
 fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Command::I18n { command } => match command {
+            I18nCommand::Extract { source, all } => {
+                i18n::cmd_extract(source.as_deref(), all, pkg::DEFAULT_MAX_UNPACKED)
+            }
+            I18nCommand::Check {
+                source,
+                all,
+                locales,
+                deny_orphans,
+            } => i18n::cmd_check(
+                source.as_deref(),
+                all,
+                &locales,
+                deny_orphans,
+                pkg::DEFAULT_MAX_UNPACKED,
+            ),
+        },
         Command::Init { id, dir } => commands::cmd_init(&id, &dir),
         Command::Validate { source, max_size } => commands::cmd_validate(&source, max_size),
         Command::Check { source, max_size } => commands::cmd_check(&source, max_size),
