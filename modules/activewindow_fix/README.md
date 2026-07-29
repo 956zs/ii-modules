@@ -29,8 +29,9 @@ iimod install modules/activewindow_fix/ --allow-patches
 | Patch target | `modules/ii/bar/ActiveWindow.qml` |
 | Patch anchor | `HyprlandData.monitors[root.monitor?.id]` |
 
-補丁錨點就是上游的錯誤表達式。上游修復後錨點會消失，後續 `check` 或 `reapply`
-將把模塊標記為不相容，不會繼續套用過時修復。
+補丁錨點就是上游的錯誤表達式。上游修復後錨點會消失：`iimod check` 只會回報
+相容性失敗，不會修改已安裝狀態；`iimod reapply` 則會把模塊標記為不相容，並在
+重組 stock QML 時略過這個過時補丁。
 
 ## 實作說明
 
