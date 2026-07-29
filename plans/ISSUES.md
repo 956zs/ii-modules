@@ -1,5 +1,11 @@
 # Issues
 
+## Module i18n consistency
+
+- ✅ P1 resolved: Registry v2 translation ownership now records contributor references, preserves same-value sharers and user edits, validates immutable store references, and makes uninstall rollback transactional.
+- ✅ P1 resolved: Scanner review regressions cover template interpolation, nested `.arg()` arguments, unrelated grouped postfix calls, expression-keyword regexes, control-flow statement regexes, regex character classes, and division expressions.
+- ✅ P2 resolved: All first-party modules now pass exact canonical `zh_TW` and `zh_CN` checks with no orphans; CI and release source/package workflows enforce the same policy.
+
 ## Concurrent iimod transactions
 
 - ✅ Host downgrade/freshness protection fixed in `iimod` 1.2.0: registry remains schema v2, while `$STATE/host/current.json` selects an immutable monotonic generation bundle containing both host assets and the full target-aware host patch set. New mutators atomically install a permanent exact `1\n` legacy lock fence before switching to stable-inode `flock` on `mutation.lock.v2`, so released old binaries fail before host writes; freshness-aware older binaries reuse a validated newer bundle, future protocols and generation collisions/corruption fail closed, and first migration compares full sentinel plus fence version/content identity.
