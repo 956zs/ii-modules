@@ -48,6 +48,7 @@ Item {
     property string curDayKey: ""
     property var todayApps: ({})     // appId -> seconds
     property var hours: []           // 24 reals, seconds per hour of today
+    property bool hoursComplete: true // false when a pre-v1.3 day lacks its early buckets
     property var days: []            // [{k, total, apps:[{n,s}]}] oldest→newest, today excluded
     property real todayTotal: 0
     // Bumped after every accrual so bindings over the plain-var containers
@@ -96,15 +97,18 @@ Item {
         const now = new Date(nowMs)
         const elapsed = (nowMs - root.lastTick) / 1000
         const startHour = new Date(root.lastTick).getHours()
+        const nowDayKey = root.dayKeyOf(now)
+        const rolledOver = root.curDayKey !== nowDayKey
         root.lastTick = nowMs
 
         // Day rollover first. The pre-midnight tail of the current interval
         // (≤ one heartbeat, 15s) lands in the new day — accepted inaccuracy.
-        if (root.curDayKey !== root.dayKeyOf(now)) {
+        if (rolledOver) {
             root.foldToday()
-            root.curDayKey = root.dayKeyOf(now)
+            root.curDayKey = nowDayKey
             root.todayApps = ({})
             root.hours = new Array(24).fill(0)
+            root.hoursComplete = true
             root.todayTotal = 0
             root.aiUnion = 0
             root.aiSum = 0
@@ -117,7 +121,8 @@ Item {
             apps[root.curApp] = (apps[root.curApp] ?? 0) + elapsed
             root.todayApps = apps
             const hrs = root.hours
-            hrs[Math.min(23, Math.max(0, startHour))] += elapsed
+            const creditedHour = rolledOver ? now.getHours() : startHour
+            hrs[Math.min(23, Math.max(0, creditedHour))] += elapsed
             root.hours = hrs
             root.todayTotal += elapsed
             root.dirty = true
@@ -143,13 +148,18 @@ Item {
     // the tail summed into "other".
     function foldToday() {
         if (!root.keepHistory) return
-        if (root.curDayKey === "" || (root.todayTotal <= 0 && root.aiUnion <= 0)) return
+        // Reaching rollover means this tracker observed the day. Preserve a
+        // legitimate zero so period averages do not depend on whether the shell
+        // happened to restart; days with no tracker record remain unknown.
+        if (root.curDayKey === "") return
         root.days = root.trimmedDays(root.days.concat(
-            [root.foldedDay(root.curDayKey, root.todayApps, root.aiUnion, root.aiSum, root.aiPeak)]))
+            [root.foldedDay(root.curDayKey, root.todayApps,
+                            root.hoursComplete ? root.hours : undefined,
+                            root.aiUnion, root.aiSum, root.aiPeak)]))
         root.dirty = true
     }
 
-    function foldedDay(key, appsMap, aiU, aiS, aiP) {
+    function foldedDay(key, appsMap, hourValues, aiU, aiS, aiP) {
         const sorted = Object.entries(appsMap)
             .map(([n, s]) => ({ n, s: Math.round(s) }))
             .filter(a => a.s > 0)
@@ -157,8 +167,15 @@ Item {
         const top = sorted.slice(0, root.maxAppsPerDay)
         const rest = sorted.slice(root.maxAppsPerDay).reduce((acc, a) => acc + a.s, 0)
         if (rest > 0) top.push({ n: root.otherKey, s: rest })
-        return { k: key, total: sorted.reduce((acc, a) => acc + a.s, 0), apps: top,
-                 aiU: Math.round(aiU ?? 0), aiS: Math.round(aiS ?? 0), aiP: aiP ?? 0 }
+        const validHours = Array.isArray(hourValues) && hourValues.length === 24
+            && hourValues.every(value => typeof value === "number"
+                && Number.isFinite(value) && value >= 0)
+        const hours = validHours ? hourValues.map(value => Math.round(Number(value))) : undefined
+        const folded = { k: key, total: sorted.reduce((acc, a) => acc + a.s, 0), apps: top,
+                         aiU: Math.round(aiU ?? 0), aiS: Math.round(aiS ?? 0), aiP: aiP ?? 0 }
+        if (hours)
+            folded.hours = hours
+        return folded
     }
 
     function trimmedDays(list) {
@@ -179,6 +196,7 @@ Item {
         }
         let apps = ({})
         let hrs = new Array(24).fill(0)
+        let hrsComplete = true
         let aiU = 0, aiS = 0, aiP = 0
         let past = Array.isArray(s?.days) ? s.days.filter(d => d && typeof d.k === "string") : []
         const day = s?.day
@@ -186,15 +204,22 @@ Item {
             const dayAi = (day.ai && typeof day.ai === "object") ? day.ai : ({})
             if (day.k === root.curDayKey) {
                 apps = day.apps
-                if (Array.isArray(day.hours) && day.hours.length === 24)
-                    hrs = day.hours.map(v => Number(v) || 0)
+                const validDayHours = Array.isArray(day.hours) && day.hours.length === 24
+                    && day.hours.every(value => typeof value === "number"
+                        && Number.isFinite(value) && value >= 0)
+                if (validDayHours) {
+                    hrs = day.hours.slice()
+                    hrsComplete = day.hoursComplete !== false
+                } else {
+                    hrsComplete = false
+                }
                 aiU = Number(dayAi.u) || 0
                 aiS = Number(dayAi.s) || 0
                 aiP = Number(dayAi.p) || 0
             } else if (day.k < root.curDayKey) {
                 // The shell was last running on an earlier day: that day is
                 // over, fold it into history before starting today from zero.
-                past = past.concat([root.foldedDay(day.k, day.apps,
+                past = past.concat([root.foldedDay(day.k, day.apps, day.hours,
                     Number(dayAi.u) || 0, Number(dayAi.s) || 0, Number(dayAi.p) || 0)])
             }
         }
@@ -203,6 +228,7 @@ Item {
         root.aiSum = aiS
         root.aiPeak = aiP
         root.hours = hrs
+        root.hoursComplete = hrsComplete
         root.todayTotal = Object.values(apps).reduce((acc, v) => acc + (Number(v) || 0), 0)
         root.days = root.keepHistory ? root.trimmedDays(past) : []
         root.lastTick = Date.now()
@@ -220,6 +246,7 @@ Item {
         store.histState = JSON.stringify({
             v: 1,
             day: { k: root.curDayKey, apps: rounded, hours: root.hours.map(v => Math.round(v)),
+                   hoursComplete: root.hoursComplete,
                    ai: { u: Math.round(root.aiUnion), s: Math.round(root.aiSum), p: root.aiPeak } },
             days: root.keepHistory ? root.days : []
         })
@@ -297,7 +324,8 @@ Item {
         return out
     }
 
-    // Last 30 calendar days ending today, zero-filled, for the daily curve.
+    // Last 30 calendar days ending today. Missing historical records stay
+    // null so charts can distinguish unknown coverage from a recorded zero.
     function trend30() {
         const out = []
         const now = new Date()
@@ -308,7 +336,9 @@ Item {
                 out.push({ k, total: root.todayTotal })
             } else {
                 const rec = root.days.find(x => x.k === k)
-                out.push({ k, total: rec?.total ?? 0 })
+                const total = rec?.total
+                out.push({ k, total: typeof total === "number"
+                    && Number.isFinite(total) && total >= 0 ? total : null })
             }
         }
         return out

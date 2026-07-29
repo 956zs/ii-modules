@@ -12,6 +12,9 @@ import qs.modules.common.widgets
 Item {
     id: root
     property list<real> values: []
+    // Optional presence mask. Missing points break the line and receive a
+    // neutral baseline tick; recorded zeroes remain part of the series.
+    property var present: []
     property color lineColor: Appearance.colors.colPrimary
     // The chart's background, for the marker ring.
     property color surfaceColor: Appearance.m3colors.m3surfaceContainer
@@ -24,7 +27,11 @@ Item {
         ? Math.max(0, Math.min(root.values.length - 1,
             Math.round((mouse.mouseX - 6) / ((canvas.width - 12) / (root.values.length - 1)))))
         : -1
-    readonly property real maxValue: Math.max(1, ...root.values)
+    readonly property real maxValue: Math.max(1, ...root.values.map(value => Number(value) || 0))
+
+    function observed(index) {
+        return root.present.length === 0 || root.present[index] === true
+    }
 
     implicitHeight: readout.implicitHeight + 4 + root.chartHeight + labelRow.height
 
@@ -71,16 +78,27 @@ Item {
             if (n < 2)
                 return
 
-            // area wash
-            ctx.beginPath()
-            ctx.moveTo(0, baseY)
-            for (let i = 0; i < n; i++)
-                ctx.lineTo(ptX(i), ptY(root.values[i]))
-            ctx.lineTo(width, baseY)
-            ctx.closePath()
+            // Area wash is drawn per contiguous observed segment so unknown
+            // dates do not imply a zero-valued valley.
             const c = root.lineColor
             ctx.fillStyle = Qt.rgba(c.r, c.g, c.b, 0.1)
-            ctx.fill()
+            let segmentStart = -1
+            for (let i = 0; i <= n; i++) {
+                const observed = i < n && root.observed(i)
+                if (observed && segmentStart < 0)
+                    segmentStart = i
+                if (!observed && segmentStart >= 0) {
+                    const end = i - 1
+                    ctx.beginPath()
+                    ctx.moveTo(ptX(segmentStart), baseY)
+                    for (let j = segmentStart; j <= end; j++)
+                        ctx.lineTo(ptX(j), ptY(root.values[j]))
+                    ctx.lineTo(ptX(end), baseY)
+                    ctx.closePath()
+                    ctx.fill()
+                    segmentStart = -1
+                }
+            }
 
             // hover crosshair under the line
             if (root.hoveredIndex >= 0) {
@@ -98,16 +116,33 @@ Item {
             ctx.lineJoin = "round"
             ctx.lineCap = "round"
             ctx.beginPath()
+            let drawing = false
             for (let i = 0; i < n; i++) {
-                if (i === 0)
+                if (!root.observed(i)) {
+                    drawing = false
+                    ctx.fillStyle = Appearance.colors.colLayer2
+                    ctx.fillRect(ptX(i) - 2, baseY - 2, 4, 2)
+                    continue
+                }
+                if (!drawing) {
                     ctx.moveTo(ptX(i), ptY(root.values[i]))
-                else
+                    drawing = true
+                } else {
                     ctx.lineTo(ptX(i), ptY(root.values[i]))
+                }
             }
             ctx.stroke()
 
-            // end marker (hovered point takes over), 2px surface ring
-            const mi = root.hoveredIndex >= 0 ? root.hoveredIndex : n - 1
+            // End marker (hovered point takes over) only for observed points.
+            let mi = root.hoveredIndex >= 0 && root.observed(root.hoveredIndex)
+                ? root.hoveredIndex : -1
+            if (mi < 0) {
+                for (let i = n - 1; i >= 0; i--) {
+                    if (root.observed(i)) { mi = i; break }
+                }
+            }
+            if (mi < 0)
+                return
             ctx.beginPath()
             ctx.arc(ptX(mi), ptY(root.values[mi]), 6, 0, 2 * Math.PI)
             ctx.fillStyle = root.surfaceColor
@@ -121,6 +156,7 @@ Item {
         Connections {
             target: root
             function onValuesChanged() { canvas.requestPaint() }
+            function onPresentChanged() { canvas.requestPaint() }
             function onLineColorChanged() { canvas.requestPaint() }
             function onSurfaceColorChanged() { canvas.requestPaint() }
             function onHoveredIndexChanged() { canvas.requestPaint() }
