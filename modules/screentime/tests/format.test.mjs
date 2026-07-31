@@ -11,6 +11,9 @@ function loadFunction(name) {
 
     return vm.runInNewContext(`(${match[0]})`, {
         DesktopEntries: {
+            heuristicLookup: appId => appId === "org.prismlauncher.PrismLauncher"
+                ? { name: "Prism Launcher" }
+                : null,
             applications: {
                 values: [
                     {
@@ -33,6 +36,14 @@ test("resolves VRChat's Steam app ID to its game name", () => {
 test("keeps generic desktop app IDs readable", () => {
     assert.equal(appName("org.mozilla.firefox"), "Firefox")
     assert.equal(appName("code-url-handler"), "Code url handler")
+})
+
+test("does not mistake a dotted Minecraft version for a reverse-domain app ID", () => {
+    assert.equal(appName("Minecraft* 1.20.1"), "Minecraft 1.20.1")
+})
+
+test("prefers the desktop entry name when the app ID resolves", () => {
+    assert.equal(appName("org.prismlauncher.PrismLauncher"), "Prism Launcher")
 })
 
 test("handles aggregate, empty, invalid, and unknown Steam IDs", () => {
