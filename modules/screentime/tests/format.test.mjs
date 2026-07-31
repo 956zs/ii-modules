@@ -11,9 +11,12 @@ function loadFunction(name) {
 
     return vm.runInNewContext(`(${match[0]})`, {
         DesktopEntries: {
-            heuristicLookup: appId => appId === "org.prismlauncher.PrismLauncher"
-                ? { name: "Prism Launcher" }
-                : null,
+            heuristicLookup: appId => {
+                assert.notEqual(appId, "", "empty app IDs must bypass desktop lookup")
+                return appId === "org.prismlauncher.PrismLauncher"
+                    ? { name: "Prism Launcher" }
+                    : null
+            },
             applications: {
                 values: [
                     {
