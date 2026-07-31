@@ -10,7 +10,7 @@
     "en_US": "Phone-style screen time tracking with Daily and Trends tabs. Focus accounting via Quickshell's native ToplevelManager (event-driven, pauses while locked, suspend gaps not counted) keeps a browsable 30-day history. Daily shows a selected day's total, app ranking, AI work summary, and today's hourly histogram. Trends shows recorded-complete-day averages with coverage and previous-period comparison, honest missing-day charts, and a Monday-to-Sunday hourly heatmap accumulated from v1.3 onward. A separate AI work-time dimension samples agent process trees even while unfocused or locked. Bar pill, IPC detail panel, and optional Tier B sidebar tile included.",
     "zh_TW": "手機風格的螢幕使用時間統計，詳情分成「每日／趨勢」。以 Quickshell 原生 ToplevelManager 做焦點記帳（事件驅動、鎖屏暫停、休眠時段不入帳），保留可瀏覽的 30 天歷史。「每日」顯示選定日期總時長、應用排行、AI 工作摘要與今日時段圖；「趨勢」顯示有紀錄完整日平均、覆蓋率、前期比較、誠實標示缺日的圖表，以及從 1.3 起累積的週一至週日時段熱力圖。另有獨立 AI 工作時長維度，即使未聚焦或鎖屏仍會取樣 agent 程序樹。含 Bar 藥丸、IPC 詳情面板與可選 Tier B 側欄磁貼。"
   },
-  "version": "1.3.0",
+  "version": "1.3.1",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["bar", "window"],

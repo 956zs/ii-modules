@@ -59,8 +59,10 @@ Heatmap 以 `N/28` 顯示實際覆蓋率，支援 hover 讀值、Tab focus 與�
 - **鎖屏**：`GlobalStates.screenLocked` 為真時不入帳。
 - **休眠／掛起**：事件間隔超過 `idleGapSec` 時不計該段。
 - **無焦點**：空桌面不入帳，因此今日總時長等於各應用時長總和。
-- **應用名稱**：Steam `steam_app_<id>` 會從本機 desktop entry 的
-  `steam://rungameid/<id>` command 尋找遊戲名稱，不執行網路查詢。
+- **應用名稱**：優先使用本機 desktop entry 名稱；Steam `steam_app_<id>` 會從
+  desktop entry 的 `steam://rungameid/<id>` command 尋找遊戲名稱，不執行網路
+  查詢。無法解析的反向網域 app ID 取最後一段，一般視窗 class 則保留完整名稱與
+  版本資訊，例如 `Minecraft* 1.20.1` 顯示為 `Minecraft 1.20.1`。
 
 沒有 idle protocol 資料時，螢幕未鎖但人已離開且仍有焦點視窗的時間會繼續入帳。
 正常 component destruction 會先結算並寫盤；突然 crash 或強制終止仍可能遺失最近

@@ -29,9 +29,9 @@ QtObject {
         return h < 10 ? `${h.toFixed(1)}h` : `${Math.round(h)}h`
     }
 
-    // "org.mozilla.firefox" -> "Firefox", "code-url-handler" -> "Code url handler"
+    // "org.mozilla.firefox" -> "Firefox", "Minecraft* 1.20.1" -> "Minecraft 1.20.1"
     function appName(appId) {
-        if (typeof appId !== "string") return ""
+        if (typeof appId !== "string" || appId === "") return ""
         if (appId === "__other__") return Translation.tr("Other")
 
         const steamMatch = appId.match(/^steam_app_(\d+)$/i)
@@ -42,9 +42,15 @@ QtObject {
             if (entry && entry.name) return entry.name
         }
 
-        const last = appId.split(".").pop().replace(/[-_]+/g, " ").trim()
-        if (last === "") return appId
-        return last.charAt(0).toUpperCase() + last.slice(1)
+        const desktopEntry = DesktopEntries.heuristicLookup(appId)
+        if (desktopEntry && desktopEntry.name) return desktopEntry.name
+
+        const reverseDomain = /^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za-z0-9_-]*)+$/.test(appId)
+        const source = reverseDomain ? appId.split(".").pop() : appId
+        const readable = source.replace(/\*/g, " ").replace(/[-_]+/g, " ")
+            .replace(/\s+/g, " ").trim()
+        if (readable === "") return appId
+        return readable.charAt(0).toUpperCase() + readable.slice(1)
     }
 
     function weekdayLetter(dow) {

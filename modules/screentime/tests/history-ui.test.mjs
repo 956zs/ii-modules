@@ -156,7 +156,7 @@ test("history and trends are documented, translated, and versioned as additive",
         assert.ok(translation["Typical hours"])
         assert.ok(translation["%1 of 28 days have hourly detail"])
     }
-    assert.equal(manifest.version, "1.3.0")
+    assert.equal(manifest.version, "1.3.1")
     assert.match(manifest.description.en_US, /Daily and Trends tabs/)
     assert.match(manifest.description.en_US, /hourly heatmap/)
 })
