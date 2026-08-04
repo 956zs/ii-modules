@@ -190,6 +190,24 @@ impl BackupSet {
         }
         Ok(())
     }
+
+    pub fn add_tree(&self, label: &str, absolute: &Path) -> Result<()> {
+        if absolute.exists() {
+            copy_tree(absolute, &self.dir.join(label))?;
+        }
+        Ok(())
+    }
+
+    pub fn restore_tree(&self, label: &str, absolute: &Path) -> Result<()> {
+        let src = self.dir.join(label);
+        if absolute.exists() {
+            std::fs::remove_dir_all(absolute)?;
+        }
+        if src.exists() {
+            copy_tree(&src, absolute)?;
+        }
+        Ok(())
+    }
 }
 
 /// Keep the newest `keep` backup sets, delete the rest.

@@ -2,8 +2,11 @@
 //! Atomic writes (temp+rename, one .bak); single-writer lock; topological helpers.
 
 use std::collections::BTreeMap;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::fd::AsRawFd;
+use std::path::Path;
+
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -218,62 +221,133 @@ pub fn save_to(path: &Path, registry: &Registry) -> Result<()> {
     Ok(())
 }
 
-/// Single-writer lock. O_EXCL create with pid; stale (dead pid) locks are reclaimed.
+/// Single-writer lock held with flock on a stable inode. The lock file is never
+/// unlinked: closing the file descriptor is the only ownership release.
 #[derive(Debug)]
 pub struct Lock {
-    path: PathBuf,
+    _file: std::fs::File,
 }
 
 impl Lock {
     pub fn acquire() -> Result<Lock> {
-        Self::acquire_at(&paths::lock_path())
+        Self::acquire_at(&paths::mutation_lock_path())
     }
 
     pub fn acquire_at(path: &Path) -> Result<Lock> {
         std::fs::create_dir_all(path.parent().expect("lock path has a parent"))?;
-        for attempt in 0..2 {
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)
-            {
-                Ok(mut f) => {
-                    let _ = writeln!(f, "{}", std::process::id());
-                    return Ok(Lock {
-                        path: path.to_path_buf(),
-                    });
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempt == 0 => {
-                    let holder = std::fs::read_to_string(path).unwrap_or_default();
-                    let pid: Option<u32> = holder.trim().parse().ok();
-                    let alive = pid
-                        .map(|p| Path::new(&format!("/proc/{p}")).exists())
-                        .unwrap_or(false);
-                    if alive {
-                        return Err(bail(
-                            exit::STATE,
-                            format!(
-                                "another iimod is running (pid {}); lock: {}",
-                                holder.trim(),
-                                path.display()
-                            ),
-                        ));
-                    }
-                    let _ = std::fs::remove_file(path); // stale — reclaim
-                }
-                Err(e) => return Err(bail(exit::STATE, format!("cannot acquire lock: {e}"))),
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map_err(|e| bail(exit::STATE, format!("cannot open lock: {e}")))?;
+        let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if result != 0 {
+            let error = std::io::Error::last_os_error();
+            let code = error.raw_os_error();
+            if code == Some(libc::EWOULDBLOCK) || code == Some(libc::EAGAIN) {
+                let holder = read_lock_holder(&mut file);
+                return Err(lock_held_error(path, &holder));
             }
+            return Err(bail(exit::STATE, format!("cannot acquire lock: {error}")));
         }
-        Err(bail(
-            exit::STATE,
-            "cannot acquire lock after reclaiming a stale one",
-        ))
+
+        let holder = read_lock_holder(&mut file);
+        if holder == "1\n" {
+            return Err(permanent_fence_error(path));
+        }
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
+        writeln!(file, "{}", std::process::id())?;
+        file.sync_all()?;
+        Ok(Lock { _file: file })
     }
 }
 
-impl Drop for Lock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+fn read_lock_holder(file: &mut std::fs::File) -> String {
+    let _ = file.seek(SeekFrom::Start(0));
+    let mut holder = String::new();
+    let _ = file.read_to_string(&mut holder);
+    holder
+}
+
+fn permanent_fence_error(path: &Path) -> anyhow::Error {
+    bail(
+        exit::STATE,
+        format!(
+            "legacy iimod mutations are permanently fenced; lock: {}",
+            path.display()
+        ),
+    )
+}
+
+fn lock_held_error(path: &Path, holder: &str) -> anyhow::Error {
+    if holder == "1\n" {
+        return permanent_fence_error(path);
+    }
+    bail(
+        exit::STATE,
+        format!(
+            "another iimod is running (pid {}); lock: {}",
+            holder.trim(),
+            path.display()
+        ),
+    )
+}
+
+static LEGACY_FENCE_NONCE: AtomicU64 = AtomicU64::new(0);
+
+/// Permanently fence released binaries that still mutate under `$STATE/lock`.
+/// PID 1 is always live, so their existing stale-lock logic fails closed.
+pub fn install_legacy_fence() -> Result<()> {
+    install_legacy_fence_at(&paths::legacy_lock_path())
+}
+
+fn install_legacy_fence_at(path: &Path) -> Result<()> {
+    if std::fs::read(path).ok().as_deref() == Some(b"1\n") {
+        return Ok(());
+    }
+    let parent = path.parent().expect("legacy lock path has a parent");
+    std::fs::create_dir_all(parent)?;
+    let nonce = LEGACY_FENCE_NONCE.fetch_add(1, Ordering::Relaxed);
+    let tmp = parent.join(format!(".legacy-fence-{}-{nonce}", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)?;
+    let prepared = file.write_all(b"1\n").and_then(|_| file.sync_all());
+    if let Err(error) = prepared {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(bail(
+            exit::STATE,
+            format!("cannot prepare legacy mutation fence: {error}"),
+        ));
+    }
+    match std::fs::hard_link(&tmp, path) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&tmp);
+            std::fs::File::open(parent)?.sync_all()?;
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let _ = std::fs::remove_file(&tmp);
+            if std::fs::read(path).ok().as_deref() == Some(b"1\n") {
+                Ok(())
+            } else {
+                Err(lock_held_error(
+                    path,
+                    &std::fs::read_to_string(path).unwrap_or_default(),
+                ))
+            }
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(bail(
+                exit::STATE,
+                format!("cannot install legacy mutation fence: {error}"),
+            ))
+        }
     }
 }
 
@@ -286,6 +360,8 @@ pub fn now_epoch() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::manifest;
 
@@ -391,5 +467,116 @@ mod tests {
         // Stale lock with a dead pid is reclaimed.
         std::fs::write(&path, "999999999\n").unwrap();
         let _lock = Lock::acquire_at(&path).unwrap();
+    }
+
+    #[test]
+    fn dropping_old_inode_does_not_release_replacement_lock() {
+        let dir = tmp("lock-replacement");
+        let path = dir.join("lock");
+        let old = Lock::acquire_at(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let replacement = Lock::acquire_at(&path).unwrap();
+        drop(old);
+        let err = Lock::acquire_at(&path).unwrap_err();
+        assert_eq!(crate::exit::code_of(&err), crate::exit::STATE);
+        drop(replacement);
+        Lock::acquire_at(&path).unwrap();
+    }
+
+    #[test]
+    fn simultaneous_contenders_have_one_winner() {
+        use std::sync::{mpsc, Arc, Barrier};
+
+        let dir = tmp("lock-contention");
+        let path = Arc::new(dir.join("lock"));
+        let start = Arc::new(Barrier::new(9));
+        let release = Arc::new(Barrier::new(2));
+        let (tx, rx) = mpsc::channel();
+        let mut threads = Vec::new();
+        for _ in 0..8 {
+            let path = Arc::clone(&path);
+            let start = Arc::clone(&start);
+            let release = Arc::clone(&release);
+            let tx = tx.clone();
+            threads.push(std::thread::spawn(move || {
+                start.wait();
+                match Lock::acquire_at(&path) {
+                    Ok(lock) => {
+                        tx.send(true).unwrap();
+                        release.wait();
+                        drop(lock);
+                    }
+                    Err(_) => tx.send(false).unwrap(),
+                }
+            }));
+        }
+        drop(tx);
+        start.wait();
+        let winners = (0..8).filter(|_| rx.recv().unwrap()).count();
+        assert_eq!(winners, 1);
+        release.wait();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn legacy_fence_publish_is_exact_and_preserves_existing_owner() {
+        let dir = tmp("legacy-publish");
+        let path = dir.join("lock");
+        install_legacy_fence_at(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"1\n");
+
+        std::fs::write(&path, b"999999999\n").unwrap();
+        let err = install_legacy_fence_at(&path).unwrap_err();
+        assert_eq!(crate::exit::code_of(&err), crate::exit::STATE);
+        assert_eq!(std::fs::read(&path).unwrap(), b"999999999\n");
+    }
+
+    #[test]
+    fn concurrent_legacy_fence_installers_publish_one_complete_fence() {
+        use std::sync::{Arc, Barrier};
+
+        let dir = tmp("legacy-concurrent");
+        let path = Arc::new(dir.join("lock"));
+        let start = Arc::new(Barrier::new(9));
+        let mut threads = Vec::new();
+        for _ in 0..8 {
+            let path = Arc::clone(&path);
+            let start = Arc::clone(&start);
+            threads.push(std::thread::spawn(move || {
+                start.wait();
+                install_legacy_fence_at(&path)
+            }));
+        }
+        start.wait();
+        for thread in threads {
+            thread.join().unwrap().unwrap();
+        }
+        assert_eq!(std::fs::read(&*path).unwrap(), b"1\n");
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".legacy-fence-")
+            })
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temporary fences remain: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    fn exact_legacy_fence_is_preserved() {
+        let dir = tmp("legacy-fence");
+        let path = dir.join("lock");
+        std::fs::write(&path, "1\n").unwrap();
+        let err = Lock::acquire_at(&path).unwrap_err();
+        assert_eq!(crate::exit::code_of(&err), crate::exit::STATE);
+        assert_eq!(std::fs::read(&path).unwrap(), b"1\n");
     }
 }
