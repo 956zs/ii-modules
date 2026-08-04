@@ -24,6 +24,8 @@ Tier A bar 流量計，不修改 stock QML。提供即時上下行速率、DNS p
 - `pingHost: auto` 優先使用主機設定的公網 DNS，並跳過 loopback stub 與
   Tailscale magic DNS。
 
+彈窗關閉時會停止 DNS discovery 與正在進行的 ping；延遲測試不會在背景持續執行。
+
 ## 需求與資料來源
 
 `nethogs` 是 `module.json` 中的 install-time 必要依賴，也是宣告的 per-app fallback；
