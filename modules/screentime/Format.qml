@@ -31,7 +31,7 @@ QtObject {
 
     // "org.mozilla.firefox" -> "Firefox", "Minecraft* 1.20.1" -> "Minecraft 1.20.1"
     function appName(appId) {
-        if (typeof appId !== "string" || appId === "") return ""
+        if (typeof appId !== "string") return ""
         if (appId === "__other__") return Translation.tr("Other")
 
         const steamMatch = appId.match(/^steam_app_(\d+)$/i)

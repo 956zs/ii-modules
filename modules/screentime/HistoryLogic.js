@@ -98,6 +98,15 @@ function isoWeekInfo(key) {
     return { year, week, startKey, endKey: shiftDayKey(startKey, DAYS_PER_WEEK - 1) }
 }
 
+function weekStartKey(key) {
+    return isoWeekInfo(key).startKey
+}
+
+function previousCompleteWeekStartKey(todayKey) {
+    const startKey = weekStartKey(todayKey)
+    return startKey === "" ? "" : shiftDayKey(startKey, -DAYS_PER_WEEK)
+}
+
 function recordForKey(key, records, today) {
     if (key === today.k)
         return today
@@ -151,16 +160,19 @@ function emptyWeeklyReport() {
 
 function weeklyReport(options) {
     const input = options && typeof options === "object" ? options : {}
-    const info = isoWeekInfo(input.todayKey)
-    const todayDate = validDayKey(input.todayKey)
-    if (!todayDate)
+    if (!validDayKey(input.todayKey))
+        return emptyWeeklyReport()
+
+    const requestedWeek = typeof input.weekStartKey === "string" && input.weekStartKey !== ""
+        ? input.weekStartKey : previousCompleteWeekStartKey(input.todayKey)
+    const info = isoWeekInfo(requestedWeek)
+    if (info.startKey === "")
         return emptyWeeklyReport()
 
     const records = latestDays(input.days)
     const today = { k: input.todayKey, total: seconds(input.todayTotal),
                     apps: rankingFromMap(input.todayApps) }
-    const weekday = (todayDate.getDay() + DAYS_PER_WEEK - 1) % DAYS_PER_WEEK
-    const expectedDays = weekday + 1
+    const expectedDays = DAYS_PER_WEEK
     const currentData = aggregatePeriod({ startKey: info.startKey, span: expectedDays,
                                           records, today })
     const previousStartKey = shiftDayKey(info.startKey, -DAYS_PER_WEEK)
@@ -177,7 +189,8 @@ function weeklyReport(options) {
                        total: previousData.total, coverage: previousData.coverage,
                        expectedDays, apps: previousData.apps }
     return { info, current, previous, comparisonAvailable,
-             totalDelta: comparisonAvailable ? current.total - previous.total : null }
+             totalDelta: comparisonAvailable ? current.total - previous.total : null,
+             lastCompleteStartKey: previousCompleteWeekStartKey(input.todayKey) }
 }
 
 function normalizedHours(hours) {
