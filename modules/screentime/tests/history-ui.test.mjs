@@ -41,29 +41,63 @@ test("hourly detail and live agent status remain today-only", async () => {
     assert.match(source, /visible: root\.selectedIsToday\s+Layout\.fillWidth: true\s+Layout\.topMargin: 2\s+values: root\.t7\.map\(d => d\.ai\)/)
 })
 
-test("daily and trends tabs separate date detail from aggregate analysis", async () => {
+test("daily and weekly tabs separate date detail from calendar-week analysis", async () => {
     const source = await read("DetailsPanel.qml")
 
     assert.match(source, /property string selectedTab: "daily"/)
     assert.match(source, /key: "daily", label: Translation\.tr\("Daily"\)/)
-    assert.match(source, /key: "trends", label: Translation\.tr\("Trends"\)/)
+    assert.match(source, /key: "weekly", label: Translation\.tr\("Weekly"\)/)
     assert.match(source, /visible: root\.selectedTab === "daily"/)
-    assert.match(source, /visible: root\.selectedTab === "trends"/)
+    assert.match(source, /visible: root\.selectedTab === "weekly"/)
     assert.match(source, /flick\.contentY = 0/)
     assert.match(source, /color: tabButton\.toggled\s+\? Appearance\.colors\.colOnPrimary/)
 })
 
-test("trends use complete-day coverage, missing-value masks, and hourly heatmap", async () => {
-    const source = await read("DetailsPanel.qml")
+test("weekly report uses an ISO calendar week and live current-day data", async () => {
+    const [panel, report] = await Promise.all([
+        read("DetailsPanel.qml"), read("WeeklyReport.qml")
+    ])
 
-    assert.match(source, /HistoryLogic\.periodSummary\(root\.logic\.curDayKey, root\.logic\.days, 7\)/)
-    assert.match(source, /HistoryLogic\.hourHeatmap\(root\.logic\.curDayKey, root\.logic\.days, 28\)/)
-    assert.match(source, /root\.period7\.current\.coverage/)
-    assert.match(source, /present: root\.period7\.current\.days\.map\(day => day\.total !== null\)/)
-    assert.match(source, /referenceValue: root\.period7\.current\.coverage > 0/)
+    assert.match(panel, /HistoryLogic\.weeklyReport\(\{/)
+    assert.match(panel, /todayKey: root\.logic\.curDayKey/)
+    assert.match(panel, /todayTotal: root\.logic\.todayTotal/)
+    assert.match(panel, /todayApps: root\.logic\.todayApps/)
+    assert.match(panel, /Loader \{/)
+    assert.match(panel, /active: root\.selectedTab === "weekly"/)
+    assert.match(panel, /sourceComponent: WeeklyReport \{/)
+    assert.match(report, /import qs\.services/)
+    assert.match(report, /Translation\.tr\("Week %1 of %2"\)/)
+    assert.match(report, /text: fmt\.dur\(root\.report\.current\.total\)/)
+    assert.match(report, /root\.report\.current\.coverage/)
+    assert.match(report, /root\.report\.current\.expectedDays/)
+    assert.match(report, /present: root\.report\.current\.days\.map\(day => day\.total !== null\)/)
+    assert.match(report, /Translation\.tr\("vs last week to date"\)/)
+})
+
+test("weekly report identifies top apps and compares each with last week", async () => {
+    const source = await read("WeeklyReport.qml")
+
+    assert.match(source, /root\.report\.current\.apps\.slice\(0, root\.maximumRankedApps\)/)
+    assert.match(source, /Translation\.tr\("Most used app"\)/)
+    assert.match(source, /fmt\.appName\(root\.topApp\.n\)/)
+    assert.match(source, /fmt\.dur\(root\.topApp\.s\)/)
+    assert.match(source, /Translation\.tr\("Apps this week"\)/)
+    assert.match(source, /appRow\.modelData\.delta/)
+    assert.match(source, /Translation\.tr\("Comparison unavailable"\)/)
+    assert.match(source, /readonly property var topApp:/)
+    assert.doesNotMatch(source, /root\.ranking\[0\]\.(?:n|s|delta)/)
+})
+
+test("weekly report retains broader hourly and 30-day context", async () => {
+    const source = await read("WeeklyReport.qml")
+
     assert.match(source, /HourHeatmap \{/)
-    assert.match(source, /root\.heatmap28\.coverage/)
-    assert.match(source, /present: root\.t30\.map\(d => d\.total !== null\)/)
+    assert.match(source, /root\.heatmap\.coverage/)
+    assert.match(source, /present: root\.days30\.map\(day => day\.total !== null\)/)
+    assert.ok(source.indexOf('Translation.tr("This week")')
+        < source.indexOf('Translation.tr("Typical hours")'))
+    assert.ok(source.indexOf('Translation.tr("Typical hours")')
+        < source.indexOf('Translation.tr("Most used app")'))
 })
 
 test("hour heatmap is keyboard-readable and uses a Material sequential scale", async () => {
@@ -134,14 +168,17 @@ test("history helper stays compatible with the Quickshell JavaScript parser", as
     assert.doesNotMatch(source, /\{\s*\.\.\./)
 })
 
-test("history and trends are documented, translated, and versioned as additive", async () => {
+test("daily and calendar-week reports are documented, translated, and versioned as additive", async () => {
     const [readme, zhTw, zhCn, manifestText] = await Promise.all([
         read("README.md"), read("translations/zh_TW.json"),
         read("translations/zh_CN.json"), read("module.json")
     ])
     const manifest = JSON.parse(manifestText)
 
-    assert.match(readme, /詳情面板分成「每日／趨勢」兩頁/)
+    assert.match(readme, /詳情面板分成「每日／週報」兩頁/)
+    assert.match(readme, /ISO 8601/)
+    assert.match(readme, /同一批星期/)
+    assert.match(readme, /本週應用排行/)
     assert.match(readme, /星期×時段熱力圖/)
     assert.match(readme, /N\/28/)
     for (const text of [zhTw, zhCn]) {
@@ -152,11 +189,17 @@ test("history and trends are documented, translated, and versioned as additive",
         assert.ok(translation["Apps on this day"])
         assert.ok(translation["No record for this day"])
         assert.ok(translation["Daily"])
-        assert.ok(translation["Trends"])
+        assert.ok(translation["Weekly"])
+        assert.ok(translation["Week %1 of %2"])
+        assert.ok(translation["Most used app"])
+        assert.ok(translation["Apps this week"])
+        assert.ok(translation["vs last week to date"])
         assert.ok(translation["Typical hours"])
         assert.ok(translation["%1 of 28 days have hourly detail"])
     }
-    assert.equal(manifest.version, "1.3.1")
-    assert.match(manifest.description.en_US, /Daily and Trends tabs/)
+    assert.equal(manifest.version, "1.4.0")
+    assert.match(manifest.description.en_US, /Daily and Weekly tabs/)
+    assert.match(manifest.description.en_US, /ISO calendar-week/)
+    assert.match(manifest.description.en_US, /per-app comparison/)
     assert.match(manifest.description.en_US, /hourly heatmap/)
 })

@@ -7,7 +7,7 @@ async function loadLogic() {
     const source = (await readFile(new URL("../HistoryLogic.js", import.meta.url), "utf8"))
         .replace(/^\.pragma library\s*/, "")
     const context = vm.createContext({ Date })
-    vm.runInContext(`${source}\nglobalThis.api = { shiftDayKey, dayRecord, periodSummary, hourHeatmap }`, context)
+    vm.runInContext(`${source}\nglobalThis.api = { shiftDayKey, dayRecord, weeklyReport, hourHeatmap }`, context)
     return context.api
 }
 
@@ -64,47 +64,92 @@ test("reads a persisted historical day and handles empty or malformed data", asy
     })
 })
 
-test("summarizes complete recorded days without treating missing dates as zero", async () => {
+test("builds the current ISO calendar week and compares the same weekdays", async () => {
     const logic = await loadLogic()
     const days = [
-        { k: "2026-07-14", total: 100 },
-        { k: "2026-07-15", total: 200 },
-        { k: "2026-07-21", total: 3600 },
-        { k: "2026-07-23", total: 7200 },
-        { k: "2026-07-23", total: 10800 },
-        { k: "2026-07-27", total: "bad" },
-        { k: "2026-07-28", total: null },
-        { k: "2026-07-29", total: 99999 }
+        { k: "2026-07-27", total: 1200,
+          apps: [{ n: "browser", s: 1000 }, { n: "editor", s: 200 }] },
+        { k: "2026-07-28", total: 800,
+          apps: [{ n: "browser", s: 500 }, { n: "chat", s: 300 }] },
+        { k: "2026-08-03", total: 5400,
+          apps: [{ n: "browser", s: 3600 }, { n: "editor", s: 1800 }] }
     ]
 
-    const result = plain(logic.periodSummary("2026-07-29", days, 7))
+    const result = plain(logic.weeklyReport({
+        todayKey: "2026-08-04",
+        todayTotal: 7200,
+        todayApps: { browser: 2400, editor: 3600, terminal: 1200 },
+        days
+    }))
+
+    assert.deepEqual(result.info, {
+        year: 2026, week: 32, startKey: "2026-08-03", endKey: "2026-08-09"
+    })
     assert.deepEqual(result.current, {
-        startKey: "2026-07-22", endKey: "2026-07-28", average: 10800,
-        coverage: 1, span: 7,
+        startKey: "2026-08-03", endKey: "2026-08-09", total: 12600,
+        coverage: 2, expectedDays: 2,
         days: [
-            { k: "2026-07-22", total: null }, { k: "2026-07-23", total: 10800 },
-            { k: "2026-07-24", total: null }, { k: "2026-07-25", total: null },
-            { k: "2026-07-26", total: null }, { k: "2026-07-27", total: null },
-            { k: "2026-07-28", total: null }
+            { k: "2026-08-03", total: 5400 }, { k: "2026-08-04", total: 7200 },
+            { k: "2026-08-05", total: null }, { k: "2026-08-06", total: null },
+            { k: "2026-08-07", total: null }, { k: "2026-08-08", total: null },
+            { k: "2026-08-09", total: null }
+        ],
+        apps: [
+            { n: "browser", s: 6000, previous: 1500, delta: 4500 },
+            { n: "editor", s: 5400, previous: 200, delta: 5200 },
+            { n: "terminal", s: 1200, previous: 0, delta: 1200 }
         ]
     })
-    assert.equal(result.previous.average, 1900)
-    assert.equal(result.previous.coverage, 2)
-    assert.equal(result.delta, 8900)
+    assert.deepEqual(result.previous, {
+        startKey: "2026-07-27", endKey: "2026-07-28", total: 2000,
+        coverage: 2, expectedDays: 2,
+        apps: [
+            { n: "browser", s: 1500 }, { n: "chat", s: 300 },
+            { n: "editor", s: 200 }
+        ]
+    })
+    assert.equal(result.comparisonAvailable, true)
+    assert.equal(result.totalDelta, 10600)
 })
 
-test("period summary handles invalid inputs and zero-valued recorded days", async () => {
+test("uses the ISO week-year at calendar year boundaries", async () => {
     const logic = await loadLogic()
+    const yearEnd = plain(logic.weeklyReport({
+        todayKey: "2021-01-01", todayTotal: 0, todayApps: {}, days: []
+    }))
+    const firstMonday = plain(logic.weeklyReport({
+        todayKey: "2021-01-04", todayTotal: 0, todayApps: {}, days: []
+    }))
 
-    assert.deepEqual(plain(logic.periodSummary("bad", [], 7)), {
-        current: { startKey: "", endKey: "", average: 0, coverage: 0, span: 7, days: [] },
-        previous: { startKey: "", endKey: "", average: 0, coverage: 0, span: 7, days: [] },
-        delta: null
+    assert.deepEqual(yearEnd.info, {
+        year: 2020, week: 53, startKey: "2020-12-28", endKey: "2021-01-03"
     })
-    const result = plain(logic.periodSummary("2026-07-29", [{ k: "2026-07-28", total: 0 }], 1))
+    assert.equal(yearEnd.current.expectedDays, 5)
+    assert.deepEqual(firstMonday.info, {
+        year: 2021, week: 1, startKey: "2021-01-04", endKey: "2021-01-10"
+    })
+})
+
+test("withholds weekly comparisons when either same-weekday period has gaps", async () => {
+    const logic = await loadLogic()
+    const result = plain(logic.weeklyReport({
+        todayKey: "2026-08-04",
+        todayTotal: 3600,
+        todayApps: { browser: 3600 },
+        days: [
+            { k: "2026-07-27", total: 1200, apps: [{ n: "browser", s: 1200 }] },
+            { k: "2026-07-28", total: 1200, apps: [{ n: "browser", s: 1200 }] }
+        ]
+    }))
+
     assert.equal(result.current.coverage, 1)
-    assert.equal(result.current.average, 0)
-    assert.equal(result.delta, null)
+    assert.equal(result.current.expectedDays, 2)
+    assert.equal(result.previous.coverage, 2)
+    assert.equal(result.comparisonAvailable, false)
+    assert.equal(result.totalDelta, null)
+    assert.deepEqual(result.current.apps, [
+        { n: "browser", s: 3600, previous: null, delta: null }
+    ])
 })
 
 test("builds a weekday by hour heatmap from complete hourly records only", async () => {
