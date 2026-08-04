@@ -67,7 +67,7 @@ ColumnLayout {
         to: 7680
         stepSize: 160
         onValueChanged: {
-            cfg.options.autoStackMaxWidth = value;
+            if (cfg.ready && !cfg.materializing) cfg.options.autoStackMaxWidth = value;
         }
     }
 
@@ -76,7 +76,7 @@ ColumnLayout {
         buttonIcon: "swap_vert"
         checked: cfg.options.stackedShowIcons
         onCheckedChanged: {
-            cfg.options.stackedShowIcons = checked;
+            if (cfg.ready && !cfg.materializing) cfg.options.stackedShowIcons = checked;
         }
     }
 
@@ -85,7 +85,7 @@ ColumnLayout {
         buttonIcon: "apps"
         checked: cfg.options.appMonitoring
         onCheckedChanged: {
-            cfg.options.appMonitoring = checked;
+            if (cfg.ready && !cfg.materializing) cfg.options.appMonitoring = checked;
         }
     }
 
@@ -106,7 +106,7 @@ ColumnLayout {
         to: 10000
         stepSize: 500
         onValueChanged: {
-            cfg.options.updateInterval = value;
+            if (cfg.ready && !cfg.materializing) cfg.options.updateInterval = value;
         }
     }
 
@@ -118,7 +118,7 @@ ColumnLayout {
         to: 65536
         stepSize: 256
         onValueChanged: {
-            cfg.options.breatheThresholdKB = value;
+            if (cfg.ready && !cfg.materializing) cfg.options.breatheThresholdKB = value;
         }
     }
 

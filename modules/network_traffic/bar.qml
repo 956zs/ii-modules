@@ -49,9 +49,24 @@ BarGroup {
             }
         }
 
-        // Sole owner: this instance materialises defaults/migrations and hosts
-        // the accounting flushes. The settings fragment's loader is read-only.
-        ConfigLoader { id: cfg; owner: true }
+        // The bar slot exists once per monitor. Elect one writer so duplicate
+        // collectors never capture the same interface or race on accounting.
+        readonly property bool isPrimary: {
+            const screens = Quickshell.screens
+            if (screens.length <= 1) return true
+            const name = barGroup.QsWindow.window?.screen?.name ?? ""
+            return name !== "" && name === screens[0].name
+        }
+
+        ConfigLoader {
+            id: cfg
+            owner: root.isPrimary
+            onRelinquishing: {
+                appTraffic.finalizePendingAccounting()
+                appTraffic.flushAcct()
+                logic.flushAccounting()
+            }
+        }
 
         readonly property real screenWidth: barGroup.QsWindow.window?.screen?.width ?? 0
         readonly property bool barVertical: barGroup.vertical
@@ -106,6 +121,7 @@ BarGroup {
             excludeRegex: cfg.options.excludeRegex
             store: cfg.options
             storeReady: cfg.ready
+            writer: cfg.ownerReady
         }
 
         // Continuous per-app sampler: boot/today/month per-app totals only
@@ -113,10 +129,11 @@ BarGroup {
         // not with the popup. appMonitoring=false spawns nothing.
         AppTraffic {
             id: appTraffic
-            active: cfg.ready && cfg.options.appMonitoring === true
+            active: cfg.ownerReady && cfg.options.appMonitoring === true
             updateInterval: cfg.options.updateInterval
             store: cfg.options
             storeReady: cfg.ready
+            writer: cfg.ownerReady
         }
 
         TextMetrics {
@@ -219,8 +236,8 @@ BarGroup {
             logic: logic
             appTraffic: appTraffic
             appsEnabled: cfg.options.appMonitoring === true
-            statsPeriod: cfg.options.statsPeriod === "today" || cfg.options.statsPeriod === "month"
-                         ? cfg.options.statsPeriod : "boot"
+            statsPeriod: cfg.options.statsPeriod === "boot" || cfg.options.statsPeriod === "month"
+                         ? cfg.options.statsPeriod : "today"
             appsExpanded: root.appsExpanded
             pingHost: cfg.options.pingHost !== "" ? cfg.options.pingHost : "auto"
         }

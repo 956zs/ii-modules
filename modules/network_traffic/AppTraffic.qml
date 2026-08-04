@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "AppTrafficLogic.js" as AppTrafficLogic
 
 /*
  * Per-app traffic sampler and accountant (instance, not a singleton).
@@ -28,6 +29,7 @@ Item {
     // ConfigLoader adapter + its ready flag, for persisted accounting.
     property var store: null
     property bool storeReady: false
+    property bool writer: true
 
     // "starting" | "nethogs" | "ss" | "none"
     property string source: "starting"
@@ -43,26 +45,54 @@ Item {
     property var acct: ({})
     property bool acctLoaded: false
     property string bootId: ""
+    property int monitoringGeneration: 0
+    property int psQuerySerial: 0
+    property bool psStopping: false
+    property bool nethogsStopping: false
+    property bool fallbackPending: false
+    property bool ssStopping: false
 
     // Sentinel for pruned long-tail apps; translated at display time.
     readonly property string otherKey: "__other"
+    readonly property string unattributedProcessKey: "__unattributed_process"
     readonly property int maxTrackedApps: 30
 
     onActiveChanged: {
+        monitoringGeneration++
+        psQuerySerial++
+        psStopping = psProc.running
+        psProc.running = false
+        psProc.pending = []
+        psQueue = []
         if (active) {
             source = "starting"
             nethogsBatch = []
             nethogsSawSnapshot = false
             lastCum = {}
+            commByPid = {}
+            pendingDelta = {}
+            psQueue = []
             lastBatchTime = 0
-            nethogs.running = true
-            startupTimeout.restart()
+            ssTimer.stop()
+            ssStopping = ssStopping || ssProc.running
+            ssProc.running = false
+            if (!ssStopping && !nethogsStopping)
+                startNethogs()
         } else {
+            startupTimeout.stop()
+            fallbackPending = false
+            finalizePendingAccounting()
+            nethogsStopping = nethogsStopping || nethogs.running
             nethogs.running = false
             ssTimer.stop()
+            ssStopping = ssStopping || ssProc.running
             ssProc.running = false
             apps = []
             ssPrevious = null
+            lastCum = {}
+            commByPid = {}
+            pendingDelta = {}
+            psQueue = []
             flushAcct()
         }
     }
@@ -79,31 +109,30 @@ Item {
     }
 
     onStoreReadyChanged: tryInitAcct()
+    onWriterChanged: {
+        source = writer ? "starting" : "stored"
+        if (writer && acctLoaded && storeReady) loadAccounting()
+        tryInitAcct()
+    }
+
+    Connections {
+        target: root.store
+        ignoreUnknownSignals: true
+        function onAppAcctStateChanged() {
+            if (!root.writer && root.acctLoaded && root.storeReady) root.loadAccounting()
+        }
+    }
+
+    function loadAccounting() {
+        acct = AppTrafficLogic.restoreAccounting(store?.appAcctState ?? "", bootId, new Date())
+        acctRevision++
+    }
 
     function tryInitAcct() {
         if (acctLoaded || !store || !storeReady || bootId === "") return
-        let s = null
-        try {
-            s = JSON.parse(store.appAcctState)
-        } catch (e) {
-            s = null
-        }
-        const map = {}
-        for (const e of (s?.apps ?? [])) {
-            map[e.n] = { dk: e.dk, drx: e.drx, dtx: e.dtx,
-                         mk: e.mk, mrx: Math.max(e.mrx, e.drx), mtx: Math.max(e.mtx, e.dtx),
-                         brx: e.brx, btx: e.btx }
-        }
-        if ((s?.bootId ?? "") !== bootId) {
-            for (const n in map) {
-                map[n].brx = 0
-                map[n].btx = 0
-            }
-        }
-        acct = map
+        loadAccounting()
         acctLoaded = true
-        acctRevision++
-        flushAcct() // persist the boot reset / repairs promptly
+        if (writer) flushAcct() // persist the boot reset / repairs promptly
     }
 
     function dayKey(now) {
@@ -134,36 +163,22 @@ Item {
     // Ranking for a period: [{name, rx, tx}] sorted by rx+tx descending.
     // Callers reference acctRevision in the binding for reactivity.
     function ranking(period) {
-        const rows = []
-        for (const n in acct) {
-            const a = acct[n]
-            const rx = period === "today" ? a.drx : period === "month" ? a.mrx : a.brx
-            const tx = period === "today" ? a.dtx : period === "month" ? a.mtx : a.btx
-            if (rx + tx > 0) rows.push({ name: n, rx, tx })
-        }
-        return rows.sort((x, y) => (y.rx + y.tx) - (x.rx + x.tx))
+        return AppTrafficLogic.ranking(acct, period, new Date())
+    }
+
+    function finalizePendingAccounting() {
+        const finalized = AppTrafficLogic.finalizePending(
+            root.pendingDelta, root.commByPid, root.unattributedProcessKey)
+        root.pendingDelta = finalized.pendingDelta
+        for (const app of finalized.accounting)
+            root.accumulate(app.name, app.rx, app.tx)
+        if (finalized.accounting.length > 0)
+            root.acctRevision++
     }
 
     function flushAcct() {
-        if (!store || !acctLoaded) return
-        // Prune the long tail so the config file stays bounded: keep the top
-        // N by month volume, fold the rest into a single "other" bucket.
-        const names = Object.keys(acct)
-            .filter(n => n !== otherKey)
-            .sort((x, y) => (acct[y].mrx + acct[y].mtx) - (acct[x].mrx + acct[x].mtx))
-        if (names.length > maxTrackedApps) {
-            const now = new Date()
-            const other = acct[otherKey] ?? { dk: dayKey(now), drx: 0, dtx: 0,
-                                              mk: monthKey(now), mrx: 0, mtx: 0, brx: 0, btx: 0 }
-            for (const n of names.slice(maxTrackedApps)) {
-                const a = acct[n]
-                other.drx += a.drx; other.dtx += a.dtx
-                other.mrx += a.mrx; other.mtx += a.mtx
-                other.brx += a.brx; other.btx += a.btx
-                delete acct[n]
-            }
-            acct[otherKey] = other
-        }
+        if (!writer || !store || !acctLoaded) return
+        acct = AppTrafficLogic.pruneAccounting(acct, otherKey, maxTrackedApps, new Date())
         const out = []
         for (const n in acct) {
             const a = acct[n]
@@ -177,49 +192,66 @@ Item {
     // Each JsonAdapter assignment is a config-file write; flush sparsely.
     Timer {
         interval: 60000
-        running: root.active && root.acctLoaded
+        running: root.writer && root.active && root.acctLoaded
         repeat: true
         onTriggered: root.flushAcct()
     }
 
-    Component.onDestruction: flushAcct()
+    Component.onDestruction: {
+        finalizePendingAccounting()
+        flushAcct()
+    }
 
     // --- name prettifying --------------------------------------------------
 
     property var commByPid: ({})
+    property var psQueue: []
     // entryId -> {pid, rx, tx}: deltas held back until the name resolves, so
     // Electron apps reporting /proc/self/exe aren't misfiled under "exe".
     property var pendingDelta: ({})
 
-    function prettyName(cmdline, pid) {
-        const exe = cmdline.split(" ")[0]
-        const base = exe.substring(exe.lastIndexOf("/") + 1)
-        if (base === "exe" || base === "") {
-            return root.commByPid[pid] ?? null // null -> needs ps resolution
-        }
-        return base
-    }
-
     Process {
         id: psProc
         property list<string> pending: []
+        property list<string> pendingEntryIds: []
+        property int generation: -1
+        property int querySerial: -1
         command: ["ps", "-o", "pid=", "-o", "comm=", "-p", pending.join(",")]
         stdout: StdioCollector {
             onStreamFinished: {
+                if (psProc.generation !== root.monitoringGeneration
+                        || psProc.querySerial !== root.psQuerySerial) return
                 const map = Object.assign({}, root.commByPid)
                 for (const line of text.split("\n")) {
                     const m = line.trim().match(/^(\d+)\s+(.+)$/)
-                    if (m) map[m[1]] = m[2]
+                    if (m && psProc.pending.includes(m[1])) map[m[1]] = m[2]
                 }
-                root.commByPid = map
+                const drained = AppTrafficLogic.drainResolvedPending(
+                    root.pendingDelta, map, Object.keys(root.lastCum).map(entryId => entryId.substring(entryId.lastIndexOf("/") + 1)))
+                root.commByPid = drained.commByPid
+                root.pendingDelta = drained.pendingDelta
+                for (const app of drained.accounting) root.accumulate(app.name, app.rx, app.tx)
+                if (drained.accounting.length > 0) root.acctRevision++
             }
+        }
+        onExited: {
+            root.psStopping = false
+            if (psProc.generation === root.monitoringGeneration)
+                root.resolveComms(root.psQueue)
         }
     }
 
     function resolveComms(pids) {
-        const unknown = pids.filter(p => !(p in root.commByPid))
-        if (unknown.length === 0 || psProc.running) return
+        const unknown = [...new Set(pids.map(pid => String(pid)))]
+            .filter(pid => !(pid in root.commByPid))
+        root.psQueue = unknown
+        if (unknown.length === 0 || psProc.running || root.psStopping) return
         psProc.pending = unknown
+        psProc.pendingEntryIds = Object.keys(root.pendingDelta)
+            .filter(entryId => unknown.includes(String(root.pendingDelta[entryId].pid)))
+        psProc.generation = root.monitoringGeneration
+        psProc.querySerial = ++root.psQuerySerial
+        root.psQueue = []
         psProc.running = true
     }
 
@@ -239,45 +271,61 @@ Item {
         id: startupTimeout
         interval: root.updateInterval * 2 + 4000
         onTriggered: {
-            if (!root.nethogsSawSnapshot) {
-                nethogs.running = false
+            if (!root.active) return;
+            if (!root.nethogsSawSnapshot)
                 root.startSsFallback()
-            }
         }
+    }
+
+    function startNethogs() {
+        if (!root.active || root.nethogsStopping || root.ssStopping)
+            return
+        root.source = "starting"
+        root.nethogsBatch = []
+        root.nethogsSawSnapshot = false
+        nethogs.running = true
+        startupTimeout.restart()
     }
 
     Process {
         id: nethogs
-        // -v 2: cumulative bytes since nethogs start — deltas survive UI
-        // pauses, unlike the KB/s view. nethogs block-buffers stdout when
-        // piped; stdbuf keeps it line-based.
-        command: ["stdbuf", "-oL", "nethogs", "-t", "-v", "2", "-d", String(root.nethogsSeconds)]
+        // -C captures TCP and UDP; without it QUIC-heavy apps are absent from
+        // per-app totals. -v 2 emits cumulative bytes, so deltas survive UI
+        // pauses. nethogs block-buffers stdout when piped; stdbuf keeps it
+        // line-based.
+        command: AppTrafficLogic.nethogsCommand(root.nethogsSeconds)
         stdout: SplitParser {
             onRead: data => {
-                const line = data.trim()
-                if (line.startsWith("Refreshing:")) {
+                if (!root.active || root.source === "ss") return;
+                const parsed = AppTrafficLogic.parseNethogsLine(data)
+                if (!parsed) return
+                if (parsed.refresh) {
                     root.commitNethogsBatch()
                     return
                 }
-                // "<prog>/<pid>/<uid>\t<sent bytes>\t<recv bytes>"
-                const parts = line.split("\t")
-                if (parts.length < 3) return
-                const tx = parseFloat(parts[parts.length - 2])
-                const rx = parseFloat(parts[parts.length - 1])
-                const idPart = parts.slice(0, parts.length - 2).join("\t")
-                const m = idPart.match(/^(.*)\/(\d+)\/(\d+)$/)
-                if (!m || m[2] === "0" || isNaN(tx) || isNaN(rx)) return
-                root.nethogsBatch.push({ cmdline: m[1], pid: m[2], rx, tx })
+                root.nethogsBatch.push(parsed)
             }
         }
         onExited: (exitCode, exitStatus) => {
-            if (root.active && root.source !== "ss") {
+            const requestedStop = root.nethogsStopping
+            root.nethogsStopping = false
+            startupTimeout.stop()
+            if (!root.active)
+                return
+            if (root.fallbackPending) {
+                root.fallbackPending = false
+                root.startSsFallback()
+            } else if (requestedStop && root.source === "starting" && !root.ssStopping) {
+                root.startNethogs()
+            } else {
                 root.startSsFallback()
             }
         }
     }
 
     function commitNethogsBatch() {
+        if (!root.active || root.source === "ss")
+            return
         const batch = root.nethogsBatch
         root.nethogsBatch = []
         if (!root.nethogsSawSnapshot) {
@@ -290,50 +338,21 @@ Item {
         const elapsed = root.lastBatchTime > 0 ? (now - root.lastBatchTime) / 1000 : 0
         root.lastBatchTime = now
 
-        const rates = {}
-        const unresolved = []
-        for (const e of batch) {
-            const entryId = `${e.cmdline}/${e.pid}`
-            const prev = root.lastCum[entryId]
-            root.lastCum[entryId] = { rx: e.rx, tx: e.tx }
-            // First sighting or counter shrink (restart): baseline only.
-            if (!prev || e.rx < prev.rx || e.tx < prev.tx) continue
-            const drx = e.rx - prev.rx
-            const dtx = e.tx - prev.tx
-            if (drx === 0 && dtx === 0) continue
-
-            const name = root.prettyName(e.cmdline, e.pid)
-            if (name === null) {
-                // Park the delta until ps tells us the real name.
-                const p = root.pendingDelta[entryId] ?? { pid: e.pid, rx: 0, tx: 0 }
-                p.rx += drx
-                p.tx += dtx
-                root.pendingDelta[entryId] = p
-                unresolved.push(e.pid)
-                continue
-            }
-            root.accumulate(name, drx, dtx)
-            if (elapsed > 0) {
-                rates[name] = rates[name] ?? { name, down: 0, up: 0 }
-                rates[name].down += drx / elapsed
-                rates[name].up += dtx / elapsed
-            }
+        const result = AppTrafficLogic.commitNethogsBatch(
+            batch, root.lastCum, elapsed, root.commByPid, root.pendingDelta)
+        root.lastCum = result.lastCum
+        root.commByPid = result.commByPid
+        root.pendingDelta = result.pendingDelta
+        const queryStillActive = psProc.pendingEntryIds.every(
+            entryId => result.activeEntryIds.includes(entryId))
+        if (psProc.running && !queryStillActive) {
+            root.psQuerySerial++
+            root.psStopping = true
+            psProc.running = false
         }
-
-        // Drain parked deltas whose names have resolved since.
-        for (const entryId in root.pendingDelta) {
-            const p = root.pendingDelta[entryId]
-            const name = root.commByPid[p.pid]
-            if (name !== undefined) {
-                root.accumulate(name, p.rx, p.tx)
-                delete root.pendingDelta[entryId]
-            }
-        }
-        if (unresolved.length > 0) root.resolveComms(unresolved)
-
-        root.apps = Object.values(rates)
-            .filter(a => a.down + a.up >= 1)
-            .sort((a, b) => (b.down + b.up) - (a.down + a.up))
+        for (const app of result.accounting) root.accumulate(app.name, app.rx, app.tx)
+        if (result.unresolvedPids.length > 0) root.resolveComms(result.unresolvedPids)
+        root.apps = result.rates
         root.acctRevision++
     }
 
@@ -342,7 +361,18 @@ Item {
     property var ssPrevious: null
 
     function startSsFallback() {
+        if (!root.active) return
+        startupTimeout.stop()
         root.source = "ss"
+        if (nethogs.running || root.nethogsStopping) {
+            root.fallbackPending = true
+            root.nethogsStopping = true
+            nethogs.running = false
+            return
+        }
+        if (root.ssStopping)
+            return
+        root.fallbackPending = false
         root.ssPrevious = null
         ssTimer.start()
         ssProc.running = true
@@ -359,9 +389,19 @@ Item {
         id: ssProc
         command: ["ss", "-tinpH"]
         stdout: StdioCollector {
-            onStreamFinished: root.commitSsSample(text)
+            onStreamFinished: {
+                if (root.active && root.source === "ss")
+                    root.commitSsSample(text)
+            }
         }
         onExited: (exitCode, exitStatus) => {
+            root.ssStopping = false
+            if (!root.active)
+                return
+            if (root.source === "starting") {
+                root.startNethogs()
+                return
+            }
             if (exitCode !== 0) {
                 ssTimer.stop()
                 root.source = "none"

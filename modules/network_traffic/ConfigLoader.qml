@@ -1,126 +1,175 @@
+import QtQuick
 import Quickshell.Io
 import qs.modules.common
+import "ConfigLogic.js" as ConfigLogic
 
 /*
- * Per-module persisted options (IIMP convention): FileView + JsonAdapter on
- * ~/.config/illogical-impulse/modules/network_traffic.json. Never touches the
- * shell's config.json.
- *
- * Accounting state lives in two JSON-string blobs (acctState/appAcctState),
- * each updated by a single adapter assignment. Per-field storage proved
- * unsafe: every assignment rewrites the whole file, watchChanges reloads race
- * with our own writes, and iimod's hot reload briefly runs old and new
- * instances side by side — a multi-field flush could be read back as a torn
- * snapshot (fresh day counters, stale month counters), which is how "this
- * month < today" happened. One assignment per blob makes a torn read
- * structurally impossible.
+ * FileView + JsonAdapter persistence for network_traffic.json.
+ * Adapter changes are field intents: reload the latest raw JSON, merge only
+ * those fields, then atomically write it back. This keeps settings instances
+ * writable without letting stale snapshots replace owner accounting or future
+ * schema fields.
  */
 FileView {
     id: root
-    // False until the file content (or its confirmed absence) is in the
-    // adapter. Accounting must not initialise from default zeroes.
     property bool ready: false
-    // Exactly one instance (the bar widget's) materialises defaults and
-    // migrations into the file. Read-only consumers like the settings
-    // fragment must not write stale snapshots over the owner's state.
     property bool owner: false
+    property bool ownerReady: false
+    property bool materializing: true
+    property bool acquiringOwner: false
+    property bool internalReload: false
+    property var pendingChanges: ({})
+    signal relinquishing
+
+    readonly property var defaults: ({
+        updateInterval: 2000,
+        excludeRegex: "^(lo|docker.*|veth.*|br-.*|virbr.*|tun.*|tap.*|wg.*|tailscale.*|CloudflareWARP)$",
+        displayMode: "auto",
+        autoStackMaxWidth: 1920,
+        stackedShowIcons: true,
+        statsPeriod: "today",
+        statsPeriodSchema: 1,
+        appMonitoring: true,
+        pingHost: "auto",
+        breatheThresholdKB: 1024,
+        acctState: "",
+        appAcctState: ""
+    })
 
     path: Directories.shellConfig + "/modules/network_traffic.json"
     watchChanges: true
-    onFileChanged: reload()
-    onAdapterUpdated: writeAdapter()
-    // Materialise the merged adapter after every successful load. A config file
-    // written by an older version is missing the keys added since, and the
-    // adapter does not fall back to the defaults declared below for absent
-    // keys — it yields the type zero value instead. Writing back on load keeps
-    // upgrades honest and makes every option visible in the file.
-    onLoaded: {
-        migrateLegacyAccounting()
-        if (root.owner) writeAdapter()
-        root.ready = true
+    blockAllReads: true
+    blockWrites: true
+    atomicWrites: true
+
+    onFileChanged: {
+        if (root.internalReload)
+            return;
+        root.materializing = true;
+        reload();
     }
+
+    onLoaded: {
+        if (root.internalReload)
+            return;
+        const acquiring = root.acquiringOwner;
+        root.acquiringOwner = false;
+        const prepared = ConfigLogic.prepareConfig(text(), root.defaults, root.owner, 1);
+        root.applyValues(prepared.values);
+        if (prepared.shouldWrite)
+            setText(prepared.serialized);
+        root.ready = true;
+        if (root.owner && (acquiring || !root.ownerReady))
+            root.ownerReady = true;
+    }
+
     onLoadFailed: error => {
+        if (root.internalReload)
+            return;
         if (error == FileViewError.FileNotFound) {
-            if (root.owner) writeAdapter()
-            root.ready = true
+            root.applyValues(root.defaults);
+            if (root.owner)
+                setText(JSON.stringify(root.defaults));
+            root.ready = true;
+            root.ownerReady = root.owner;
+            root.acquiringOwner = false;
         }
     }
 
-    // 1.2.0/1.3.0 stored accounting as separate acct* fields; fold them into
-    // the blobs before the owner's writeAdapter erases unknown keys. Repairs
-    // torn legacy state on the way: a month contains its days.
-    function migrateLegacyAccounting() {
-        if (adapterItem.acctState !== "") return
-        let j = null
-        try {
-            j = JSON.parse(text())
-        } catch (e) {
-            return
+    onOwnerChanged: {
+        if (!root.owner) {
+            ownerReload.stop();
+            root.acquiringOwner = false;
+            if (root.ownerReady)
+                root.relinquishing();
+            root.ownerReady = false;
+            return;
         }
-        if (!j || typeof j !== "object") return
-        if (j.acctDayKey !== undefined) {
-            const st = {
-                v: 1,
-                day: { k: j.acctDayKey ?? "", rx: j.acctDayRx ?? 0, tx: j.acctDayTx ?? 0 },
-                month: { k: j.acctMonthKey ?? "", rx: j.acctMonthRx ?? 0, tx: j.acctMonthTx ?? 0 },
-                sample: { rx: j.acctSampleRx ?? 0, tx: j.acctSampleTx ?? 0 }
-            }
-            if (st.month.k !== "" && st.day.k.startsWith(st.month.k)) {
-                st.month.rx = Math.max(st.month.rx, st.day.rx)
-                st.month.tx = Math.max(st.month.tx, st.day.tx)
-            }
-            adapterItem.acctState = JSON.stringify(st)
+        if (!root.ready)
+            return;
+        root.ownerReady = false;
+        root.acquiringOwner = true;
+        ownerReload.restart();
+    }
+
+    property var ownerReload: Timer {
+        interval: 100
+        onTriggered: {
+            if (!root.owner)
+                return;
+            root.materializing = true;
+            root.reload();
         }
-        if (adapterItem.appAcctState === "" && j.appAcct !== undefined) {
-            adapterItem.appAcctState = JSON.stringify({
-                v: 1,
-                bootId: j.appAcctBootId ?? "",
-                apps: j.appAcct ?? []
-            })
-        }
+    }
+
+    function applyValues(values) {
+        root.materializing = true;
+        adapterItem.updateInterval = values.updateInterval;
+        adapterItem.excludeRegex = values.excludeRegex;
+        adapterItem.displayMode = values.displayMode;
+        adapterItem.autoStackMaxWidth = values.autoStackMaxWidth;
+        adapterItem.stackedShowIcons = values.stackedShowIcons;
+        adapterItem.statsPeriod = values.statsPeriod;
+        adapterItem.statsPeriodSchema = values.statsPeriodSchema;
+        adapterItem.appMonitoring = values.appMonitoring;
+        adapterItem.pingHost = values.pingHost;
+        adapterItem.breatheThresholdKB = values.breatheThresholdKB;
+        adapterItem.acctState = values.acctState;
+        adapterItem.appAcctState = values.appAcctState;
+        root.materializing = false;
+    }
+
+    function queueChange(key, value) {
+        if (!root.ready || root.materializing)
+            return;
+        const changes = Object.assign({}, root.pendingChanges);
+        changes[key] = value;
+        root.pendingChanges = changes;
+        root.flushPendingChanges();
+    }
+
+    function flushPendingChanges() {
+        const changes = root.pendingChanges;
+        root.pendingChanges = {};
+        root.materializing = true;
+        root.internalReload = true;
+        root.reload();
+        const latest = root.text();
+        root.internalReload = false;
+        const merged = ConfigLogic.mergeConfigChanges(
+            latest, changes, root.owner || root.ownerReady);
+        if (merged.changed)
+            root.setText(merged.serialized);
+        const prepared = ConfigLogic.prepareConfig(merged.serialized, root.defaults, false, 1);
+        root.applyValues(prepared.values);
     }
 
     property alias options: adapterItem
     adapter: JsonAdapter {
         id: adapterItem
         property int updateInterval: 2000
+        onUpdateIntervalChanged: root.queueChange("updateInterval", updateInterval)
         property string excludeRegex: "^(lo|docker.*|veth.*|br-.*|virbr.*|tun.*|tap.*|wg.*|tailscale.*|CloudflareWARP)$"
-
-        // Bar layout. "auto" picks stacked/horizontal from the screen width;
-        // "stacked" and "horizontal" pin it.
+        onExcludeRegexChanged: root.queueChange("excludeRegex", excludeRegex)
         property string displayMode: "auto"
-        // "auto" stacks at or below this screen width. The bar's right section
-        // only gets whatever the centred middle section leaves over, which on a
-        // 1920px screen with bar.verbose on is about 65px once the tray, the
-        // indicator cluster and the weather pill have taken their share.
+        onDisplayModeChanged: root.queueChange("displayMode", displayMode)
         property int autoStackMaxWidth: 1920
-        // Direction arrows in stacked mode. Values are colour-coded either way
-        // (download primary, upload tertiary); off saves another ~9px.
+        onAutoStackMaxWidthChanged: root.queueChange("autoStackMaxWidth", autoStackMaxWidth)
         property bool stackedShowIcons: true
-
-        // Which totals the popup shows; left-click on the bar widget cycles it.
-        property string statsPeriod: "boot" // "boot" | "today" | "month"
-
-        // Per-app accounting (continuous nethogs/ss sampling). Off hides the
-        // popup's app section and spawns nothing.
+        onStackedShowIconsChanged: root.queueChange("stackedShowIcons", stackedShowIcons)
+        property string statsPeriod: "today"
+        onStatsPeriodChanged: root.queueChange("statsPeriod", statsPeriod)
+        property int statsPeriodSchema: 1
+        onStatsPeriodSchemaChanged: root.queueChange("statsPeriodSchema", statsPeriodSchema)
         property bool appMonitoring: true
-
-        // Ping target for the popup's latency row. "auto" resolves the host's
-        // configured DNS (resolvectl/resolv.conf; loopback stubs and the
-        // tailscale magic resolver skipped, public addresses preferred).
-        // Any hostname or IP pins it.
+        onAppMonitoringChanged: root.queueChange("appMonitoring", appMonitoring)
         property string pingHost: "auto"
-
-        // Bar arrows breathe while that direction's rate is at or above this
-        // (KiB/s).
+        onPingHostChanged: root.queueChange("pingHost", pingHost)
         property int breatheThresholdKB: 1024
-
-        // Whole-system accounting blob, managed by TrafficLogic, flushed at
-        // most once a minute — not a user setting.
-        // {v, day:{k,rx,tx}, month:{k,rx,tx}, sample:{rx,tx}}
+        onBreatheThresholdKBChanged: root.queueChange("breatheThresholdKB", breatheThresholdKB)
         property string acctState: ""
-        // Per-app accounting blob, managed by AppTraffic, same cadence.
-        // {v, bootId, apps:[{n,dk,drx,dtx,mk,mrx,mtx,brx,btx}]}
+        onAcctStateChanged: root.queueChange("acctState", acctState)
         property string appAcctState: ""
+        onAppAcctStateChanged: root.queueChange("appAcctState", appAcctState)
     }
 }

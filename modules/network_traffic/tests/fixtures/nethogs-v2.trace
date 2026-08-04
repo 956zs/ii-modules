@@ -1,0 +1,11 @@
+Refreshing:
+/usr/bin/browser/101/1000	1000	2000
+/usr/bin/browser/102/1000	400	600
+/usr/bin/udp-client/202/1000	500	3000
+/proc/self/exe/303/1000	100	200
+Refreshing:
+/usr/bin/browser/101/1000	1300	2600
+/usr/bin/browser/102/1000	500	900
+/usr/bin/udp-client/202/1000	700	4200
+/proc/self/exe/303/1000	160	440
+Refreshing:
