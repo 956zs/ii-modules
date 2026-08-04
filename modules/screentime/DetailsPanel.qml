@@ -22,17 +22,34 @@ PanelWindow {
     required property var logic
     property real panelWidth: 380
     property string selectedDayKey: root.logic.curDayKey
+    property string selectedWeekStartKey: HistoryLogic.previousCompleteWeekStartKey(root.logic.curDayKey)
     property string selectedTab: "daily"
 
-    readonly property string earliestDayKey: HistoryLogic.shiftDayKey(root.logic.curDayKey, -29)
+    readonly property int retainedHistoryDays: 30
+    readonly property int hourHeatmapSpanDays: 28
+    readonly property int daysPerWeek: 7
+    readonly property int nextDayOffsetDays: 1
+    readonly property int retainedHistoryOffsetDays: root.retainedHistoryDays - 1
+    readonly property int weekEndOffsetDays: root.daysPerWeek - 1
+    readonly property string earliestDayKey: HistoryLogic.shiftDayKey(
+        root.logic.curDayKey, -root.retainedHistoryOffsetDays)
+    readonly property string earliestWeekStartKey: HistoryLogic.weekStartKey(root.earliestDayKey)
+    readonly property string latestCompleteWeekStartKey: HistoryLogic.previousCompleteWeekStartKey(
+        root.logic.curDayKey)
     readonly property bool selectedIsToday: root.selectedDayKey === root.logic.curDayKey
+    readonly property bool selectedWeekIsLatest: root.selectedWeekStartKey
+        === root.latestCompleteWeekStartKey
     readonly property bool canGoPrevious: root.selectedDayKey > root.earliestDayKey
     readonly property bool canGoNext: root.selectedDayKey < root.logic.curDayKey
+    readonly property bool canGoPreviousWeek: root.selectedWeekStartKey > root.earliestWeekStartKey
+    readonly property bool canGoNextWeek: root.selectedWeekStartKey < root.latestCompleteWeekStartKey
 
     visible: false
     function toggle() {
-        if (!root.visible)
+        if (!root.visible) {
             root.selectedDayKey = root.logic.curDayKey
+            root.resetSelectedWeek()
+        }
         root.visible = !root.visible
     }
 
@@ -40,6 +57,24 @@ PanelWindow {
         const candidate = HistoryLogic.shiftDayKey(root.selectedDayKey, delta)
         if (candidate !== "" && candidate >= root.earliestDayKey && candidate <= root.logic.curDayKey)
             root.selectedDayKey = candidate
+    }
+
+    function moveSelectedWeek(delta) {
+        const candidate = HistoryLogic.shiftDayKey(
+            root.selectedWeekStartKey, delta * root.daysPerWeek)
+        if (candidate !== "" && candidate >= root.earliestWeekStartKey
+                && candidate <= root.latestCompleteWeekStartKey)
+            root.selectedWeekStartKey = candidate
+    }
+
+    function resetSelectedWeek() {
+        root.selectedWeekStartKey = root.latestCompleteWeekStartKey
+    }
+
+    onLatestCompleteWeekStartKeyChanged: {
+        if (root.selectedWeekStartKey === ""
+                || root.selectedWeekStartKey > root.latestCompleteWeekStartKey)
+            root.resetSelectedWeek()
     }
 
     color: "transparent"
@@ -104,12 +139,15 @@ PanelWindow {
             todayKey: root.logic.curDayKey,
             todayTotal: root.logic.todayTotal,
             todayApps: root.logic.todayApps,
+            weekStartKey: root.selectedWeekStartKey,
             days: root.logic.days
         })
     }
     readonly property var heatmap28: {
         root.logic.revision
-        return HistoryLogic.hourHeatmap(root.logic.curDayKey, root.logic.days, 28)
+        const anchorKey = HistoryLogic.shiftDayKey(
+            root.weekReport.current.endKey, root.nextDayOffsetDays)
+        return HistoryLogic.hourHeatmap(anchorKey, root.logic.days, root.hourHeatmapSpanDays)
     }
     // AI dimension: the selected day's persisted summary, plus live status on
     // today. Past days never inherit the current process status.
@@ -140,6 +178,11 @@ PanelWindow {
             return root.selectedDayKey
         const date = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12)
         return `${Number(p[1])}/${Number(p[2])} · ${fmt.weekdayLetter(date.getDay())}`
+    }
+
+    function weekRangeLabel(startKey) {
+        const endKey = HistoryLogic.shiftDayKey(startKey, root.weekEndOffsetDays)
+        return `${root.mdLabel(startKey)}-${root.mdLabel(endKey)}`
     }
 
     HyprlandFocusGrab {
@@ -292,6 +335,66 @@ PanelWindow {
                                 color: Appearance.colors.colOnSurfaceVariant
                             }
                             StyledToolTip { text: Translation.tr("Next day") }
+                        }
+                    }
+
+                    RowLayout {
+                        visible: root.selectedTab === "weekly"
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        RippleButton {
+                            enabled: root.canGoPreviousWeek
+                            implicitWidth: 40
+                            implicitHeight: 40
+                            buttonRadius: Appearance.rounding.full
+                            onClicked: root.moveSelectedWeek(-1)
+                            Accessible.name: Translation.tr("Previous week")
+                            contentItem: MaterialSymbol {
+                                horizontalAlignment: Text.AlignHCenter
+                                text: "chevron_left"
+                                iconSize: Appearance.font.pixelSize.larger
+                                color: Appearance.colors.colOnSurfaceVariant
+                            }
+                            StyledToolTip { text: Translation.tr("Previous week") }
+                        }
+
+                        RippleButton {
+                            Layout.fillWidth: true
+                            implicitHeight: 40
+                            enabled: !root.selectedWeekIsLatest
+                            buttonRadius: Appearance.rounding.full
+                            onClicked: root.resetSelectedWeek()
+                            Accessible.name: root.selectedWeekIsLatest
+                                ? Translation.tr("Last complete week")
+                                : Translation.tr("Back to last complete week")
+                            contentItem: StyledText {
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: Appearance.font.pixelSize.small
+                                font.weight: Font.DemiBold
+                                color: Appearance.colors.colOnLayer1
+                                text: root.weekRangeLabel(root.selectedWeekStartKey)
+                            }
+                            StyledToolTip {
+                                text: Translation.tr("Back to last complete week")
+                            }
+                        }
+
+                        RippleButton {
+                            enabled: root.canGoNextWeek
+                            implicitWidth: 40
+                            implicitHeight: 40
+                            buttonRadius: Appearance.rounding.full
+                            onClicked: root.moveSelectedWeek(1)
+                            Accessible.name: Translation.tr("Next week")
+                            contentItem: MaterialSymbol {
+                                horizontalAlignment: Text.AlignHCenter
+                                text: "chevron_right"
+                                iconSize: Appearance.font.pixelSize.larger
+                                color: Appearance.colors.colOnSurfaceVariant
+                            }
+                            StyledToolTip { text: Translation.tr("Next week") }
                         }
                     }
 

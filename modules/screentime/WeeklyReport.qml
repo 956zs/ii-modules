@@ -34,10 +34,10 @@ ColumnLayout {
         if (delta === null)
             return Translation.tr("Comparison unavailable")
         if (Math.abs(delta) <= root.comparisonToleranceSeconds)
-            return Translation.tr("About the same as last week to date")
+            return Translation.tr("About the same as previous week")
         const direction = delta > 0 ? "+" : "−"
         return direction + fmt.dur(Math.abs(delta)) + " "
-            + Translation.tr("vs last week to date")
+            + Translation.tr("vs previous week")
     }
 
     function heatmapLabel(dow, hour, minutes) {
@@ -94,7 +94,7 @@ ColumnLayout {
             font.pixelSize: Appearance.font.pixelSize.small
             font.weight: Font.DemiBold
             color: Appearance.colors.colOnSurfaceVariant
-            text: Translation.tr("This week")
+            text: Translation.tr("Selected week")
         }
         ColumnChart {
             Layout.fillWidth: true
@@ -190,7 +190,7 @@ ColumnLayout {
             font.pixelSize: Appearance.font.pixelSize.small
             font.weight: Font.DemiBold
             color: Appearance.colors.colOnSurfaceVariant
-            text: Translation.tr("Apps this week")
+            text: Translation.tr("Apps in selected week")
         }
         StyledText {
             visible: root.ranking.length === 0
