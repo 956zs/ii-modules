@@ -1,4 +1,4 @@
-import type { ModuleVersionInfo, RegistryModule } from '@/lib/types'
+import type { ModuleVersionInfo, RegistryModule, VersionResolution } from '@/lib/types'
 
 const SUCCESS_CACHE_TTL_MS = 10 * 60 * 1000
 const FAILURE_CACHE_TTL_MS = 60 * 1000
@@ -6,35 +6,34 @@ const FAILURE_CACHE_TTL_MS = 60 * 1000
 interface CacheEntry {
   timestamp: number
   ttl: number
-  data: ModuleVersionInfo | null
+  data: VersionResolution
 }
 
-function cacheKey(origin: string): string {
-  return `iimp:version:${origin}`
+function cacheKey(origin: string, moduleId: string): string {
+  return `iimp:version:${origin}:${moduleId}`
 }
 
-function readCache(origin: string): { hit: true; data: ModuleVersionInfo | null } | { hit: false } {
+function readCache(origin: string, moduleId: string): VersionResolution | null {
   try {
-    const raw = sessionStorage.getItem(cacheKey(origin))
-    if (!raw) return { hit: false }
+    const raw = sessionStorage.getItem(cacheKey(origin, moduleId))
+    if (!raw) return null
     const entry = JSON.parse(raw) as CacheEntry
-    if (Date.now() - entry.timestamp > entry.ttl) return { hit: false }
-    return { hit: true, data: entry.data }
+    if (Date.now() - entry.timestamp > entry.ttl) return null
+    return entry.data
   } catch {
-    return { hit: false }
+    return null
   }
 }
 
-function writeCache(origin: string, data: ModuleVersionInfo | null, ttl: number): void {
+function writeCache(origin: string, moduleId: string, data: VersionResolution, ttl: number): void {
   try {
     const entry: CacheEntry = { timestamp: Date.now(), ttl, data }
-    sessionStorage.setItem(cacheKey(origin), JSON.stringify(entry))
+    sessionStorage.setItem(cacheKey(origin, moduleId), JSON.stringify(entry))
   } catch {
     // sessionStorage unavailable (private mode / quota) — skip caching silently.
   }
 }
 
-/** Parses `{owner, repo}` out of a GitHub origin URL, e.g. `https://github.com/{owner}/{repo}/releases/latest/download/index.json`. */
 function parseOwnerRepoFromOrigin(origin: string): { owner: string; repo: string } | null {
   try {
     const url = new URL(origin)
@@ -57,15 +56,19 @@ async function fetchJson(input: string, init?: RequestInit): Promise<Record<stri
   }
 }
 
-/** Direct fetch of the registry-declared `origin` index.json. Works for any CORS-friendly host. */
-async function fetchDirect(origin: string): Promise<Record<string, unknown> | null> {
-  return fetchJson(origin, { headers: { Accept: 'application/json' } })
-}
-
-function parseIndexJson(json: Record<string, unknown>, origin: string): ModuleVersionInfo | null {
-  const version = typeof json.version === 'string' ? json.version : ''
-  const rawUrl = typeof json.url === 'string' ? json.url : ''
-  const sha256 = typeof json.sha256 === 'string' ? json.sha256 : null
+/** Reads one module from the release index contract: `{ modules: { [id]: entry } }`. */
+export function parseIndexJson(
+  json: Record<string, unknown>,
+  moduleId: string,
+  origin: string,
+): ModuleVersionInfo | null {
+  if (!json.modules || typeof json.modules !== 'object' || Array.isArray(json.modules)) return null
+  const entry = (json.modules as Record<string, unknown>)[moduleId]
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+  const record = entry as Record<string, unknown>
+  const version = typeof record.version === 'string' ? record.version : ''
+  const rawUrl = typeof record.url === 'string' ? record.url : ''
+  const sha256 = typeof record.sha256 === 'string' ? record.sha256 : null
   if (!version || !rawUrl) return null
   return {
     version,
@@ -75,60 +78,58 @@ function parseIndexJson(json: Record<string, unknown>, origin: string): ModuleVe
 }
 
 /**
- * Metadata-only fallback for GitHub-hosted modules. Release-asset CONTENT
- * (release-assets.githubusercontent.com) never carries an
- * access-control-allow-origin header, so browsers can never read index.json
- * once GitHub redirects to it — not via the raw origin URL, not via
- * browser_download_url, not via the /releases/assets/{id} octet-stream
- * endpoint. Only the api.github.com JSON responses are CORS-readable, so this
- * derives version + download link from release metadata instead of fetching
- * asset content. sha256 is unobtainable this way.
+ * GitHub release assets do not expose index.json through CORS. A successful API
+ * response without this module's asset is authoritative evidence that the
+ * source version is not released; transport/API failure remains an error.
  */
-async function fetchViaGitHubApi(origin: string): Promise<ModuleVersionInfo | null> {
+async function fetchViaGitHubApi(origin: string, moduleId: string): Promise<VersionResolution> {
   const parsed = parseOwnerRepoFromOrigin(origin)
-  if (!parsed) return null
+  if (!parsed) return { status: 'error' }
   const { owner, repo } = parsed
 
   const release = await fetchJson(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
     headers: { Accept: 'application/vnd.github+json' },
   })
-  if (!release) return null
-
-  const tagName = typeof release.tag_name === 'string' ? release.tag_name : ''
-  if (!tagName) return null
+  if (!release) return { status: 'error' }
 
   const assets = Array.isArray(release.assets) ? (release.assets as Array<Record<string, unknown>>) : []
-  const asset = assets.find((a) => typeof a.name === 'string' && a.name.endsWith('.iimod'))
-  if (!asset) return null
+  const asset = assets.find(
+    (candidate) =>
+      typeof candidate.name === 'string' &&
+      candidate.name.startsWith(`${moduleId}-`) &&
+      candidate.name.endsWith('.iimod'),
+  )
+  if (!asset) return { status: 'unreleased' }
 
+  const name = asset.name as string
   const url = typeof asset.browser_download_url === 'string' ? asset.browser_download_url : ''
-  if (!url) return null
-
+  if (!url) return { status: 'error' }
   return {
-    version: tagName.replace(/^v/, ''),
-    url,
-    sha256: null,
+    status: 'released',
+    data: {
+      version: name.slice(moduleId.length + 1, -'.iimod'.length),
+      url,
+      sha256: null,
+    },
   }
 }
 
-/**
- * Resolves a registry module's live version info: {version, url, sha256}.
- * Tries the registry-declared `origin` directly first (works for any
- * CORS-friendly host, and self-heals if GitHub ever adds CORS to release
- * assets). Falls back to GitHub API release metadata when the origin is a
- * github.com releases/latest/download URL, since release-asset content is
- * never readable cross-origin. Successes are cached for 10 minutes;
- * failures are cached briefly (60s) to respect the 60/hr anonymous
- * api.github.com rate limit without retry-looping.
- */
-export async function resolveModuleVersion(mod: RegistryModule): Promise<ModuleVersionInfo | null> {
-  const cached = readCache(mod.origin)
-  if (cached.hit) return cached.data
+/** Resolves release metadata without treating source metadata as a download. */
+export async function resolveModuleVersion(mod: RegistryModule): Promise<VersionResolution> {
+  const cached = readCache(mod.origin, mod.id)
+  if (cached) return cached
 
-  const direct = await fetchDirect(mod.origin)
-  const data = direct ? parseIndexJson(direct, mod.origin) : null
-  const resolved = data ?? (await fetchViaGitHubApi(mod.origin))
+  const direct = await fetchJson(mod.origin, { headers: { Accept: 'application/json' } })
+  const directEntry = direct ? parseIndexJson(direct, mod.id, mod.origin) : null
+  const resolved: VersionResolution = directEntry
+    ? { status: 'released', data: directEntry }
+    : await fetchViaGitHubApi(mod.origin, mod.id)
 
-  writeCache(mod.origin, resolved, resolved ? SUCCESS_CACHE_TTL_MS : FAILURE_CACHE_TTL_MS)
+  writeCache(
+    mod.origin,
+    mod.id,
+    resolved,
+    resolved.status === 'released' ? SUCCESS_CACHE_TTL_MS : FAILURE_CACHE_TTL_MS,
+  )
   return resolved
 }

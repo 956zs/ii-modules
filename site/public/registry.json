@@ -1,16 +1,216 @@
 {
   "modules": [
     {
-      "id": "network_traffic",
-      "name": { "en_US": "Network Traffic", "zh_TW": "網路流量" },
+      "id": "activewindow_fix",
+      "name": {
+        "en_US": "ActiveWindow Monitor-ID Fix",
+        "zh_TW": "視窗標題多螢幕修復",
+        "zh_CN": "窗口标题多屏修复"
+      },
       "description": {
-        "zh_TW": "Bar 上下行流量計：即時速率、DNS ping、開機/本日/本月累計（全系統與 per-app）、動態刻度貝茲趨勢曲線、per-app 佔用排行。",
-        "en_US": "Up/down bandwidth meter with live rates, DNS ping, boot/today/month totals, Bezier trend graphs, and a per-app usage ranking."
+        "en_US": "Stock ActiveWindow indexes the monitors array by Hyprland monitor ID, which breaks whenever IDs stop matching array positions (e.g. after switching from the internal panel to an external monitor) — the bar then shows 'Workspace N' instead of the focused window's title. This module overrides the binding with an id-based lookup via an inserted Binding{}. Self-retiring once upstream fixes the line.",
+        "zh_TW": "stock 的 ActiveWindow 拿 Hyprland monitor ID 當陣列索引，ID 與陣列位置不一致時（例如從內建螢幕換到外接螢幕）標題區只會顯示「Workspace N」。本模塊插入 Binding{} 以 id 查找覆蓋錯誤綁定；上游修復後錨點消失、模塊自動退場。"
+      },
+      "sourceVersion": "1.0.0",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [],
+      "requires": {},
+      "tierB": true,
+      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/activewindow_fix",
+      "docs": {
+        "zh_TW": "/docs/modules/activewindow_fix",
+        "en_US": "/docs/en/modules/activewindow_fix"
+      }
+    },
+    {
+      "id": "battery_trend",
+      "name": {
+        "en_US": "Battery Trend",
+        "zh_TW": "電量趨勢",
+        "zh_CN": "电量趋势"
+      },
+      "description": {
+        "en_US": "Long-term battery history and analytics — with zero bar footprint by default (the stock bar already has a battery gauge). Sampling runs invisibly; the detail panel opens from a sidebar quick-toggle tile (Tier B patch) or IPC: 24 h curve (charge segments tinted, suspend gaps annotated), 30-day daily min/max bands, a year of health snapshots, drain-rate/cycle statistics and charge-session records, plus a hover popup with smoothed power draw and a regression-based time estimate. Optional opt-in bar pill: 3 h sparkline (percentage text a further opt-in). Tiered retention (24 h raw / 30 d hourly / 365 d daily) keeps the history file bounded. Native data sources only: UPower service + sysfs reads.",
+        "zh_TW": "手機級的長期電量趨勢與分析——預設零 bar 佔位（stock bar 已有電池指示器）。取樣在背景進行；詳情面板由側欄快速開關磁貼（Tier B 補丁）或 IPC 開啟——24 小時曲線（充電段上色、休眠斷點標註）、30 天每日最高/最低區間、一年健康快照、耗電速率/循環統計與充放電段記錄，另有 hover 彈窗顯示平滑功耗與回歸法剩餘時間估計（與 UPower 對照）。可選開啟 bar 藥丸：3 小時迷你曲線（百分比文字再另行選開）。分層保留（原始 24 小時／小時級 30 天／日級 365 天）讓歷史檔案大小有界。純原生資料來源：UPower 服務＋sysfs 檔案讀取。",
+        "zh_CN": "手机级的长期电量趋势与分析——默认零 bar 占位（stock bar 已有电池指示器）。采样在后台进行；详情面板由侧栏快速开关磁贴（Tier B 补丁）或 IPC 打开——24 小时曲线（充电段上色、休眠断点标注）、30 天每日最高/最低区间、一年健康快照、耗电速率/循环统计与充放电段记录，另有悬停弹窗显示平滑功耗与回归法剩余时间估计（与 UPower 对照）。可选开启 bar 药丸：3 小时迷你曲线（百分比文字再另行选开）。分层保留（原始 24 小时／小时级 30 天／日级 365 天）让历史文件大小有界。纯原生数据来源：UPower 服务＋sysfs 文件读取。"
+      },
+      "sourceVersion": "1.1.0",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [
+        "exec"
+      ],
+      "requires": {},
+      "tierB": true,
+      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/battery_trend",
+      "docs": {
+        "zh_TW": "/docs/modules/battery_trend",
+        "en_US": "/docs/en/modules/battery_trend"
+      }
+    },
+    {
+      "id": "clock_popup_slim",
+      "name": {
+        "en_US": "Slim Clock Popup",
+        "zh_TW": "精簡時鐘彈窗",
+        "zh_CN": "精简时钟弹窗"
+      },
+      "description": {
+        "en_US": "Shrinks the clock widget's hover popup to a single date line by hiding the system-uptime row and the To-Do section. Disable the module to get the full popup back.",
+        "zh_TW": "把時鐘的 hover 彈窗縮成一行日期：隱藏 system uptime 列與 To Do 區塊。停用本模塊即可還原完整彈窗。"
+      },
+      "sourceVersion": "1.0.0",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [],
+      "requires": {},
+      "tierB": true,
+      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/clock_popup_slim",
+      "docs": {
+        "zh_TW": "/docs/modules/clock_popup_slim",
+        "en_US": "/docs/en/modules/clock_popup_slim"
+      }
+    },
+    {
+      "id": "indicator_tools",
+      "name": {
+        "en_US": "Indicator Tools",
+        "zh_TW": "指示器工具",
+        "zh_CN": "指示器工具"
+      },
+      "description": {
+        "en_US": "Right-click the bar's WiFi / Bluetooth indicator icons to open the module's own QML panels: a multi-adapter networks list (own nmcli parsing — every wifi adapter gets its own section, plus bluetooth-tethered PAN/NAP and ethernet sections) with connect + inline password + inline error, and a Bluetooth devices panel with pair/connect/forget (Quickshell's native Bluetooth service). No external tools.",
+        "zh_TW": "右鍵 bar 上的 WiFi／藍牙指示圖示，開啟模塊自製的 QML 面板：多介面卡網路列表（自行解析 nmcli——每張 WiFi 網卡各自成段，外加藍牙網路共享 PAN/NAP 與乙太網路分段）＋連線＋行內密碼＋行內錯誤訊息、藍牙裝置面板配對/連線/移除（Quickshell 原生 Bluetooth 服務）。不依賴外部工具。"
+      },
+      "sourceVersion": "2.1.0",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [
+        "exec"
+      ],
+      "requires": {},
+      "tierB": true,
+      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/indicator_tools",
+      "docs": {
+        "zh_TW": "/docs/modules/indicator_tools",
+        "en_US": "/docs/en/modules/indicator_tools"
+      }
+    },
+    {
+      "id": "memory_center",
+      "name": {
+        "en_US": "Memory Center",
+        "zh_TW": "記憶體中心",
+        "zh_CN": "内存中心"
+      },
+      "description": {
+        "en_US": "Visual RAM/swap viewer and cleaner: pressure-coloured bar percentage widget (hideable to save bar space), hover popup with an honest composition mini-bar (in use / reclaimable cache / free always sum to MemTotal), and a panel with an animated composition bar, treemap-style top-process blocks (area = RSS, double-click your own to SIGTERM), swap compaction (swapoff+swapon) and cache dropping (drop_caches) behind a polkit/sudo auth prompt with a measured freed delta. Optional sidebar quick-toggle tile (Tier B patch) opens the panel.",
+        "zh_TW": "視覺化 RAM/swap 檢視與清理工具：壓力變色百分比 bar 元件（可隱藏以節省 bar 空間）、hover 彈窗含誠實的組成迷你條（應用程式／可回收快取／可用，總和恆等於 MemTotal）、詳細面板——動畫組成條、treemap 式程序方塊（面積＝RSS，點兩下可結束自己的程序）、整理 swap 與清除快取（polkit/sudo 認證後執行並回報實測釋放量）。可選側欄快速開關磁貼（Tier B 補丁），點擊開啟面板。",
+        "zh_CN": "可视化 RAM/swap 查看与清理工具：压力变色百分比 bar 组件（可隐藏以节省 bar 空间）、悬停弹窗含诚实的组成迷你条（应用程序／可回收缓存／可用，总和恒等于 MemTotal）、详细面板——动画组成条、treemap 式进程方块（面积＝RSS，双击可结束自己的进程）、整理 swap 与清除缓存（polkit/sudo 认证后执行并回报实测释放量）。可选侧栏快速开关磁贴（Tier B 补丁），点击打开面板。"
+      },
+      "sourceVersion": "1.2.0",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [
+        "exec"
+      ],
+      "requires": {
+        "system": [
+          {
+            "bin": "ps",
+            "hint": "procps-ng — top-process sampling in the panel"
+          },
+          {
+            "bin": "pkexec",
+            "hint": "polkit — auth prompt for the swap/cache cleanup actions"
+          }
+        ]
+      },
+      "tierB": true,
+      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/memory_center",
+      "docs": {
+        "zh_TW": "/docs/modules/memory_center",
+        "en_US": "/docs/en/modules/memory_center"
+      }
+    },
+    {
+      "id": "network_traffic",
+      "name": {
+        "en_US": "Network Traffic",
+        "zh_TW": "網路流量",
+        "zh_CN": "网络流量"
+      },
+      "description": {
+        "en_US": "Up/down bandwidth meter for the bar: live rates, DNS ping, boot/today/month totals (whole-system and per-app), Bezier trend graphs with dynamic scale, and a per-app usage ranking (continuous nethogs accounting) in the hover popup. Reads /proc/net/dev; tunnel and container interfaces are excluded by default so VPN traffic is not double-counted.",
+        "zh_TW": "Bar 上下行流量計：即時速率、DNS ping、開機/本日/本月累計（全系統與 per-app）、動態刻度貝茲趨勢曲線、hover 彈窗含 per-app 佔用排行（nethogs 常駐統計）。預設排除隧道/容器介面，VPN 不重複計算。窄螢幕自動改用雙行緊湊版面。"
+      },
+      "sourceVersion": "1.5.0",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [
+        "exec"
+      ],
+      "requires": {
+        "system": [
+          {
+            "bin": "nethogs",
+            "hint": "sudo pacman -S nethogs  # per-app usage in the popup; for rootless capture: sudo setcap 'cap_net_admin,cap_net_raw,cap_dac_read_search,cap_sys_ptrace+ep' /usr/bin/nethogs"
+          }
+        ]
       },
       "tierB": false,
-      "capabilities": ["exec"],
       "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
-      "repo": "https://github.com/956zs/ii-modules"
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/network_traffic",
+      "docs": {
+        "zh_TW": "/docs/modules/network_traffic",
+        "en_US": "/docs/en/modules/network_traffic"
+      }
+    },
+    {
+      "id": "screentime",
+      "name": {
+        "en_US": "Screen Time",
+        "zh_TW": "螢幕使用時間",
+        "zh_CN": "屏幕使用时间"
+      },
+      "description": {
+        "en_US": "Phone-style screen time tracking. Focus accounting via Quickshell's native ToplevelManager (event-driven, pauses while locked, suspend gaps not counted): today's per-app seconds, hourly histogram, and a 30-day daily history. A separate 'AI work time' dimension samples the CPU of agent process trees (claude/codex by default) every 10s and counts sessions actually working — even unfocused or locked — with parallel-session peak and sum. Bar pill with today's total and a hover popup (top apps, yesterday comparison, AI work time); detail panel via IPC with hourly/7-day/30-day charts, per-app ranking, and an AI section; optional sidebar quick-toggle tile (Tier B patch) that opens the detail panel.",
+        "zh_TW": "手機風格的螢幕使用時間統計。以 Quickshell 原生 ToplevelManager 做焦點記帳（事件驅動、鎖屏暫停、休眠時段不入帳）：今日各應用秒數、每小時直方圖、30 天每日歷史。另有獨立的「AI 工作時長」維度：每 10 秒取樣 agent 程序樹（預設 claude/codex）的 CPU，統計真正在工作的 session——即使未聚焦甚至鎖屏——含並行峰值與合計。Bar 藥丸顯示今日總時長，hover 彈窗含 Top 應用、昨日比較與 AI 工作時長；IPC 開啟詳情面板（時段/7 天/30 天圖表、應用排行與 AI 區塊）；可選側欄快速開關磁貼（Tier B 補丁），點擊開啟詳情面板。"
+      },
+      "sourceVersion": "1.2.0",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [
+        "exec"
+      ],
+      "requires": {},
+      "tierB": true,
+      "origin": "https://github.com/956zs/ii-modules/releases/latest/download/index.json",
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/screentime",
+      "docs": {
+        "zh_TW": "/docs/modules/screentime",
+        "en_US": "/docs/en/modules/screentime"
+      }
     }
   ]
 }

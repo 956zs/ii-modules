@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Languages, Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DOCS_URL, REPO_URL } from '@/lib/urls'
-import { cn } from '@/lib/utils'
+import { docsUrl, useI18n } from '@/lib/i18n'
+import { REPO_URL } from '@/lib/urls'
 
 /** Official GitHub mark (Simple Icons); lucide 1.x no longer ships brand icons. */
 export function GitHubIcon({ className }: { className?: string }) {
@@ -12,43 +13,126 @@ export function GitHubIcon({ className }: { className?: string }) {
   )
 }
 
-/** Compact top bar that slides in once the hero headline has scrolled past. */
+export function LanguageToggle({ onSelect }: { onSelect?: () => void }) {
+  const { t, toggleLocale } = useI18n()
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="min-h-11 text-muted-foreground"
+      onClick={() => {
+        toggleLocale()
+        onSelect?.()
+      }}
+      aria-label={t.switchLanguage}
+    >
+      <Languages data-icon="inline-start" className="size-4" />
+      {t.languageToggleLabel}
+    </Button>
+  )
+}
+
 export function SiteHeader() {
-  const [visible, setVisible] = useState(false)
+  const { t, locale } = useI18n()
+  const [open, setOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  function closeMenu(restoreFocus = false) {
+    setOpen(false)
+    if (restoreFocus) requestAnimationFrame(() => menuButtonRef.current?.focus())
+  }
 
   useEffect(() => {
-    const onScroll = () => setVisible(window.scrollY > 280)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+    if (!open) return
+    const firstLink = menuRef.current?.querySelector<HTMLElement>('a, button')
+    firstLink?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu(true)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open])
 
   return (
-    <header
-      inert={!visible}
-      className={cn(
-        'fixed inset-x-0 top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md transition-all duration-200 motion-reduce:transition-none',
-        visible ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0',
-      )}
-    >
-      <div className="mx-auto flex h-12 max-w-6xl items-center justify-between px-4 sm:px-6">
+    <header className="sticky inset-x-0 top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
+      <div className="mx-auto flex min-h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
         <a
           href="#top"
-          className="rounded-md font-mono text-sm font-semibold tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          className="flex min-h-11 items-center rounded-md font-mono text-sm font-semibold tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
         >
           IIMP<span className="text-brand">.</span>
         </a>
-        <div className="flex items-center gap-1">
-          <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
-            <a href={DOCS_URL}>文件</a>
+
+        <nav aria-label={t.siteLinks} className="hidden items-center gap-1 sm:flex">
+          <Button asChild variant="ghost" size="sm" className="min-h-11 text-muted-foreground">
+            <a href="#modules">{t.modules}</a>
           </Button>
-          <Button asChild variant="ghost" size="icon-sm" className="text-muted-foreground">
-            <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub Repo">
+          <Button asChild variant="ghost" size="sm" className="min-h-11 text-muted-foreground">
+            <a href={docsUrl(locale)}>{t.docs}</a>
+          </Button>
+          <LanguageToggle />
+          <Button asChild variant="ghost" size="icon" className="size-11 text-muted-foreground">
+            <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label={t.githubRepo}>
               <GitHubIcon className="size-4" />
             </a>
           </Button>
+        </nav>
+
+        <div className="flex items-center gap-1 sm:hidden">
+          <Button asChild variant="ghost" size="sm" className="min-h-11 text-muted-foreground">
+            <a href={docsUrl(locale)}>{t.docs}</a>
+          </Button>
+          <Button
+            ref={menuButtonRef}
+            variant="ghost"
+            size="icon"
+            className="size-11 text-muted-foreground"
+            aria-label={open ? t.closeMenu : t.menu}
+            aria-expanded={open}
+            aria-controls="mobile-navigation"
+            onClick={() => setOpen((current) => !current)}
+          >
+            {open ? <X /> : <Menu />}
+          </Button>
         </div>
       </div>
+
+      {open ? (
+        <div
+          ref={menuRef}
+          id="mobile-navigation"
+          className="absolute inset-x-0 top-full border-b border-border bg-background p-3 shadow-lg sm:hidden"
+        >
+          <nav aria-label={t.menu} className="mx-auto flex max-w-6xl flex-col">
+            <a
+              href="#modules"
+              className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => closeMenu()}
+            >
+              {t.modules}
+            </a>
+            <a
+              href={docsUrl(locale)}
+              className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => closeMenu()}
+            >
+              {t.docs}
+            </a>
+            <LanguageToggle onSelect={() => closeMenu()} />
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="flex min-h-11 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => closeMenu()}
+            >
+              <GitHubIcon className="size-4" />
+              {t.githubRepo}
+            </a>
+          </nav>
+        </div>
+      ) : null}
     </header>
   )
 }

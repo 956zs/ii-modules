@@ -14,8 +14,10 @@ import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
 import { useRegistry } from '@/hooks/use-registry'
 import { useModuleVersions } from '@/hooks/use-module-versions'
+import { useI18n } from '@/lib/i18n'
 
 function App() {
+  const { t } = useI18n()
   const registry = useRegistry()
   const modules = registry.status === 'success' ? registry.modules : []
   const versions = useModuleVersions(modules)
@@ -42,11 +44,11 @@ function App() {
                 <EmptyMedia variant="icon">
                   <CloudAlert />
                 </EmptyMedia>
-                <EmptyTitle>模塊清單暫時無法取得</EmptyTitle>
-                <EmptyDescription>網路或伺服器出了點狀況，請稍後再試。</EmptyDescription>
+                <EmptyTitle>{t.registryErrorTitle}</EmptyTitle>
+                <EmptyDescription>{t.registryErrorDescription}</EmptyDescription>
               </EmptyHeader>
               <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-                重新載入
+                {t.reload}
               </Button>
             </Empty>
           </div>

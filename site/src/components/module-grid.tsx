@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
 import { ModuleCard, ModuleCardSkeleton } from '@/components/module-card'
+import { useI18n } from '@/lib/i18n'
 import { ADD_MODULE_URL } from '@/lib/urls'
 import type { RegistryModule, VersionState } from '@/lib/types'
 
@@ -29,6 +30,7 @@ function matches(mod: RegistryModule, query: string): boolean {
 
 /** Dashed call-to-action card so a short list still reads as an open registry. */
 function AddModuleCard() {
+  const { t } = useI18n()
   return (
     <a
       href={ADD_MODULE_URL}
@@ -40,16 +42,15 @@ function AddModuleCard() {
         <Plus className="size-5" />
       </span>
       <span className="flex flex-col gap-1">
-        <span className="text-sm font-medium">發佈你的模塊</span>
-        <span className="text-xs text-muted-foreground">
-          送出 PR 新增至 registry.json，立即上架
-        </span>
+        <span className="text-sm font-medium">{t.publishTitle}</span>
+        <span className="text-xs text-muted-foreground">{t.publishDescription}</span>
       </span>
     </a>
   )
 }
 
 export function ModuleGrid({ modules, versions, loading }: ModuleGridProps) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -77,10 +78,10 @@ export function ModuleGrid({ modules, versions, loading }: ModuleGridProps) {
     <section id="modules" className="mx-auto flex max-w-6xl flex-col gap-5 px-4 pb-24 sm:px-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-baseline gap-3">
-          <h2 className="font-heading text-xl font-semibold tracking-tight">模塊清單</h2>
+          <h2 className="font-heading text-xl font-semibold tracking-tight">{t.moduleList}</h2>
           {!loading ? (
             <span className="font-mono text-xs text-muted-foreground">
-              {modules.length} 個模塊
+              {t.moduleCount(modules.length)}
             </span>
           ) : null}
         </div>
@@ -97,16 +98,16 @@ export function ModuleGrid({ modules, versions, loading }: ModuleGridProps) {
                 e.currentTarget.blur()
               }
             }}
-            placeholder="搜尋模塊名稱或描述…"
+            placeholder={t.searchPlaceholder}
             className="px-9"
-            aria-label="搜尋模塊"
+            aria-label={t.searchModules}
           />
           {query ? (
             <Button
               variant="ghost"
               size="icon-xs"
               className="absolute top-1/2 right-1.5 -translate-y-1/2 text-muted-foreground"
-              aria-label="清除搜尋"
+              aria-label={t.clearSearch}
               onClick={() => {
                 setQuery('')
                 inputRef.current?.focus()
@@ -122,7 +123,7 @@ export function ModuleGrid({ modules, versions, loading }: ModuleGridProps) {
 
       {trimmed && filtered.length > 0 ? (
         <p role="status" className="text-xs text-muted-foreground">
-          找到 {filtered.length} 個符合「{trimmed}」的模塊
+          {t.searchResult(filtered.length, trimmed)}
         </p>
       ) : null}
 
@@ -138,11 +139,11 @@ export function ModuleGrid({ modules, versions, loading }: ModuleGridProps) {
             <EmptyMedia variant="icon">
               <SearchX />
             </EmptyMedia>
-            <EmptyTitle>找不到符合的模塊</EmptyTitle>
-            <EmptyDescription>沒有模塊符合「{trimmed}」，換個關鍵字試試。</EmptyDescription>
+            <EmptyTitle>{t.noMatchTitle}</EmptyTitle>
+            <EmptyDescription>{t.noMatchDescription(trimmed)}</EmptyDescription>
           </EmptyHeader>
           <Button variant="outline" size="sm" onClick={() => setQuery('')}>
-            清除搜尋
+            {t.clearSearch}
           </Button>
         </Empty>
       ) : (
