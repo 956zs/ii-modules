@@ -13,24 +13,15 @@ description: 從零開始:安裝 iimod CLI,然後裝上你的第一個 IIMP 模�
 
 ## 安裝 iimod CLI
 
-從穩定下載端點取得官方 binary 並核對 SHA256：
+透過網站提供的第一方安裝腳本，從穩定下載端點取得官方 binary 並核對 SHA256：
 
 ```bash
-set -eu
-iimod_tmp="$(mktemp)"
-iimod_sum_tmp="$(mktemp)"
-trap 'rm -f "$iimod_tmp" "$iimod_sum_tmp"' EXIT HUP INT TERM
-curl --fail --location --progress-bar --output "$iimod_tmp" \
-  https://ii.n1cat.xyz/downloads/iimod/linux-x86_64
-curl --fail --location --progress-bar --output "$iimod_sum_tmp" \
-  https://ii.n1cat.xyz/downloads/iimod/linux-x86_64.sha256
-iimod_sha="$(cat "$iimod_sum_tmp")"
-printf '%s\n' "$iimod_sha" | grep --extended-regexp --quiet '^[0-9a-fA-F]{64}$'
-(cd "$(dirname "$iimod_tmp")" && \
-  printf '%s  %s\n' "$iimod_sha" "$(basename "$iimod_tmp")" | sha256sum --check --status -)
-sudo install -m 0755 "$iimod_tmp" /usr/local/bin/iimod
-iimod --version
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://ii.n1cat.xyz/install-iimod.sh | sh
 ```
+
+腳本會先說明將安裝的內容、目標 `/usr/local/bin/iimod`、SHA256 驗證狀態，以及何時可能出現 `sudo` 密碼提示。binary 只會下載至受限的暫存目錄；checksum 不合法或不相符時會立即停止，不會執行 `sudo`，暫存檔也會自動清除。
+
+這個短指令會直接執行目前由網站透過 HTTPS 提供的腳本，因此信任邊界包含 `ii.n1cat.xyz` 與 TLS。若要先審查再執行，請開啟 [install-iimod.sh](https://ii.n1cat.xyz/install-iimod.sh)，或先下載到本機閱讀後執行。下載的 binary 不會直接 pipe 給 `sudo`；腳本會先完成 SHA256 驗證，再單獨呼叫 `sudo install`。
 
 ::: tip 穩定端點
 網站會從最高版本的 `iimod/v<version>` Release 投影 binary 與 `.sha256`。CLI 與各模塊獨立發版，不依賴 repository-wide Latest Release。

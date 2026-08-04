@@ -13,24 +13,15 @@ This page walks you through it from scratch: get the `iimod` CLI installed, then
 
 ## Install the iimod CLI
 
-Download the official binary from the stable endpoint and verify its SHA256:
+Use the first-party installer served by this site to download the official binary from the stable endpoint and verify its SHA256:
 
 ```bash
-set -eu
-iimod_tmp="$(mktemp)"
-iimod_sum_tmp="$(mktemp)"
-trap 'rm -f "$iimod_tmp" "$iimod_sum_tmp"' EXIT HUP INT TERM
-curl --fail --location --progress-bar --output "$iimod_tmp" \
-  https://ii.n1cat.xyz/downloads/iimod/linux-x86_64
-curl --fail --location --progress-bar --output "$iimod_sum_tmp" \
-  https://ii.n1cat.xyz/downloads/iimod/linux-x86_64.sha256
-iimod_sha="$(cat "$iimod_sum_tmp")"
-printf '%s\n' "$iimod_sha" | grep --extended-regexp --quiet '^[0-9a-fA-F]{64}$'
-(cd "$(dirname "$iimod_tmp")" && \
-  printf '%s  %s\n' "$iimod_sha" "$(basename "$iimod_tmp")" | sha256sum --check --status -)
-sudo install -m 0755 "$iimod_tmp" /usr/local/bin/iimod
-iimod --version
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://ii.n1cat.xyz/install-iimod.sh | sh
 ```
+
+Before prompting, the script explains what it installs, the `/usr/local/bin/iimod` destination, SHA256 verification, and when `sudo` may request your password. It downloads the binary only into a restricted temporary directory. An invalid or mismatched checksum stops the installation before `sudo`, and temporary files are always removed.
+
+This short command executes the current script served over HTTPS, so its trust boundary includes `ii.n1cat.xyz` and TLS. To review it first, open [install-iimod.sh](https://ii.n1cat.xyz/install-iimod.sh), or download it locally and inspect it before running it. The binary itself is never piped into `sudo`: the script verifies SHA256 first, then invokes `sudo install` separately.
 
 ::: tip Stable endpoint
 The site projects the binary and `.sha256` from the highest-versioned `iimod/v<version>` release. The CLI and every module release independently; neither depends on the repository-wide Latest Release.
