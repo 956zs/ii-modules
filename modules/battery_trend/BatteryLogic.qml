@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
+import "BatteryAnalytics.js" as BatteryAnalytics
 
 /*
  * Battery sampling + analytics instance (NOT a singleton — IIMP modules pass
@@ -386,7 +387,7 @@ Item {
         root.dirty = false
     }
 
-    function loadFromBlob(adoptCur) {
+    function loadFromBlob() {
         let s = null
         try {
             s = JSON.parse(root.store.histState)
@@ -398,11 +399,9 @@ Item {
         daily = Array.isArray(s?.daily) ? s.daily : []
         sessions = Array.isArray(s?.sessions) ? s.sessions : []
         health = Array.isArray(s?.health) ? s.health : []
-        if (adoptCur) {
-            root.hourAcc = s?.cur?.h ?? null
-            root.dayAcc = s?.cur?.d ?? null
-            root.sess = s?.cur?.s ?? null
-        }
+        root.hourAcc = BatteryAnalytics.validAccumulator(s?.cur?.h) ? s.cur.h : null
+        root.dayAcc = BatteryAnalytics.validAccumulator(s?.cur?.d) ? s.cur.d : null
+        root.sess = BatteryAnalytics.validSessionAccumulator(s?.cur?.s) ? s.cur.s : null
         root.histReady = true
         updateViews()
     }
@@ -410,14 +409,14 @@ Item {
     onStoreReadyChanged: {
         if (root.storeReady && !root.histReady) {
             resolveBat()
-            loadFromBlob(root.sampling)
+            loadFromBlob()
         }
     }
     // Primary election can settle after the store loads (screens attach
     // asynchronously); adopt the in-progress accumulators then.
     onSamplingChanged: {
         if (root.sampling && root.histReady)
-            loadFromBlob(true)
+            loadFromBlob()
     }
 
     // Reader mode: follow the owner's flushes through the watched file.
@@ -425,7 +424,7 @@ Item {
         target: root.store
         function onHistStateChanged() {
             if (!root.sampling && root.histReady)
-                root.loadFromBlob(false)
+                root.loadFromBlob()
         }
     }
 
@@ -470,76 +469,10 @@ Item {
         return -1
     }
 
-    function windowStats(t, sinceSec) {
-        // Sums finalized daily entries in the window plus today's live
-        // accumulator: dis %, awake discharge seconds.
-        let dis = 0, disSec = 0
-        const since = t - sinceSec
-        for (let i = 0; i < daily.length; i++) {
-            const e = daily[i]
-            if (e[0] >= since) {
-                dis += e[6]
-                disSec += e[7]
-            }
-        }
-        if (root.dayAcc) {
-            dis += root.dayAcc.dis
-            disSec += root.dayAcc.disSec
-        }
-        return {
-            dis: dis,
-            rate: disSec > 60 ? dis / (disSec / 3600) : 0, // %/h while in use
-            cycles: dis / 100
-        }
-    }
-
     function computeStats(t) {
-        const today = root.dayAcc && root.dayAcc.n > 0 ? {
-            dis: r1(root.dayAcc.dis),
-            rate: root.dayAcc.disSec > 60 ? r1(root.dayAcc.dis / (root.dayAcc.disSec / 3600)) : 0,
-            avgW: root.dayAcc.wN > 0 ? r2(root.dayAcc.wSum / root.dayAcc.wN) : 0,
-            chgH: r1(root.dayAcc.chg / 3600)
-        } : { dis: 0, rate: 0, avgW: 0, chgH: 0 }
-
-        let dodSum = 0, dodN = 0, csSum = 0, ceSum = 0, cN = 0
-        for (let i = 0; i < sessions.length; i++) {
-            const s = sessions[i]
-            if (s[0] === "d" && s[3] - s[4] >= 3 && s[2] - s[1] >= 600) {
-                dodSum += s[3] - s[4]
-                dodN++
-            }
-            if (s[0] === "c" && s[4] - s[3] >= 3) {
-                csSum += s[3]
-                ceSum += s[4]
-                cN++
-            }
-        }
-
-        const hNow = health.length > 0 ? health[health.length - 1][1] : -1
-        let h30 = null, hSpan = null, hSpanDays = 0
-        if (health.length >= 2) {
-            const latest = health[health.length - 1]
-            for (let i = 0; i < health.length; i++) {
-                if (latest[0] - health[i][0] <= 30 * 86400) {
-                    if (latest[0] - health[i][0] >= 6 * 86400)
-                        h30 = r1(latest[1] - health[i][1])
-                    break
-                }
-            }
-            hSpanDays = Math.round((latest[0] - health[0][0]) / 86400)
-            if (hSpanDays >= 7)
-                hSpan = r1(latest[1] - health[0][1])
-        }
-
-        return {
-            today: today,
-            d7: windowStats(t, 7 * 86400 - 43200),
-            d30: windowStats(t, 30 * 86400 - 43200),
-            dod: dodN > 0 ? r1(dodSum / dodN) : -1,
-            chargeFrom: cN > 0 ? Math.round(csSum / cN) : -1,
-            chargeTo: cN > 0 ? Math.round(ceSum / cN) : -1,
-            hNow: hNow, h30: h30, hSpan: hSpan, hSpanDays: hSpanDays
-        }
+        return BatteryAnalytics.computeStats(t, root.daily, root.hourly, root.raw,
+                                             root.gapSec, root.dayAcc,
+                                             root.sessions, root.health)
     }
 
     function updateViews() {
