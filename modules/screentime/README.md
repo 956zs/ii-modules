@@ -1,8 +1,8 @@
 # Screen Time - 螢幕使用時間
 
-手機風格的焦點使用時間統計，提供 Daily 與 Trends 兩個詳情頁、30 天可瀏覽歷史、
-bar 摘要與獨立的 AI 工作時長。焦點記帳使用 Quickshell `ToplevelManager`；鎖屏與
-休眠斷層不計入。
+手機風格的焦點使用時間統計，提供 Daily 與可回顧的 Weekly 兩個詳情頁、30 天可瀏覽
+歷史、bar 摘要與獨立的 AI 工作時長。焦點記帳使用 Quickshell `ToplevelManager`；
+鎖屏與休眠斷層不計入。
 
 側欄磁貼是可選的 Tier B integration，由 delegate 與 edit-mode re-add 兩個
 insert-only patches 組成。
@@ -19,7 +19,7 @@ iimod install modules/screentime/ --allow-patches
 
 ## 入口與操作
 
-詳情面板分成「每日／趨勢」兩頁。
+詳情面板分成「每日／週報」兩頁。
 
 | 入口 | 效果 |
 |---|---|
@@ -36,17 +36,20 @@ Daily 可用前一天／後一天瀏覽最近 30 個日曆日。選定日期會�
 與 AI 工作摘要；點擊中央日期可回到今日。沒有紀錄的日期顯示空狀態，不會當成零值。
 
 24 小時直方圖刻意只在今日 Daily view 顯示。v1.3 起，完整日紀錄會保存
-`hours[24]`；這些歷史時段資料用於 Trends heatmap，而不是在過去日期的 Daily view
+`hours[24]`；這些歷史時段資料用於 Weekly heatmap，而不是在過去日期的 Daily view
 重複顯示。
 
-## Trends
+## Weekly
 
-- 最近 7 個完整日中有紀錄日期的平均，附 `N/7` 覆蓋率。
-- 與前一個 7 日完整期間比較。
-- 缺日不冒充零值的 7 日柱狀圖與 30 日曲線。
-- 最近 28 個完整日的星期×時段熱力圖（星期一至星期日 x 24 小時）。
+- 依 ISO 8601 顯示「某年第幾週」，每週固定為星期一至星期日。
+- 進入週報時一律顯示上一個完整週，不顯示當週尚未結束的殘缺週報。
+- 左右按鈕可回顧保留範圍內的完整週；右按鈕最多回到上一個完整週，不會進入本週。
+- 與前一個完整週比較總時長及各應用變化，固定為完整週對完整週。
+- 顯示選取週使用最多的應用、使用時長與選取週應用排行。
+- 以選取週結束日回推 28 個完整日建立星期×時段熱力圖（星期一至星期日 x 24 小時）。
+- 缺日不冒充零值；任一比較期間缺少紀錄時，明確顯示無法比較。
 
-舊版歷史沒有 `hours[24]` 時，仍可參與每日總量平均，但不會被視為有時段明細。
+舊版歷史沒有 `hours[24]` 時，仍可參與週總量與應用排行，但不會被視為有時段明細。
 Heatmap 以 `N/28` 顯示實際覆蓋率，支援 hover 讀值、Tab focus 與方向鍵瀏覽。
 
 圖表使用 Material You `colPrimary` 單色階，換主題時會重繪；數值與身分由文字和
@@ -59,8 +62,10 @@ Heatmap 以 `N/28` 顯示實際覆蓋率，支援 hover 讀值、Tab focus 與�
 - **鎖屏**：`GlobalStates.screenLocked` 為真時不入帳。
 - **休眠／掛起**：事件間隔超過 `idleGapSec` 時不計該段。
 - **無焦點**：空桌面不入帳，因此今日總時長等於各應用時長總和。
-- **應用名稱**：Steam `steam_app_<id>` 會從本機 desktop entry 的
-  `steam://rungameid/<id>` command 尋找遊戲名稱，不執行網路查詢。
+- **應用名稱**：優先使用本機 desktop entry 名稱；Steam `steam_app_<id>` 會從
+  desktop entry 的 `steam://rungameid/<id>` command 尋找遊戲名稱，不執行網路
+  查詢。無法解析的反向網域 app ID 取最後一段，一般視窗 class 則保留完整名稱與
+  版本資訊，例如 `Minecraft* 1.20.1` 顯示為 `Minecraft 1.20.1`。
 
 沒有 idle protocol 資料時，螢幕未鎖但人已離開且仍有焦點視窗的時間會繼續入帳。
 正常 component destruction 會先結算並寫盤；突然 crash 或強制終止仍可能遺失最近
@@ -129,7 +134,8 @@ quick-toggle config 移除。
 
 每個 daily record 最多保留 Top 20 應用，其餘摺疊成「其他」。v1.3 起，只有經過
 完整日收尾且標記 `hoursComplete` 的 `hours[24]` 會進入 heatmap；中途升級的當天
-不會把不完整時段冒充完整日。
+不會把不完整時段冒充完整日。週報加總的是選取完整週內的 daily records，不使用
+今日即時資料，因此每天被摺疊的低用量應用會合併到「其他」。
 
 ## 限制
 
@@ -138,6 +144,7 @@ quick-toggle config 移除。
   其他符合 regex 的高 CPU process 也可能被計入。
 - 舊 daily records 缺少 hourly data 時不參與 heatmap，但仍參與總量統計。
 - 30 天瀏覽以已保存 records 為準，缺日保持 unknown，不補零或插值。
+- 週報只比較選取完整週與前一個完整週；任一側缺日就不產生差異數字。
 - Sidebar integration 依賴目前 stock quick-toggle anchors；上游改動時
   `iimod check` 會拒絕套用。
 
@@ -147,8 +154,9 @@ quick-toggle config 移除。
 |---|---|
 | `ScreentimeLogic.qml` | 焦點／鎖屏／排除規則、歷史 fold 與持久化 |
 | `AgentMonitor.qml` | `/proc` process-tree CPU heuristic |
-| `HistoryLogic.js` | 日期、完整期間、missing semantics 與 heatmap 累計 |
-| `DetailsPanel.qml` | Daily/Trends navigation 與 panel interaction |
+| `HistoryLogic.js` | 日期、ISO 週界線、missing semantics、週應用彙總與 heatmap 累計 |
+| `DetailsPanel.qml` | Daily/Weekly navigation 與 panel interaction |
+| `WeeklyReport.qml` | 週總量、同期比較、應用排行與趨勢圖 |
 | `ColumnChart.qml` / `LineChart.qml` | missing-aware period charts |
 | `HourHeatmap.qml` | 7 x 24 heatmap、鍵盤與 accessibility 狀態 |
 | `Format.qml` | 時長與本機應用名稱格式化 |

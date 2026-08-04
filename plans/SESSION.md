@@ -1,4 +1,54 @@
-## iimod host freshness/downgrade protection
+## screentime 1.4.0 ISO weekly reports
+
+- ✅ Replaced the rolling seven-complete-day Trends summary with a
+  Monday-to-Sunday ISO 8601 Weekly report. The header uses the ISO week-year,
+  the chart includes today's live total, and future weekdays remain unknown
+  instead of becoming zeroes.
+- ✅ Weekly total and per-app deltas compare this week only with the same elapsed
+  weekdays last week. A comparison is withheld when either side lacks a daily
+  record, so partial history cannot produce a misleading change.
+- ✅ Added the current week's Top 5 application aggregation, a dedicated
+  most-used-app summary, per-app time deltas, and retained the 28-day hourly
+  heatmap plus 30-day context curve in a separate `WeeklyReport.qml` component.
+- ✅ Preserved the unreleased Screen Time 1.3.1 application-name correction
+  already in the worktree and bumped the combined additive release to 1.4.0.
+  Updated README, manifest metadata, site catalog, and exact `zh_TW` / `zh_CN`
+  catalogs through the isolated i18n handoff.
+- ✅ Regression coverage includes ISO week 32 aggregation, ISO week-year
+  boundaries, live-today inclusion, same-weekday app comparison, missing-day
+  refusal, and UI/catalog contracts. Screen Time tests pass 27/27; source and
+  package validate/i18n/check pass; site tests pass 47/47; the official
+  dirty-tree `module/screentime/v1.4.0` release dry-run passes and creates no tag.
+- ✅ After explicit Tier B approval, installed Screen Time 1.4.0 from the
+  canonical Pages origin. The first live check exposed a missing Translation
+  import and eager construction of the hidden weekly page; both now have
+  regression coverage, and the fixed package was reinstalled transactionally.
+- ✅ Moved the weekday-by-hour heatmap to the second weekly-report section,
+  directly below `This week`. Live screenshots confirm all weekly text renders
+  and the requested section order; current logs contain no Screen Time weekly
+  report or heatmap errors, and `iimod verify` reports the host and all modules
+  intact.
+- ✅ PR #18 passed CI and merged to `main` at
+  `c6539f6d358ad90ad886b005128b7c451827706f`. The official publisher pushed
+  `module/screentime/v1.4.0`; release workflow `30904531283` and Pages workflow
+  `30904700626` succeeded. The published package and production index agree on
+  SHA256 `6e7f62a29bbb500336d7f4b4eff8b5c886def33d795f8e3ff242dccbe9c35e5e`;
+  downloaded package checksum, validate, exact i18n check, and compatibility
+  check all pass. The canonical downloaded package was reinstalled live;
+  installed `Format.qml` and `WeeklyReport.qml` match released source,
+  integrity is intact, current module logs are clean, and host IPC returns
+  `pong`.
+
+## screentime 1.3.1 application-name fallback
+
+- ✅ Live reproduction captured a Prism-launched Minecraft window with Hyprland class / Quickshell app ID `Minecraft* 1.20.1`; the old unconditional `appId.split(".").pop()` fallback rendered the last version segment as `1`.
+- ✅ `Format.appName()` now prefers a matching local desktop entry, preserves non-reverse-domain window classes, removes wildcard separators, and still shortens genuine reverse-domain IDs. The reproduced value renders as `Minecraft 1.20.1`; Steam command lookup remains unchanged.
+- ✅ Regression evidence: focused formatter tests failed with actual `1` before the fix and pass after it. Full Screen Time tests pass 24/24; changed `Format.qml` passes Qt 6 `qmlformat` and `qmllint`; source validate/suggest/i18n/check, catalog check, diff check, and packed `/tmp/screentime-1.3.1.iimod` validate/check all pass.
+- ✅ Live 1.3.1 installation used the worktree `iimod` 1.3.0 as the sole mutation owner with reviewed Tier B consent. Source/live `Format.qml` and `module.json` are byte-identical; `iimod verify` reports all modules and host intact; IPC returns `pong`; current logs contain no Screen Time/Format runtime errors. A live screenshot confirms `Minecraft* 1.20.1` now renders as `Minecraft 1.20.1` and Prism resolves to `Prism Launcher`; persisted accounting keys/history remain unchanged.
+- ✅ Official dirty-tree release dry-run verified `module/screentime/v1.3.1` source/package/i18n/compatibility and created no tag.
+- ✅ Clean release branch `fix/screentime-app-name-1.3.1` carried exactly six files in four focused commits. Independent review found one P2 where empty app IDs could reach `DesktopEntries.heuristicLookup("")`; a red regression fixture proved it, `Format.appName()` now short-circuits empty strings, and re-review found no remaining issue. Clean candidate evidence: Screen Time 24/24, formatter 5/5, Qt format/lint, source/package IIMP gates, release contracts 15/15, catalog/diff checks, and official dry-run.
+- ✅ PR #17 passed CI and merged to `main` at `1a4042a71fb26824865a95435746294dd4ef351b`. The official publisher pushed annotated tag `module/screentime/v1.3.1`; release workflow `30642281382` and Pages workflow `30642499890` succeeded. The non-draft/non-prerelease Release contains exactly `screentime-1.3.1.iimod` and `SHA256SUMS`; downloaded package validate/i18n/check pass and production index advertises the same immutable URL and SHA256 `adff279193f97dd692729f2147d5052d7148851449d429f0e8b9b2d43adf0ad3`.
+
 
 - ✅ Kept registry `schemaVersion: 2` and its fields unchanged. Added independent `HOST_GENERATION=2` durable state at `$STATE/host/current.json` and immutable `$STATE/host/generations/<generation>-<contentId>/` bundles containing manifest, both QML assets, and sorted target/optional/full host `PatchInstance` records.
 - ✅ New mutators install and preserve exact legacy `$STATE/lock` contents `1\n` (PID 1 fence) while still holding the released lock, then use `$STATE/mutation.lock.v2` through common `mutation_preflight`; new `doctor --rebuild-registry` is covered. Released read-only commands remain unaffected, while released mutators fail before host writes.
@@ -308,3 +358,34 @@
 - ✅ Network Traffic no longer assigns undeclared `pktzStarted`; `reapply` now restores durable host state and every journaled projection after post-preflight failures; same-value unmanaged user translations remain unowned; and scanner regex recognition includes whole-word non-member `typeof`, `void`, and `delete`.
 - ✅ Release fixtures now cover Clock Popup, Battery Trend, Memory Center, and ActiveWindow stock surfaces. ActiveWindow documentation distinguishes read-only `check` reporting from state-changing `reapply` incompatibility handling.
 - ✅ Clean integration verification on CLI 1.3.0: Rust fmt, 63 unit, 18 i18n CLI, 37 integration, and all-target clippy; 97 module contracts; site 47/47 plus TypeScript/Vite/VitePress production build; release contracts 15/15 and publish contracts 13/13; exact repository i18n and all eight module validate/check runs; four fixture-dependent official release dry-runs; catalog, paired skills, shell syntax, diff, secret, and conflict-marker checks. No live mutation, push, tag, or Release was performed.
+
+## network_traffic 1.6.1 app statistics startup hotfix
+
+- ✅ Reproduced the complete per-app outage against the actual installed 1.6.0 payload. Quickshell logged `Cannot assign to non-existent property "pktzStarted"` from `AppTraffic.startPktz()`, so the collector lifecycle stopped before spawning any backend even though `pktz --log` and its file capabilities were healthy.
+- ✅ Confirmed the repository already contained the minimal source fix and regression guard from commit `1f3aba2`, while the immutable 1.6.0 store/live payload still contained the invalid assignment. Bumped the module to 1.6.1 and regenerated the site catalog so users can upgrade from the broken release.
+- ✅ Packed and transactionally installed `/tmp/network_traffic-1.6.1.iimod` with the current worktree `iimod`; existing configuration and accounting schema were preserved. The live payload no longer contains `pktzStarted`, Quickshell spawned exactly one `$HOME/go/bin/pktz --log`, IPC returned `pong`, and `iimod verify` reports every module plus host intact.
+- ✅ End-to-end accounting evidence: after controlled download traffic and the 60-second persistence interval, current-day per-app bytes increased from 0 to 13,366,464 and later reached 43,790,863 across multiple nonzero app buckets. No `pktzStarted` error appeared after the 14:45:29 installation; the expected missing `$PATH` candidate warning was followed by successful `$HOME/go/bin/pktz --log` fallback discovery.
+- ✅ Final verification: focused Network Traffic tests 39/39 and site contracts 47/47 pass; Qt 6 `qmlformat` parses every module QML file; JavaScript and Python syntax checks pass; source/package validate, i18n exact check, compatibility check, catalog check, diff/debug/conflict/secret scans, and the official `module/network_traffic/v1.6.1` release dry-run all pass. Local hotfix package SHA256 is `f6717e519ba5271db4b12553161c3b82920ba32d206e2d69517aad827eda9ead`; no commit, push, tag, or Release was created.
+
+## screentime 1.5.0 weekly review
+
+- ✅ Weekly now opens on the previous complete ISO week instead of the incomplete current week, compares complete week against complete previous week, and lets users browse retained complete weeks without navigating into the current partial week.
+- ✅ Updated weekly UI labels, zh_TW/zh_CN catalogs, README, manifest version/description, and focused tests. Verification passed: screentime Node tests 28/28, QML parse, `git diff --check`, exact i18n check, and source `iimod validate`/`suggest`/`check` with the repo CLI.
+- ✅ Published through PR #19 and the documented release path. `main` is at merge commit `5ba03a0`; tag `module/screentime/v1.5.0` triggered Release module run `30920721633`, producing a non-draft/non-prerelease Release with `screentime-1.5.0.iimod` and `SHA256SUMS`. Canonical package SHA256 is `e5dd3983581fc0ead52ea07aa0de4bb46c01feeeadf2760f6743453f7b23c3dc`; Pages run `30920931955` updated `https://ii.n1cat.xyz/index.json` to advertise screentime `1.5.0`.
+
+## network_traffic 1.6.1 latency popup release
+
+- ✅ Changed latency probing so DNS lookup and ping run only while the Network
+  Traffic popup is open. Closing the tool or changing the selected host stops
+  the active processes, preventing continuous background latency testing.
+- ✅ Published through PR #20 and the documented release path. `main` is at merge
+  commit `5d27f03`; tag `module/network_traffic/v1.6.1` triggered Release
+  module run `30922995183`, producing a non-draft/non-prerelease Release with
+  `network_traffic-1.6.1.iimod` and `SHA256SUMS`.
+- ✅ Canonical package SHA256 is
+  `7aa5040ad69e3dcb5e4b948b490390559d649807470d784c0dcb33cf9a1021ad`; checksum
+  verification passes. Pages run `30923816873` updated
+  `https://ii.n1cat.xyz/index.json` to advertise network_traffic `1.6.1`, and
+  the temporary remote release branch was deleted.
+- ⚠️ GitHub Pages reported only the existing Node.js 20 deprecation annotation
+  from GitHub Actions; deployment still completed successfully.

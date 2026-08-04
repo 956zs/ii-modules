@@ -201,7 +201,7 @@
         "en_US": "Up/down bandwidth meter for the bar: live rates, DNS ping, boot/today/month totals (whole-system and per-app), Bezier trend graphs with dynamic scale, and a per-app usage ranking (best-effort pktz eBPF payload estimate with nethogs fallback) in the hover popup. Reads /proc/net/dev; common tunnel and container interfaces are excluded by default to reduce VPN double-counting.",
         "zh_TW": "Bar 上下行流量計：即時速率、DNS ping、開機/本日/本月累計（全系統與 per-app）、動態刻度貝茲趨勢曲線、hover 彈窗含 per-app 佔用排行（優先使用 pktz eBPF payload 盡力估算，降級 nethogs）。預設排除常見隧道/容器介面，以減少 VPN 重複計算。窄螢幕自動改用雙行緊湊版面。"
       },
-      "sourceVersion": "1.6.0",
+      "sourceVersion": "1.6.1",
       "authors": [
         "nlcat"
       ],
@@ -233,10 +233,10 @@
         "zh_CN": "屏幕使用时间"
       },
       "description": {
-        "en_US": "Phone-style screen time tracking with Daily and Trends tabs. Focus accounting via Quickshell's native ToplevelManager (event-driven, pauses while locked, suspend gaps not counted) keeps a browsable 30-day history. Daily shows a selected day's total, app ranking, AI work summary, and today's hourly histogram. Trends shows recorded-complete-day averages with coverage and previous-period comparison, honest missing-day charts, and a Monday-to-Sunday hourly heatmap accumulated from v1.3 onward. A separate AI work-time dimension samples agent process trees even while unfocused or locked. Bar pill, IPC detail panel, and optional Tier B sidebar tile included.",
-        "zh_TW": "手機風格的螢幕使用時間統計，詳情分成「每日／趨勢」。以 Quickshell 原生 ToplevelManager 做焦點記帳（事件驅動、鎖屏暫停、休眠時段不入帳），保留可瀏覽的 30 天歷史。「每日」顯示選定日期總時長、應用排行、AI 工作摘要與今日時段圖；「趨勢」顯示有紀錄完整日平均、覆蓋率、前期比較、誠實標示缺日的圖表，以及從 1.3 起累積的週一至週日時段熱力圖。另有獨立 AI 工作時長維度，即使未聚焦或鎖屏仍會取樣 agent 程序樹。含 Bar 藥丸、IPC 詳情面板與可選 Tier B 側欄磁貼。"
+        "en_US": "Phone-style screen time tracking with Daily and Weekly tabs. Focus accounting via Quickshell's native ToplevelManager (event-driven, pauses while locked, suspend gaps not counted) keeps a browsable 30-day history. Daily shows a selected day's total, app ranking, AI work summary, and today's hourly histogram. Weekly shows an ISO calendar-week total, same-weekday comparison with last week, per-app comparison, honest missing-day charts, and a Monday-to-Sunday hourly heatmap accumulated from v1.3 onward. A separate AI work-time dimension samples agent process trees even while unfocused or locked. Bar pill, IPC detail panel, and optional Tier B sidebar tile included.",
+        "zh_TW": "手機風格的螢幕使用時間統計，詳情分成「每日／週報」。以 Quickshell 原生 ToplevelManager 做焦點記帳（事件驅動、鎖屏暫停、休眠時段不入帳），保留可瀏覽的 30 天歷史。「每日」顯示選定日期總時長、應用排行、AI 工作摘要與今日時段圖；「週報」顯示 ISO 日曆週總時長、與上週同一批星期的總量及各應用比較、誠實標示缺日的圖表，以及從 1.3 起累積的週一至週日時段熱力圖。另有獨立 AI 工作時長維度，即使未聚焦或鎖屏仍會取樣 agent 程序樹。含 Bar 藥丸、IPC 詳情面板與可選 Tier B 側欄磁貼。"
       },
-      "sourceVersion": "1.3.0",
+      "sourceVersion": "1.4.0",
       "authors": [
         "nlcat"
       ],

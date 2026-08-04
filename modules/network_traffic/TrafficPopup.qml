@@ -67,14 +67,46 @@ StyledPopup {
 
     property string pingHost: "auto"
     property string resolvedDns: ""
+    readonly property bool latencyActive: root.active === true
     readonly property string pingTarget: pingHost !== "auto" ? pingHost : resolvedDns
     property real pingMs: -1 // -1 pending, -2 timeout/unreachable
+    property int latencyGeneration: 0
 
     onActiveChanged: {
+        latencyGeneration++
         pingMs = -1
-        if (active && pingHost === "auto" && resolvedDns === "") {
-            dnsProc.running = true
-        }
+        if (latencyActive)
+            startDnsDiscovery()
+        else
+            stopLatencyProcesses()
+    }
+
+    onPingHostChanged: {
+        latencyGeneration++
+        resolvedDns = ""
+        pingMs = -1
+        stopLatencyProcesses()
+        if (latencyActive)
+            startDnsDiscovery()
+    }
+
+    function startDnsDiscovery() {
+        if (!latencyActive || pingHost !== "auto" || resolvedDns !== "" || dnsProc.running)
+            return
+        dnsProc.generation = latencyGeneration
+        dnsProc.running = true
+    }
+
+    function startPing() {
+        if (!latencyActive || pingTarget === "" || pingProc.running)
+            return
+        pingProc.generation = latencyGeneration
+        pingProc.running = true
+    }
+
+    function stopLatencyProcesses() {
+        dnsProc.running = false
+        pingProc.running = false
     }
 
     function pickDns(text) {
@@ -103,30 +135,41 @@ StyledPopup {
         // helpers must live inside it, not on the popup root.
         Process {
             id: dnsProc
+            property int generation: 0
             command: ["sh", "-c", "resolvectl dns 2>/dev/null; grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}'"]
             stdout: StdioCollector {
-                onStreamFinished: root.resolvedDns = root.pickDns(text)
+                onStreamFinished: {
+                    if (!root.latencyActive || dnsProc.generation !== root.latencyGeneration)
+                        return
+                    root.resolvedDns = root.pickDns(text)
+                }
             }
         }
 
         Timer {
-            running: root.active && root.pingTarget !== ""
+            id: pingTimer
+            running: root.latencyActive && root.pingTarget !== ""
             interval: 3000
             repeat: true
             triggeredOnStart: true
-            onTriggered: if (!pingProc.running) pingProc.running = true
+            onTriggered: root.startPing()
         }
 
         Process {
             id: pingProc
+            property int generation: 0
             command: ["ping", "-n", "-c", "1", "-W", "2", root.pingTarget]
             stdout: StdioCollector {
                 onStreamFinished: {
+                    if (!root.latencyActive || pingProc.generation !== root.latencyGeneration)
+                        return
                     const m = text.match(/time=([\d.]+)/)
                     if (m) root.pingMs = parseFloat(m[1])
                 }
             }
             onExited: (exitCode, exitStatus) => {
+                if (!root.latencyActive || pingProc.generation !== root.latencyGeneration)
+                    return
                 if (exitCode !== 0) root.pingMs = -2
             }
         }

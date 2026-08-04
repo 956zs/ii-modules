@@ -66,6 +66,13 @@ Author modules under IIMP SPEC 1.0. `iimod` is the reference tool and
     manifest/version, README, and tests. Freeze source strings before delegating
     to an independent `ii-module-i18n` subagent. Do not ask that subagent to
     change feature files or weaken checks; resolve any ambiguity it returns.
+18. Finish every authoring task with explicit workspace hygiene. Run
+    `git status --short --branch`, classify every changed path, remove generated
+    or temporary output, and commit completed source changes to a task branch.
+    If publication was requested, push the branch and complete the normal PR or
+    release flow. Never commit or push unrelated pre-existing/user-owned paths
+    just to hide a dirty worktree; report any remaining paths and why they
+    remain.
 
 ## Release Checklist
 
@@ -97,7 +104,10 @@ tools/release/publish.sh module <id> --push
 
 Do not hand-create or push release tags when `publish.sh` is available. Never use
 `--allow-dirty` with `--push`; GitHub Actions remains the only publisher of the
-Release and canonical-origin package.
+Release and canonical-origin package. After a clean temporary release worktree
+publishes successfully, reconcile the original development worktree with the
+updated `origin/main` when this can be done without discarding local work; report
+the exact blocking paths if it cannot.
 
 ## Forbidden
 

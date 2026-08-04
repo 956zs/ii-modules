@@ -1,5 +1,12 @@
 .pragma library
 
+const DAYS_PER_WEEK = 7
+const ISO_THURSDAY_INDEX = 3
+const ISO_REFERENCE_DAY = 4
+const JANUARY_INDEX = 0
+const LOCAL_NOON_HOUR = 12
+const MILLISECONDS_PER_DAY = 86400000
+
 function seconds(value) {
     const number = Number(value)
     return Number.isFinite(number) && number > 0 ? number : 0
@@ -66,46 +73,124 @@ function latestDays(days) {
     return records
 }
 
-function period(key, records, startOffset, span) {
-    const startKey = shiftDayKey(key, startOffset)
-    const endKey = shiftDayKey(startKey, span - 1)
-    if (startKey === "" || endKey === "")
-        return { startKey: "", endKey: "", average: 0, coverage: 0, span, days: [] }
-
-    const out = []
-    let sum = 0
-    let coverage = 0
-    for (let index = 0; index < span; index++) {
-        const dayKey = shiftDayKey(startKey, index)
-        const record = records.get(dayKey)
-        const total = record ? recordedSeconds(record.total) : null
-        out.push({ k: dayKey, total })
-        if (total !== null) {
-            sum += total
-            coverage++
-        }
-    }
-    return { startKey, endKey, average: coverage > 0 ? sum / coverage : 0,
-             coverage, span, days: out }
+function dateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
-function periodSummary(todayKey, days, span) {
-    const length = Number(span)
-    const safeSpan = Number.isInteger(length) && length > 0 && length <= 31 ? length : 7
-    if (!validDayKey(todayKey)) {
-        const current = { startKey: "", endKey: "", average: 0, coverage: 0,
-                          span: safeSpan, days: [] }
-        const previous = { startKey: "", endKey: "", average: 0, coverage: 0,
-                           span: safeSpan, days: [] }
-        return { current, previous, delta: null }
-    }
+function dayOrdinal(key) {
+    const date = validDayKey(key)
+    return date ? Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / MILLISECONDS_PER_DAY : null
+}
 
-    const records = latestDays(days)
-    const current = period(todayKey, records, -safeSpan, safeSpan)
-    const previous = period(todayKey, records, -safeSpan * 2, safeSpan)
-    const delta = current.coverage > 0 && previous.coverage > 0
-        ? current.average - previous.average : null
-    return { current, previous, delta }
+function isoWeekInfo(key) {
+    const date = validDayKey(key)
+    if (!date)
+        return { year: 0, week: 0, startKey: "", endKey: "" }
+
+    const weekday = (date.getDay() + DAYS_PER_WEEK - 1) % DAYS_PER_WEEK
+    const startKey = shiftDayKey(key, -weekday)
+    const thursday = validDayKey(shiftDayKey(startKey, ISO_THURSDAY_INDEX))
+    const year = thursday.getFullYear()
+    const januaryFourth = new Date(year, JANUARY_INDEX, ISO_REFERENCE_DAY, LOCAL_NOON_HOUR)
+    const januaryWeekday = (januaryFourth.getDay() + DAYS_PER_WEEK - 1) % DAYS_PER_WEEK
+    const firstStartKey = shiftDayKey(dateKey(januaryFourth), -januaryWeekday)
+    const week = Math.floor((dayOrdinal(startKey) - dayOrdinal(firstStartKey)) / DAYS_PER_WEEK) + 1
+    return { year, week, startKey, endKey: shiftDayKey(startKey, DAYS_PER_WEEK - 1) }
+}
+
+function weekStartKey(key) {
+    return isoWeekInfo(key).startKey
+}
+
+function previousCompleteWeekStartKey(todayKey) {
+    const startKey = weekStartKey(todayKey)
+    return startKey === "" ? "" : shiftDayKey(startKey, -DAYS_PER_WEEK)
+}
+
+function recordForKey(key, records, today) {
+    if (key === today.k)
+        return today
+    const stored = records.get(key)
+    const total = stored ? recordedSeconds(stored.total) : null
+    return total === null ? null : { k: key, total, apps: rankingFromList(stored.apps) }
+}
+
+function aggregatePeriod(options) {
+    const appTotals = {}
+    let total = 0
+    let coverage = 0
+    for (let index = 0; index < options.span; index++) {
+        const record = recordForKey(shiftDayKey(options.startKey, index), options.records, options.today)
+        if (!record)
+            continue
+        total += record.total
+        coverage++
+        for (const app of record.apps)
+            appTotals[app.n] = (appTotals[app.n] || 0) + app.s
+    }
+    return { total, coverage, expectedDays: options.span, apps: rankingFromMap(appTotals) }
+}
+
+function weekSeries(options) {
+    const days = []
+    for (let index = 0; index < DAYS_PER_WEEK; index++) {
+        const key = shiftDayKey(options.startKey, index)
+        const record = key <= options.today.k ? recordForKey(key, options.records, options.today) : null
+        days.push({ k: key, total: record ? record.total : null })
+    }
+    return days
+}
+
+function comparedApps(currentApps, previousApps, available) {
+    const previousByName = new Map(previousApps.map(app => [app.n, app.s]))
+    return currentApps.map(app => {
+        const previous = available ? (previousByName.has(app.n) ? previousByName.get(app.n) : 0) : null
+        return { n: app.n, s: app.s, previous, delta: available ? app.s - previous : null }
+    })
+}
+
+function emptyWeeklyReport() {
+    const period = { startKey: "", endKey: "", total: 0, coverage: 0,
+                     expectedDays: 0, apps: [] }
+    const current = { startKey: "", endKey: "", total: 0, coverage: 0,
+                      expectedDays: 0, days: [], apps: [] }
+    return { info: { year: 0, week: 0, startKey: "", endKey: "" },
+             current, previous: period, comparisonAvailable: false, totalDelta: null }
+}
+
+function weeklyReport(options) {
+    const input = options && typeof options === "object" ? options : {}
+    if (!validDayKey(input.todayKey))
+        return emptyWeeklyReport()
+
+    const requestedWeek = typeof input.weekStartKey === "string" && input.weekStartKey !== ""
+        ? input.weekStartKey : previousCompleteWeekStartKey(input.todayKey)
+    const info = isoWeekInfo(requestedWeek)
+    if (info.startKey === "")
+        return emptyWeeklyReport()
+
+    const records = latestDays(input.days)
+    const today = { k: input.todayKey, total: seconds(input.todayTotal),
+                    apps: rankingFromMap(input.todayApps) }
+    const expectedDays = DAYS_PER_WEEK
+    const currentData = aggregatePeriod({ startKey: info.startKey, span: expectedDays,
+                                          records, today })
+    const previousStartKey = shiftDayKey(info.startKey, -DAYS_PER_WEEK)
+    const previousData = aggregatePeriod({ startKey: previousStartKey, span: expectedDays,
+                                           records, today })
+    const comparisonAvailable = currentData.coverage === expectedDays
+        && previousData.coverage === expectedDays
+    const current = { startKey: info.startKey, endKey: info.endKey,
+                      total: currentData.total, coverage: currentData.coverage, expectedDays,
+                      days: weekSeries({ startKey: info.startKey, records, today }),
+                      apps: comparedApps(currentData.apps, previousData.apps, comparisonAvailable) }
+    const previous = { startKey: previousStartKey,
+                       endKey: shiftDayKey(previousStartKey, expectedDays - 1),
+                       total: previousData.total, coverage: previousData.coverage,
+                       expectedDays, apps: previousData.apps }
+    return { info, current, previous, comparisonAvailable,
+             totalDelta: comparisonAvailable ? current.total - previous.total : null,
+             lastCompleteStartKey: previousCompleteWeekStartKey(input.todayKey) }
 }
 
 function normalizedHours(hours) {

@@ -15,6 +15,10 @@
 - 🟡 P2 remains: `mutation.lock.v2` is still fail-fast instead of bounded/FIFO waiting, so independent development sessions cannot queue mutating transactions or show owner/progress. Continue assigning exactly one live mutation owner until waiting ships.
 - 2026-07-29 recurrence evidence: plain `iimod install /tmp/network_traffic-1.6.0.iimod` resolved to the 2026-07-27 `~/.local/bin/iimod` (advertised version 1.1.0, SHA256 `5dba3b1a...`, stale embedded host). At 08:48:33 it rewrote the network_traffic payload, registry, and live 15,877-byte legacy `ModulesConfig.qml`; `verify` again reported intact. The worktree debug/release binaries also advertised 1.1.0 but embedded the 43,975-byte redesign, proving semver alone cannot identify host freshness. This exact released-lock/write sequence is now covered by `legacy_pid1_fence_blocks_released_host_downgrade`; tamper tests cover assets, sentinel, imports, fences, and immutable bundle integrity.
 
+## Network Traffic per-app collection
+
+- ✅ P1 resolved in 1.6.1: the published 1.6.0 payload assigned undeclared `pktzStarted` inside `AppTraffic.startPktz()`. Quickshell aborted the function before any backend could spawn, making per-app rates and current-period accounting completely inert. The invalid assignment is removed, the source contract prohibits its return, and live end-to-end verification observed `pktz --log` plus persisted current-day app-byte growth.
+
 ## Independent product release review
 
 - ✅ Fixed: `.github/workflows/pages.yml` omitted `release.unpublished`, so unpublishing a Release would not withdraw it from Pages until another deployment.
