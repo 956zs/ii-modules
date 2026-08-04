@@ -11,6 +11,30 @@
 - Record cross-session progress in `plans/SESSION.md` and unresolved issues in
   `plans/ISSUES.md`.
 
+## Workspace Hygiene
+
+Agents must leave the repository in an explicit state after any task that
+creates, edits, publishes, installs, or verifies files.
+
+- Start and finish with `git status --short --branch` in the active worktree.
+  Do not leave new untracked files, generated artifacts, or modified files
+  unmentioned.
+- Classify every changed path before handoff as intended task work,
+  generated/temporary output, pre-existing user work, or blocked follow-up.
+  Remove generated/temporary files before completion unless the user asked to
+  keep them.
+- Completed source changes must be committed to a task branch. If the user asked
+  to publish or release, push the branch and complete the repository's normal PR
+  or release flow. Do not silently stop after editing files.
+- Never commit or push unrelated, pre-existing, or user-owned changes just to
+  make the worktree look clean. If such paths remain, report them by path and
+  reason in the final response; record cross-session leftovers in
+  `plans/SESSION.md` or `plans/ISSUES.md`.
+- When using a clean temporary worktree for release, reconcile the original
+  development worktree afterward. If released changes already exist on
+  `origin/main`, update or switch the original worktree only when it can be done
+  without discarding local work; otherwise report the exact blocking paths.
+
 ## Module Internationalization
 
 The runtime contract remains `Translation.tr("English source")` plus optional

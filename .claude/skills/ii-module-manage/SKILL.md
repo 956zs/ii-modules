@@ -43,6 +43,12 @@ Operate modules only through `iimod`. Exit codes are the contract.
 13. New mutators still use a fail-fast `mutation.lock.v2`; keep exactly one live
     mutation owner until bounded/FIFO waiting ships. Freshness-aware older
     binaries preserve the selected newer host bundle during module operations.
+14. Finish every management or release task with explicit workspace hygiene. Run
+    `git status --short --branch`, classify every changed path, remove generated
+    or temporary output, and commit completed repository changes to a task
+    branch. If the user requested publication, push the branch and complete the
+    normal PR or release flow. Never commit or push unrelated pre-existing or
+    user-owned paths; report any remaining paths and why they remain.
 
 ## Exit Codes
 
@@ -69,3 +75,7 @@ Operate modules only through `iimod`. Exit codes are the contract.
   Modules.
 - Bug report: include `iimod verify`, `iimod doctor`, module id/version, and the
   relevant Quickshell log lines.
+- Release cleanup: after a clean temporary release worktree publishes
+  successfully, reconcile the original development worktree with the updated
+  `origin/main` when this can be done without discarding local work; report the
+  exact blocking paths if it cannot.
