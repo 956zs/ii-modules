@@ -10,7 +10,7 @@ async function loadLogic() {
     vm.runInContext(`${source}
 globalThis.api = {
     shiftDayKey, weekStartKey, previousCompleteWeekStartKey,
-    dayRecord, weeklyReport, hourHeatmap
+    dayRecord, weeklyReport, weekHourMatrix
 }`, context)
     return context.api
 }
@@ -230,73 +230,113 @@ test("withholds weekly comparisons when a week has days before tracking began", 
     ])
 })
 
-test("builds a weekday by hour heatmap from complete hourly records only", async () => {
+test("week hour matrix passes actual per-day values through and zeroes off-days", async () => {
     const logic = await loadLogic()
-    const mondayA = new Array(24).fill(0)
-    mondayA[9] = 1800
-    const mondayB = new Array(24).fill(0)
-    mondayB[9] = 3600
-    const tuesday = new Array(24).fill(0)
-    tuesday[18] = 900
-    const days = [
-        { k: "2026-07-06", total: 1800, hours: mondayA },
-        { k: "2026-07-13", total: 3600, hours: mondayB },
-        { k: "2026-07-14", total: 900, hours: tuesday },
-        { k: "2026-07-15", total: 100, hours: [1, 2] },
-        { k: "2026-06-01", total: 999, hours: new Array(24).fill(999) },
-        { k: "2026-07-29", total: 999, hours: new Array(24).fill(999) }
-    ]
+    const monday = new Array(24).fill(0)
+    monday[9] = 1800
+    const wednesday = new Array(24).fill(0)
+    wednesday[20] = 3600
 
-    const result = plain(logic.hourHeatmap("2026-07-29", days, 28))
-    // 3 days with hourly detail + 24 tracked-era machine-off days; 2026-07-15
-    // is recorded without valid hourly detail, so its distribution stays
-    // unknown and it is excluded from the averages.
-    assert.equal(result.coverage, 27)
-    assert.equal(result.startKey, "2026-07-01")
-    assert.equal(result.endKey, "2026-07-28")
-    assert.equal(result.values.length, 7)
-    // Mondays: 30m + 60m recorded, two machine-off zeros → 22.5m average.
-    assert.equal(result.values[0][9], 22.5)
-    // Tuesdays: one 15m record, three machine-off zeros → 3.75m average.
-    assert.equal(result.values[1][18], 3.75)
-    assert.deepEqual(result.peak, { dow: 0, hour: 9, minutes: 22.5 })
+    const result = plain(logic.weekHourMatrix({
+        startKey: "2026-08-10",
+        todayKey: "2026-08-24",
+        days: [
+            { k: "2026-08-10", total: 1800, hours: monday },
+            { k: "2026-08-12", total: 3600, hours: wednesday }
+        ]
+    }))
+    assert.equal(result.startKey, "2026-08-10")
+    assert.equal(result.endKey, "2026-08-16")
+    assert.equal(result.days.length, 7)
+    assert.equal(result.recordedDays, 2)
+    assert.equal(result.days[0].state, "recorded")
+    assert.equal(result.days[0].minutes[9], 30)
+    // 2026-08-11 has no record after tracking began: machine off, the row is
+    // a REAL all-zero day — never another week's average wearing its date.
+    assert.equal(result.days[1].k, "2026-08-11")
+    assert.equal(result.days[1].state, "off")
+    assert.equal(result.days[1].minutes.reduce((sum, value) => sum + value, 0), 0)
+    assert.equal(result.days[2].state, "recorded")
+    assert.equal(result.days[2].minutes[20], 60)
+    for (let index = 3; index < 7; index++)
+        assert.equal(result.days[index].state, "off")
+    assert.deepEqual(result.peak, { day: 2, hour: 20, minutes: 60 })
 })
 
-test("heatmap excludes days before tracking began but averages off-days as zero", async () => {
+test("week hour matrix keeps pre-tracking and hours-less days unknown", async () => {
     const logic = await loadLogic()
-    const mondayA = new Array(24).fill(0)
-    mondayA[9] = 1800
-    const mondayB = new Array(24).fill(0)
-    mondayB[9] = 3600
-    const tuesday = new Array(24).fill(0)
-    tuesday[18] = 900
+    const thursday = new Array(24).fill(0)
+    thursday[8] = 900
 
-    const result = plain(logic.hourHeatmap("2026-07-15", [
-        { k: "2026-07-06", total: 1800, hours: mondayA },
-        { k: "2026-07-07", total: 900, hours: tuesday },
-        { k: "2026-07-13", total: 3600, hours: mondayB }
-    ], 14))
-    // Window 07-01..07-14: 07-01..07-05 predate the first record and stay
-    // excluded; 07-08..07-12 and 07-14 are tracked-era off-days.
-    assert.equal(result.coverage, 9)
-    // Both window Mondays are recorded: (30 + 60) / 2.
-    assert.equal(result.values[0][9], 45)
-    // Tuesdays: 15m record on 07-07, machine-off zero on 07-14.
-    assert.equal(result.values[1][18], 7.5)
+    const result = plain(logic.weekHourMatrix({
+        startKey: "2026-07-27",
+        todayKey: "2026-08-24",
+        days: [
+            { k: "2026-07-29", total: 900, hours: thursday },
+            { k: "2026-07-30", total: 5000 },
+            { k: "2026-07-31", total: 100, hours: [1, 2] }
+        ]
+    }))
+    // 07-27/07-28 predate the first retained record: unknown, not zero.
+    assert.equal(result.days[0].state, "pretracking")
+    assert.equal(result.days[1].state, "pretracking")
+    assert.equal(result.days[2].state, "recorded")
+    assert.equal(result.days[2].minutes[8], 15)
+    // Recorded without (valid) hours[24]: distribution unknown, not zero and
+    // not fabricated.
+    assert.equal(result.days[3].state, "nohours")
+    assert.equal(result.days[4].state, "nohours")
+    assert.equal(result.days[5].state, "off")
+    assert.equal(result.days[6].state, "off")
+    assert.equal(result.recordedDays, 1)
+    assert.deepEqual(result.peak, { day: 2, hour: 8, minutes: 15 })
 })
 
-test("heatmap rejects malformed hourly values and reports no peak when empty", async () => {
+test("week hour matrix shows today's partial hours and keeps future days unknown", async () => {
     const logic = await loadLogic()
-    const malformed = new Array(24).fill(0)
-    malformed[4] = -10
-    malformed[5] = "bad"
+    const monday = new Array(24).fill(0)
+    monday[9] = 1800
+    const todayHours = new Array(24).fill(0)
+    todayHours[8] = 900
 
-    const result = plain(logic.hourHeatmap("2026-07-29", [
-        { k: "2026-07-28", hours: malformed },
-        { k: "not-a-day", hours: new Array(24).fill(60) }
-    ], 28))
-    assert.equal(result.coverage, 0)
-    assert.equal(result.values[0].length, 24)
-    assert.equal(result.values.flat().reduce((sum, value) => sum + value, 0), 0)
-    assert.equal(result.peak, null)
+    const result = plain(logic.weekHourMatrix({
+        startKey: "2026-08-10",
+        todayKey: "2026-08-12",
+        todayHours,
+        todayHoursComplete: true,
+        days: [{ k: "2026-08-10", total: 1800, hours: monday }]
+    }))
+    assert.equal(result.days[0].state, "recorded")
+    assert.equal(result.days[1].state, "off")
+    assert.equal(result.days[2].state, "recorded")
+    assert.equal(result.days[2].minutes[8], 15)
+    for (let index = 3; index < 7; index++)
+        assert.equal(result.days[index].state, "pretracking")
+
+    const incomplete = plain(logic.weekHourMatrix({
+        startKey: "2026-08-10",
+        todayKey: "2026-08-12",
+        todayHours,
+        todayHoursComplete: false,
+        days: [{ k: "2026-08-10", total: 1800, hours: monday }]
+    }))
+    // A mid-day upgrade leaves today's early buckets unknown: not zero.
+    assert.equal(incomplete.days[2].state, "nohours")
+})
+
+test("week hour matrix rejects invalid input and reports no peak when empty", async () => {
+    const logic = await loadLogic()
+
+    const invalid = plain(logic.weekHourMatrix({ startKey: "not-a-day" }))
+    assert.deepEqual(invalid, { startKey: "", endKey: "", days: [],
+                                recordedDays: 0, peak: null })
+
+    const empty = plain(logic.weekHourMatrix({
+        startKey: "2026-07-27", todayKey: "2026-08-24", days: []
+    }))
+    // No retained records at all: every day is unknown, nothing recorded.
+    assert.equal(empty.recordedDays, 0)
+    assert.equal(empty.peak, null)
+    for (const day of empty.days)
+        assert.equal(day.state, "pretracking")
 })
