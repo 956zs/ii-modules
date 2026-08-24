@@ -35,3 +35,13 @@
   write back — a cross-instance echo. Same pre-template generation as the
   battery_trend loader had. Verify against Quickshell FileView semantics and
   harden at next memory_center release.
+
+## Module follow-ups from 2026-08-24 fix round
+
+- 🟢 P3 battery_trend: live analytics showed implausible drain rates
+  ("30 d: 40.5 %/h") — likely short discharge windows plus chunky sysfs
+  percent drops inflating dis/disSec aggregates. Data semantics, separate
+  from the fixed popup defect.
+- 🟢 P3 network_traffic: pktz truncates comm names to 15 chars
+  ("laptop-monitor-", "RvControlSvc.ex") — cosmetic naming in the per-app
+  list, accounting unaffected.
