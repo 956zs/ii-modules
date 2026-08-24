@@ -55,6 +55,18 @@ protocol cannot check for you.
   downgrade embedded host assets (mitigated by host generations in
   `iimod` >= 1.2.0, but the habit still applies to older installs).
 
+## Toolchain
+
+- `/usr/bin/qmlformat` may be the Qt 5 build (reports version 1.0) that
+  false-fails on modern QML (`?.`, `??`). Use the Qt 6 binary at
+  `/usr/lib/qt6/bin/qmlformat` for parse checks.
+- Quickshell's runtime log ring
+  (`/run/user/<uid>/quickshell/by-id/<id>/log.log`) is encoder-versioned;
+  a `qs` binary newer or older than the one that started the instance
+  cannot decode it, and the shell's stdout/stderr usually go to /dev/null.
+  When the log is unreadable, verify behaviorally: `iimp ping`, IPC panel
+  toggles, and `iimod verify`.
+
 ## Live testing
 
 - Popup and lazy-loaded surfaces need an interaction (hover/click) before
