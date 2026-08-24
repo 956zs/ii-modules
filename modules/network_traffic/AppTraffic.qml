@@ -77,6 +77,7 @@ Item {
             nethogsBatch = []
             nethogsSawSnapshot = false
             lastCum = {}
+            connCum = {}
             commByPid = {}
             pendingDelta = {}
             psQueue = []
@@ -102,6 +103,7 @@ Item {
             apps = []
             ssPrevious = null
             lastCum = {}
+            connCum = {}
             commByPid = {}
             pendingDelta = {}
             psQueue = []
@@ -276,11 +278,15 @@ Item {
     function startPktz() {
         if (!root.active || root.pktzStopping || root.nethogsStopping || root.ssStopping)
             return
+        // Parked nethogs deltas cannot survive a backend switch: pktz baselines
+        // use a different key shape, so settle them now instead of dropping.
+        finalizePendingAccounting()
         root.source = "starting"
         root.pktzBatch = []
         root.pktzTimestamp = ""
         root.pktzSawRecord = false
         root.lastCum = {}
+        root.connCum = {}
         root.lastBatchTime = 0
         pktz.running = true
     }
@@ -308,8 +314,9 @@ Item {
         const elapsed = time >= 0 && root.lastBatchTime > 0
             ? Math.max(0, (time - root.lastBatchTime) / 1000) : 0
         if (time >= 0) root.lastBatchTime = time
-        const result = AppTrafficLogic.commitPktzBatch(batch, root.lastCum, elapsed)
+        const result = AppTrafficLogic.commitPktzBatch(batch, root.lastCum, root.connCum, elapsed)
         root.lastCum = result.lastCum
+        root.connCum = result.connCum
         for (const app of result.accounting) root.accumulate(app.name, app.rx, app.tx)
         root.apps = result.rates
         root.acctRevision++
@@ -379,6 +386,9 @@ Item {
     // entryId -> {rx, tx}: last cumulative reading, for deltas. In-memory
     // only; a nethogs restart resets its counters, so baselines restart too.
     property var lastCum: ({})
+    // pktz only: connId -> {rx, tx} cumulative per-connection baselines, for
+    // carving excluded-endpoint (loopback/overlay) bytes out of process deltas.
+    property var connCum: ({})
     property real lastBatchTime: 0
 
     // If nethogs produced nothing usable in time (missing caps, pcap refused),
@@ -483,6 +493,9 @@ Item {
     function startSsFallback() {
         if (!root.active) return
         startupTimeout.stop()
+        // Same as startPktz: settle parked nethogs deltas before the sampler
+        // that cannot resolve them takes over.
+        finalizePendingAccounting()
         root.source = "ss"
         if (nethogs.running || root.nethogsStopping) {
             root.fallbackPending = true
@@ -535,25 +548,9 @@ Item {
         // give deltas. Sockets vanish when closed; per-app sums can therefore
         // shrink, so negative deltas are clamped — traffic on sockets that
         // opened and closed between polls is lost (pcap has no such gap).
+        // Excluded-endpoint sockets are filtered in parseSsTotals.
         const now = Date.now()
-        const totals = {}
-        let name = null
-        for (const line of text.split("\n")) {
-            const pm = line.match(/users:\(\("([^"]+)",pid=\d+/)
-            if (pm) {
-                name = pm[1]
-                continue
-            }
-            if (name === null) continue
-            const rx = line.match(/bytes_received:(\d+)/)
-            const tx = line.match(/bytes_sent:(\d+)/)
-            if (rx || tx) {
-                totals[name] = totals[name] ?? { rx: 0, tx: 0 }
-                totals[name].rx += rx ? parseInt(rx[1]) : 0
-                totals[name].tx += tx ? parseInt(tx[1]) : 0
-                name = null
-            }
-        }
+        const totals = AppTrafficLogic.parseSsTotals(text)
         const prev = root.ssPrevious
         root.ssPrevious = { time: now, totals }
         if (!prev || now <= prev.time) return
