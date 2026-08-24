@@ -1846,3 +1846,31 @@ fn vertical_bar_host_fence_present_and_optional() {
         .join("modules/ii/verticalBar/VerticalBarContent.qml")
         .exists());
 }
+
+#[test]
+fn init_scaffolds_golden_master_configloader() {
+    let w = World::new("init-configloader");
+    let dir = w.root.join("src");
+    std::fs::create_dir_all(&dir).unwrap();
+    w.expect(&["init", "my_widget", "--dir", dir.to_str().unwrap()], 0);
+
+    let loader = dir.join("my_widget/ConfigLoader.qml");
+    let text = std::fs::read_to_string(&loader).unwrap();
+    // Path is substituted with the concrete module id; no placeholder leaks.
+    assert!(text.contains("Directories.shellConfig + \"/modules/my_widget.json\""));
+    assert!(!text.contains("{{id}}"));
+    // Skeleton invariants enforced by tools/lib-sync/check-configloader.mjs.
+    for marker in [
+        "watchChanges: true",
+        "blockWrites: true",
+        "atomicWrites: true",
+        "materializing",
+        "property bool ready",
+        "FileViewError.FileNotFound",
+    ] {
+        assert!(text.contains(marker), "scaffold missing {marker}");
+    }
+    // The scaffold as a whole still validates.
+    let payload = dir.join("my_widget");
+    w.expect(&["validate", payload.to_str().unwrap()], 0);
+}

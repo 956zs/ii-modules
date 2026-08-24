@@ -490,6 +490,10 @@ pub fn cmd_init(id: &str, dir: &Path) -> Result<()> {
             "}\n",
         ),
     )?;
+    std::fs::write(
+        payload.join("ConfigLoader.qml"),
+        include_str!("../../../lib/ConfigLoader.template.qml").replace("{{id}}", id),
+    )?;
     std::fs::write(payload.join("translations/zh_TW.json"), "{}\n")?;
     std::fs::write(
         payload.join("README.md"),
