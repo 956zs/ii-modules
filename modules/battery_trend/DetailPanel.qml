@@ -16,7 +16,6 @@ import qs.mod.battery_trend
 PanelWindow {
     id: root
     required property var logic
-    property var openerScreen: null
     property real panelWidth: 420
 
     visible: false
@@ -24,7 +23,6 @@ PanelWindow {
         root.visible = !root.visible
     }
 
-    screen: root.openerScreen ?? null
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
