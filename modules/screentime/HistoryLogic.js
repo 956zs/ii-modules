@@ -115,20 +115,44 @@ function recordForKey(key, records, today) {
     return total === null ? null : { k: key, total, apps: rankingFromList(stored.apps) }
 }
 
+function firstTrackedKey(records, today) {
+    let first = today && validDayKey(today.k) ? today.k : ""
+    for (const key of records.keys()) {
+        if (first === "" || key < first)
+            first = key
+    }
+    return first
+}
+
+// A tracked-era calendar day with no stored record means the machine was off
+// all day: the tracker folds a record for every day it observes, so absence
+// after tracking began is a real zero, not missing data. Days before the
+// first retained record stay unknown (pre-install or trimmed by retention).
+function implicitZeroDay(key, options) {
+    return options.firstKey !== "" && key >= options.firstKey
+        && key <= options.today.k && !options.records.has(key)
+}
+
 function aggregatePeriod(options) {
     const appTotals = {}
     let total = 0
     let coverage = 0
+    let recordedDays = 0
     for (let index = 0; index < options.span; index++) {
-        const record = recordForKey(shiftDayKey(options.startKey, index), options.records, options.today)
-        if (!record)
-            continue
-        total += record.total
-        coverage++
-        for (const app of record.apps)
-            appTotals[app.n] = (appTotals[app.n] || 0) + app.s
+        const key = shiftDayKey(options.startKey, index)
+        const record = recordForKey(key, options.records, options.today)
+        if (record) {
+            total += record.total
+            coverage++
+            recordedDays++
+            for (const app of record.apps)
+                appTotals[app.n] = (appTotals[app.n] || 0) + app.s
+        } else if (implicitZeroDay(key, options)) {
+            coverage++
+        }
     }
-    return { total, coverage, expectedDays: options.span, apps: rankingFromMap(appTotals) }
+    return { total, coverage, recordedDays, expectedDays: options.span,
+             apps: rankingFromMap(appTotals) }
 }
 
 function weekSeries(options) {
@@ -136,7 +160,12 @@ function weekSeries(options) {
     for (let index = 0; index < DAYS_PER_WEEK; index++) {
         const key = shiftDayKey(options.startKey, index)
         const record = key <= options.today.k ? recordForKey(key, options.records, options.today) : null
-        days.push({ k: key, total: record ? record.total : null })
+        if (record)
+            days.push({ k: key, total: record.total, recorded: true })
+        else if (key <= options.today.k && implicitZeroDay(key, options))
+            days.push({ k: key, total: 0, recorded: false })
+        else
+            days.push({ k: key, total: null, recorded: false })
     }
     return days
 }
@@ -151,9 +180,9 @@ function comparedApps(currentApps, previousApps, available) {
 
 function emptyWeeklyReport() {
     const period = { startKey: "", endKey: "", total: 0, coverage: 0,
-                     expectedDays: 0, apps: [] }
+                     recordedDays: 0, expectedDays: 0, apps: [] }
     const current = { startKey: "", endKey: "", total: 0, coverage: 0,
-                      expectedDays: 0, days: [], apps: [] }
+                      recordedDays: 0, expectedDays: 0, days: [], apps: [] }
     return { info: { year: 0, week: 0, startKey: "", endKey: "" },
              current, previous: period, comparisonAvailable: false, totalDelta: null }
 }
@@ -172,21 +201,24 @@ function weeklyReport(options) {
     const records = latestDays(input.days)
     const today = { k: input.todayKey, total: seconds(input.todayTotal),
                     apps: rankingFromMap(input.todayApps) }
+    const firstKey = firstTrackedKey(records, today)
     const expectedDays = DAYS_PER_WEEK
     const currentData = aggregatePeriod({ startKey: info.startKey, span: expectedDays,
-                                          records, today })
+                                          records, today, firstKey })
     const previousStartKey = shiftDayKey(info.startKey, -DAYS_PER_WEEK)
     const previousData = aggregatePeriod({ startKey: previousStartKey, span: expectedDays,
-                                           records, today })
+                                           records, today, firstKey })
     const comparisonAvailable = currentData.coverage === expectedDays
         && previousData.coverage === expectedDays
     const current = { startKey: info.startKey, endKey: info.endKey,
-                      total: currentData.total, coverage: currentData.coverage, expectedDays,
-                      days: weekSeries({ startKey: info.startKey, records, today }),
+                      total: currentData.total, coverage: currentData.coverage,
+                      recordedDays: currentData.recordedDays, expectedDays,
+                      days: weekSeries({ startKey: info.startKey, records, today, firstKey }),
                       apps: comparedApps(currentData.apps, previousData.apps, comparisonAvailable) }
     const previous = { startKey: previousStartKey,
                        endKey: shiftDayKey(previousStartKey, expectedDays - 1),
                        total: previousData.total, coverage: previousData.coverage,
+                       recordedDays: previousData.recordedDays,
                        expectedDays, apps: previousData.apps }
     return { info, current, previous, comparisonAvailable,
              totalDelta: comparisonAvailable ? current.total - previous.total : null,
@@ -200,30 +232,50 @@ function normalizedHours(hours) {
     return normalized.some(value => value === null) ? null : normalized
 }
 
-function hourHeatmap(todayKey, days, span) {
+// anchorKey is the exclusive end of the window (the day after the last day
+// shown); callers must keep the whole window in the past. Recorded days
+// without hourly detail (pre-v1.3) stay excluded: their distribution is
+// unknown. Tracked-era days with no record at all are machine-off days and
+// contribute a known all-zero hour row to the averages.
+function hourHeatmap(anchorKey, days, span) {
     const length = Number(span)
     const safeSpan = Number.isInteger(length) && length > 0 && length <= 31 ? length : 28
     const values = Array.from({ length: 7 }, () => new Array(24).fill(0))
     const counts = Array.from({ length: 7 }, () => new Array(24).fill(0))
-    const startKey = shiftDayKey(todayKey, -safeSpan)
-    const endKey = shiftDayKey(todayKey, -1)
+    const startKey = shiftDayKey(anchorKey, -safeSpan)
+    const endKey = shiftDayKey(anchorKey, -1)
     if (startKey === "" || endKey === "")
         return { startKey: "", endKey: "", coverage: 0, values, peak: null }
 
+    const records = latestDays(days)
+    let firstKey = ""
+    for (const key of records.keys()) {
+        if (firstKey === "" || key < firstKey)
+            firstKey = key
+    }
+
     let coverage = 0
-    for (const [key, record] of latestDays(days)) {
-        if (key < startKey || key > endKey)
-            continue
-        const hours = normalizedHours(record.hours)
-        if (!hours)
-            continue
+    for (let index = 0; index < safeSpan; index++) {
+        const key = shiftDayKey(startKey, index)
         const date = validDayKey(key)
+        if (!date)
+            continue
         const dow = (date.getDay() + 6) % 7
-        for (let hour = 0; hour < 24; hour++) {
-            values[dow][hour] += hours[hour] / 60
-            counts[dow][hour]++
+        const record = records.get(key)
+        if (record) {
+            const hours = normalizedHours(record.hours)
+            if (!hours)
+                continue
+            for (let hour = 0; hour < 24; hour++) {
+                values[dow][hour] += hours[hour] / 60
+                counts[dow][hour]++
+            }
+            coverage++
+        } else if (firstKey !== "" && key >= firstKey) {
+            for (let hour = 0; hour < 24; hour++)
+                counts[dow][hour]++
+            coverage++
         }
-        coverage++
     }
 
     let peak = null

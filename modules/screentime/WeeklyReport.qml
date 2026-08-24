@@ -66,7 +66,7 @@ ColumnLayout {
             font.pixelSize: Appearance.font.pixelSize.smaller
             color: Appearance.colors.colSubtext
             text: Translation.tr("%1 of %2 days recorded")
-                .arg(root.report.current.coverage).arg(root.report.current.expectedDays)
+                .arg(root.report.current.recordedDays).arg(root.report.current.expectedDays)
         }
         RowLayout {
             spacing: 3
