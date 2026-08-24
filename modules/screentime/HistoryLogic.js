@@ -232,61 +232,56 @@ function normalizedHours(hours) {
     return normalized.some(value => value === null) ? null : normalized
 }
 
-// anchorKey is the exclusive end of the window (the day after the last day
-// shown); callers must keep the whole window in the past. Recorded days
-// without hourly detail (pre-v1.3) stay excluded: their distribution is
-// unknown. Tracked-era days with no record at all are machine-off days and
-// contribute a known all-zero hour row to the averages.
-function hourHeatmap(anchorKey, days, span) {
-    const length = Number(span)
-    const safeSpan = Number.isInteger(length) && length > 0 && length <= 31 ? length : 28
-    const values = Array.from({ length: 7 }, () => new Array(24).fill(0))
-    const counts = Array.from({ length: 7 }, () => new Array(24).fill(0))
-    const startKey = shiftDayKey(anchorKey, -safeSpan)
-    const endKey = shiftDayKey(anchorKey, -1)
-    if (startKey === "" || endKey === "")
-        return { startKey: "", endKey: "", coverage: 0, values, peak: null }
+function emptyWeekHours() {
+    return { startKey: "", endKey: "", days: [], recordedDays: 0, peak: null }
+}
 
-    const records = latestDays(days)
-    let firstKey = ""
-    for (const key of records.keys()) {
-        if (firstKey === "" || key < firstKey)
-            firstKey = key
-    }
+// Selected-week hour matrix: seven date-anchored rows of ACTUAL per-hour
+// minutes for that exact date — never an average across weeks. Row states:
+//  - "recorded": hours[24] known (includes today's partial buckets)
+//  - "off": tracked-era day with no record — machine off, real zeros
+//  - "nohours": recorded day without hourly detail — distribution unknown
+//  - "pretracking": before the first retained record, or future — unknown
+function weekHourMatrix(options) {
+    const input = options && typeof options === "object" ? options : {}
+    if (!validDayKey(input.startKey))
+        return emptyWeekHours()
 
-    let coverage = 0
-    for (let index = 0; index < safeSpan; index++) {
-        const key = shiftDayKey(startKey, index)
-        const date = validDayKey(key)
-        if (!date)
-            continue
-        const dow = (date.getDay() + 6) % 7
-        const record = records.get(key)
-        if (record) {
-            const hours = normalizedHours(record.hours)
-            if (!hours)
-                continue
-            for (let hour = 0; hour < 24; hour++) {
-                values[dow][hour] += hours[hour] / 60
-                counts[dow][hour]++
-            }
-            coverage++
-        } else if (firstKey !== "" && key >= firstKey) {
-            for (let hour = 0; hour < 24; hour++)
-                counts[dow][hour]++
-            coverage++
-        }
-    }
-
+    const records = latestDays(input.days)
+    const todayKey = validDayKey(input.todayKey) ? input.todayKey : ""
+    const firstKey = firstTrackedKey(records, { k: todayKey })
+    const days = []
+    let recordedDays = 0
     let peak = null
-    for (let dow = 0; dow < 7; dow++) {
-        for (let hour = 0; hour < 24; hour++) {
-            values[dow][hour] = counts[dow][hour] > 0 ? values[dow][hour] / counts[dow][hour] : 0
-            if (values[dow][hour] > 0 && (!peak || values[dow][hour] > peak.minutes))
-                peak = { dow, hour, minutes: values[dow][hour] }
+    for (let index = 0; index < DAYS_PER_WEEK; index++) {
+        const key = shiftDayKey(input.startKey, index)
+        const isToday = todayKey !== "" && key === todayKey
+        let hours = null
+        if (isToday)
+            hours = input.todayHoursComplete !== false ? normalizedHours(input.todayHours) : null
+        else if (records.has(key))
+            hours = normalizedHours(records.get(key).hours)
+
+        let state = "pretracking"
+        let minutes = new Array(24).fill(0)
+        if (hours) {
+            state = "recorded"
+            minutes = hours.map(value => value / 60)
+            recordedDays++
+            for (let hour = 0; hour < 24; hour++) {
+                if (minutes[hour] > 0 && (!peak || minutes[hour] > peak.minutes))
+                    peak = { day: index, hour, minutes: minutes[hour] }
+            }
+        } else if (isToday || records.has(key)) {
+            state = "nohours"
+        } else if (firstKey !== "" && key >= firstKey && todayKey !== "" && key <= todayKey) {
+            state = "off"
         }
+        days.push({ k: key, state, minutes })
     }
-    return { startKey, endKey, coverage, values, peak }
+    return { startKey: input.startKey,
+             endKey: shiftDayKey(input.startKey, DAYS_PER_WEEK - 1),
+             days, recordedDays, peak }
 }
 
 function dayRecord(key, todayKey, todayTotal, todayApps, aiUnion, aiSum, aiPeak, days) {
