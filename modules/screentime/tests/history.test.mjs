@@ -101,12 +101,15 @@ test("defaults to the last complete ISO week and compares full weeks", async () 
     })
     assert.deepEqual(result.current, {
         startKey: "2026-07-27", endKey: "2026-08-02", total: 3600,
-        coverage: 7, expectedDays: 7,
+        coverage: 7, recordedDays: 7, expectedDays: 7,
         days: [
-            { k: "2026-07-27", total: 1200 }, { k: "2026-07-28", total: 800 },
-            { k: "2026-07-29", total: 600 }, { k: "2026-07-30", total: 400 },
-            { k: "2026-07-31", total: 100 }, { k: "2026-08-01", total: 300 },
-            { k: "2026-08-02", total: 200 }
+            { k: "2026-07-27", total: 1200, recorded: true },
+            { k: "2026-07-28", total: 800, recorded: true },
+            { k: "2026-07-29", total: 600, recorded: true },
+            { k: "2026-07-30", total: 400, recorded: true },
+            { k: "2026-07-31", total: 100, recorded: true },
+            { k: "2026-08-01", total: 300, recorded: true },
+            { k: "2026-08-02", total: 200, recorded: true }
         ],
         apps: [
             { n: "browser", s: 1900, previous: 1300, delta: 600 },
@@ -117,7 +120,7 @@ test("defaults to the last complete ISO week and compares full weeks", async () 
     })
     assert.deepEqual(result.previous, {
         startKey: "2026-07-20", endKey: "2026-07-26", total: 2800,
-        coverage: 7, expectedDays: 7,
+        coverage: 7, recordedDays: 7, expectedDays: 7,
         apps: [
             { n: "browser", s: 1300 }, { n: "chat", s: 800 },
             { n: "editor", s: 400 }, { n: "terminal", s: 300 }
@@ -143,12 +146,16 @@ test("can build an explicitly selected historical ISO week", async () => {
     assert.deepEqual(result.info, {
         year: 2026, week: 30, startKey: "2026-07-20", endKey: "2026-07-26"
     })
-    assert.equal(result.current.coverage, 3)
+    // 07-23..07-26 have no record but fall after tracking began: machine-off
+    // days count as real zeros.
+    assert.equal(result.current.coverage, 7)
+    assert.equal(result.current.recordedDays, 3)
     assert.equal(result.current.expectedDays, 7)
-    assert.deepEqual(result.current.days.slice(0, 3), [
-        { k: "2026-07-20", total: 100 },
-        { k: "2026-07-21", total: 200 },
-        { k: "2026-07-22", total: 300 }
+    assert.deepEqual(result.current.days.slice(0, 4), [
+        { k: "2026-07-20", total: 100, recorded: true },
+        { k: "2026-07-21", total: 200, recorded: true },
+        { k: "2026-07-22", total: 300, recorded: true },
+        { k: "2026-07-23", total: 0, recorded: false }
     ])
 })
 
@@ -170,7 +177,7 @@ test("uses the ISO week-year at calendar year boundaries", async () => {
     })
 })
 
-test("withholds weekly comparisons when either full-week period has gaps", async () => {
+test("counts tracked-era machine-off days as zeros so comparisons stay available", async () => {
     const logic = await loadLogic()
     const result = plain(logic.weeklyReport({
         todayKey: "2026-08-04",
@@ -183,11 +190,41 @@ test("withholds weekly comparisons when either full-week period has gaps", async
         ]
     }))
 
-    assert.equal(result.current.coverage, 1)
+    assert.equal(result.current.coverage, 7)
+    assert.equal(result.current.recordedDays, 1)
     assert.equal(result.current.expectedDays, 7)
-    assert.equal(result.previous.coverage, 2)
+    assert.equal(result.previous.coverage, 7)
+    assert.equal(result.previous.recordedDays, 2)
+    assert.equal(result.comparisonAvailable, true)
+    assert.equal(result.totalDelta, -1200)
+    assert.deepEqual(result.current.apps, [
+        { n: "browser", s: 1200, previous: 2400, delta: -1200 }
+    ])
+    assert.deepEqual(result.current.days[1], { k: "2026-07-28", total: 0, recorded: false })
+})
+
+test("withholds weekly comparisons when a week has days before tracking began", async () => {
+    const logic = await loadLogic()
+    const result = plain(logic.weeklyReport({
+        todayKey: "2026-08-04",
+        todayTotal: 3600,
+        todayApps: { browser: 3600 },
+        days: [
+            { k: "2026-07-29", total: 1200, apps: [{ n: "browser", s: 1200 }] }
+        ]
+    }))
+
+    assert.equal(result.current.coverage, 5)
+    assert.equal(result.current.recordedDays, 1)
+    assert.equal(result.previous.coverage, 0)
     assert.equal(result.comparisonAvailable, false)
     assert.equal(result.totalDelta, null)
+    assert.deepEqual(result.current.days.slice(0, 4), [
+        { k: "2026-07-27", total: null, recorded: false },
+        { k: "2026-07-28", total: null, recorded: false },
+        { k: "2026-07-29", total: 1200, recorded: true },
+        { k: "2026-07-30", total: 0, recorded: false }
+    ])
     assert.deepEqual(result.current.apps, [
         { n: "browser", s: 1200, previous: null, delta: null }
     ])
@@ -211,13 +248,41 @@ test("builds a weekday by hour heatmap from complete hourly records only", async
     ]
 
     const result = plain(logic.hourHeatmap("2026-07-29", days, 28))
-    assert.equal(result.coverage, 3)
+    // 3 days with hourly detail + 24 tracked-era machine-off days; 2026-07-15
+    // is recorded without valid hourly detail, so its distribution stays
+    // unknown and it is excluded from the averages.
+    assert.equal(result.coverage, 27)
     assert.equal(result.startKey, "2026-07-01")
     assert.equal(result.endKey, "2026-07-28")
     assert.equal(result.values.length, 7)
+    // Mondays: 30m + 60m recorded, two machine-off zeros → 22.5m average.
+    assert.equal(result.values[0][9], 22.5)
+    // Tuesdays: one 15m record, three machine-off zeros → 3.75m average.
+    assert.equal(result.values[1][18], 3.75)
+    assert.deepEqual(result.peak, { dow: 0, hour: 9, minutes: 22.5 })
+})
+
+test("heatmap excludes days before tracking began but averages off-days as zero", async () => {
+    const logic = await loadLogic()
+    const mondayA = new Array(24).fill(0)
+    mondayA[9] = 1800
+    const mondayB = new Array(24).fill(0)
+    mondayB[9] = 3600
+    const tuesday = new Array(24).fill(0)
+    tuesday[18] = 900
+
+    const result = plain(logic.hourHeatmap("2026-07-15", [
+        { k: "2026-07-06", total: 1800, hours: mondayA },
+        { k: "2026-07-07", total: 900, hours: tuesday },
+        { k: "2026-07-13", total: 3600, hours: mondayB }
+    ], 14))
+    // Window 07-01..07-14: 07-01..07-05 predate the first record and stay
+    // excluded; 07-08..07-12 and 07-14 are tracked-era off-days.
+    assert.equal(result.coverage, 9)
+    // Both window Mondays are recorded: (30 + 60) / 2.
     assert.equal(result.values[0][9], 45)
-    assert.equal(result.values[1][18], 15)
-    assert.deepEqual(result.peak, { dow: 0, hour: 9, minutes: 45 })
+    // Tuesdays: 15m record on 07-07, machine-off zero on 07-14.
+    assert.equal(result.values[1][18], 7.5)
 })
 
 test("heatmap rejects malformed hourly values and reports no peak when empty", async () => {
