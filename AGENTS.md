@@ -35,6 +35,17 @@ creates, edits, publishes, installs, or verifies files.
   `origin/main`, update or switch the original worktree only when it can be done
   without discarding local work; otherwise report the exact blocking paths.
 
+## Vendored Infrastructure
+
+Shared module infrastructure is vendored, never imported across modules.
+Golden masters live in `lib/` (currently `ConfigLoader.template.qml`); fix a
+skeleton bug in the golden master first, then propagate it to module copies.
+CI runs `node tools/lib-sync/check-configloader.mjs`, which enforces skeleton
+invariants on every first-party `ConfigLoader.qml`; declare intentional
+deviations with a reason in `tools/lib-sync/allowlist.json`. `iimod init`
+scaffolds new modules from the golden master. Read
+`docs/module-dev-gotchas.md` before writing or live-testing any module.
+
 ## Module Internationalization
 
 The runtime contract remains `Translation.tr("English source")` plus optional
