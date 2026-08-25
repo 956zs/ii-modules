@@ -3,33 +3,51 @@ import qs.modules.common
 import qs.modules.common.widgets
 
 /*
- * Weekday x hour heatmap. Rows are Monday..Sunday and cells show the average
- * minutes for that weekday/hour across complete historical days. The mark is
- * sequential: the current Material primary hue grows more opaque as minutes
- * increase; zero remains a neutral surface cell.
+ * Selected-week day x hour heatmap. Rows are the week's seven real dates
+ * (Monday..Sunday) and each cell shows that exact day's ACTUAL minutes for
+ * that hour — never an average across weeks. Recorded rows use the
+ * sequential Material primary ramp (zero stays a neutral surface cell) and a
+ * machine-off day is a legitimate all-zero recorded-style row. Rows whose
+ * hourly distribution is unknown ("nohours" pre-v1.3 records, "pretracking"
+ * days) render as a distinct faint tint and hover to a textual state instead
+ * of a fabricated zero.
  */
 Item {
     id: root
 
-    property var values: Array.from({ length: 7 }, () => new Array(24).fill(0))
+    // Seven entries {k, state, minutes:[24]} from HistoryLogic.weekHourMatrix.
+    property var days: []
     property var dayLabels: []
-    property var valueLabel: (dow, hour, minutes) => `${dow} ${hour}:00 · ${Math.round(minutes)}m`
+    property var valueLabel: (index, hour, minutes) => `${index} ${hour}:00 · ${Math.round(minutes)}m`
+    // Hover text for rows whose hourly distribution is unknown.
+    property var stateLabel: index => ""
     property string defaultLabel: ""
     property real chartHeight: 98
     property color primaryColor: Appearance.colors.colPrimary
     property color surfaceColor: Appearance.colors.colLayer2
     property color selectionColor: Appearance.colors.colOnSurface
 
-    readonly property real leftPad: 22
+    readonly property real leftPad: 48
     readonly property real bottomPad: 18
     readonly property real maxMinutes: root.maximumMinutes()
     property int selectedIndex: -1
 
+    function dayState(index) {
+        return root.days[index]?.state ?? "pretracking"
+    }
+
+    function knownRow(index) {
+        const state = root.dayState(index)
+        return state === "recorded" || state === "off"
+    }
+
     function maximumMinutes() {
         let maximum = 1
-        for (let dow = 0; dow < 7; dow++) {
+        for (let day = 0; day < 7; day++) {
+            if (!root.knownRow(day))
+                continue
             for (let hour = 0; hour < 24; hour++)
-                maximum = Math.max(maximum, Number(root.values[dow]?.[hour]) || 0)
+                maximum = Math.max(maximum, Number(root.days[day]?.minutes?.[hour]) || 0)
         }
         return maximum
     }
@@ -41,12 +59,11 @@ Item {
     function valueAt(index) {
         if (index < 0 || index >= 168)
             return 0
-        const dow = Math.floor(index / 24)
-        const hour = index % 24
-        return Number(root.values[dow]?.[hour]) || 0
+        const day = Math.floor(index / 24)
+        return Number(root.days[day]?.minutes?.[index % 24]) || 0
     }
 
-    function cellColor(value) {
+    function rampColor(value) {
         const minutes = Math.max(0, Number(value) || 0)
         if (minutes <= 0)
             return root.surfaceColor
@@ -56,13 +73,21 @@ Item {
         return Qt.rgba(color.r, color.g, color.b, alpha)
     }
 
+    function cellColor(dayIndex, value) {
+        if (!root.knownRow(dayIndex)) {
+            const unknown = root.selectionColor
+            return Qt.rgba(unknown.r, unknown.g, unknown.b, 0.05)
+        }
+        return root.rampColor(value)
+    }
+
     function indexAt(x, y) {
         const plotWidth = canvas.width - root.leftPad
         if (x < root.leftPad || x >= canvas.width || y < 0 || y >= root.chartHeight)
             return -1
         const hour = Math.min(23, Math.floor((x - root.leftPad) / (plotWidth / 24)))
-        const dow = Math.min(6, Math.floor(y / (root.chartHeight / 7)))
-        return dow * 24 + hour
+        const day = Math.min(6, Math.floor(y / (root.chartHeight / 7)))
+        return day * 24 + hour
     }
 
     function moveSelection(delta) {
@@ -87,9 +112,11 @@ Item {
         text: {
             if (root.selectedIndex < 0)
                 return root.defaultLabel
-            const dow = Math.floor(root.selectedIndex / 24)
+            const day = Math.floor(root.selectedIndex / 24)
             const hour = root.selectedIndex % 24
-            return root.valueLabel(dow, hour, root.valueAt(root.selectedIndex))
+            if (!root.knownRow(day))
+                return root.stateLabel(day)
+            return root.valueLabel(day, hour, root.valueAt(root.selectedIndex))
         }
     }
 
@@ -108,29 +135,29 @@ Item {
             const cellWidth = plotWidth / 24
             const cellHeight = height / 7
 
-            for (let dow = 0; dow < 7; dow++) {
+            for (let day = 0; day < 7; day++) {
                 for (let hour = 0; hour < 24; hour++) {
                     const x = root.leftPad + hour * cellWidth + 1
-                    const y = dow * cellHeight + 1
-                    ctx.fillStyle = root.cellColor(root.values[dow]?.[hour] ?? 0)
+                    const y = day * cellHeight + 1
+                    ctx.fillStyle = root.cellColor(day, root.days[day]?.minutes?.[hour] ?? 0)
                     ctx.fillRect(x, y, Math.max(1, cellWidth - 2), Math.max(1, cellHeight - 2))
                 }
             }
 
             if (root.selectedIndex >= 0) {
-                const dow = Math.floor(root.selectedIndex / 24)
+                const day = Math.floor(root.selectedIndex / 24)
                 const hour = root.selectedIndex % 24
                 ctx.strokeStyle = root.selectionColor
                 ctx.lineWidth = 1.5
                 ctx.strokeRect(root.leftPad + hour * cellWidth + 0.75,
-                               dow * cellHeight + 0.75,
+                               day * cellHeight + 0.75,
                                Math.max(1, cellWidth - 1.5), Math.max(1, cellHeight - 1.5))
             }
         }
 
         Connections {
             target: root
-            function onValuesChanged() { canvas.requestPaint() }
+            function onDaysChanged() { canvas.requestPaint() }
             function onSelectedIndexChanged() { canvas.requestPaint() }
             function onMaxMinutesChanged() { canvas.requestPaint() }
             function onPrimaryColorChanged() { canvas.requestPaint() }
@@ -156,10 +183,12 @@ Item {
             anchors.left: parent.left
             y: canvas.y + index * (root.chartHeight / 7)
                + (root.chartHeight / 7 - implicitHeight) / 2
-            width: root.leftPad - 3
+            width: root.leftPad - 4
             horizontalAlignment: Text.AlignRight
+            elide: Text.ElideRight
             font.pixelSize: Appearance.font.pixelSize.smallest
-            color: Appearance.colors.colSubtext
+            color: root.knownRow(index)
+                ? Appearance.colors.colSubtext : Appearance.colors.colOnLayer1Inactive
             text: root.dayLabels[index] ?? ""
         }
     }
@@ -204,7 +233,7 @@ Item {
                     width: 9
                     height: 9
                     radius: 2
-                    color: root.cellColor(root.maxMinutes * modelData)
+                    color: root.rampColor(root.maxMinutes * modelData)
                 }
                 StyledText {
                     font.pixelSize: Appearance.font.pixelSize.smallest

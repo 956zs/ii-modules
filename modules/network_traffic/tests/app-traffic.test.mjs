@@ -7,7 +7,7 @@ async function loadLogic() {
   const source = await readFile(new URL('../AppTrafficLogic.js', import.meta.url), 'utf8')
   const context = vm.createContext({})
   vm.runInContext(
-    `${source}\nglobalThis.api = { restoreAccounting, ranking, pruneAccounting, drainResolvedPending, finalizePending, pktzTimestampMs, pktzCandidates, pktzCommand, parsePktzLine, commitPktzBatch, nethogsCommand, parseNethogsLine, commitNethogsBatch, migrateStatsPeriod }`,
+    `${source}\nglobalThis.api = { restoreAccounting, ranking, pruneAccounting, drainResolvedPending, finalizePending, pktzTimestampMs, pktzCandidates, pktzCommand, parsePktzLine, commitPktzBatch, excludedTrafficEndpoint, parseSsTotals, nethogsCommand, parseNethogsLine, commitNethogsBatch, migrateStatsPeriod }`,
     context,
   )
   return context.api
@@ -134,14 +134,14 @@ test('pktz cumulative NDJSON replays exact app totals, directions, rates, and so
     const parsed = logic.parsePktzLine(line)
     if (!parsed) continue
     if (timestamp !== '' && parsed.ts !== timestamp) {
-      result = logic.commitPktzBatch(batch, lastCum, 0.5)
+      result = logic.commitPktzBatch(batch, lastCum, {}, 0.5)
       lastCum = result.lastCum
       batch = []
     }
     timestamp = parsed.ts
     batch.push(parsed)
   }
-  result = logic.commitPktzBatch(batch, lastCum, 0.5)
+  result = logic.commitPktzBatch(batch, lastCum, {}, 0.5)
 
   assert.deepEqual(plain(result.accounting), [
     { name: 'spotify', rx: 1200, tx: 200 },
@@ -159,17 +159,17 @@ test('pktz process disappearance drops its old baseline before identity reuse', 
   let state = logic.commitPktzBatch([
     { pid: '1', comm: 'one', rx: 100, tx: 10 },
     { pid: '2', comm: 'two', rx: 200, tx: 20 },
-  ], {}, 0)
+  ], {}, {}, 0)
   state = logic.commitPktzBatch([
     { pid: '1', comm: 'one', rx: 150, tx: 15 },
-  ], state.lastCum, 0.5)
+  ], state.lastCum, {}, 0.5)
   assert.deepEqual(plain(state.lastCum), {
     '1/one': { rx: 150, tx: 15 },
   })
 
   state = logic.commitPktzBatch([
     { pid: '2', comm: 'two', rx: 260, tx: 30 },
-  ], state.lastCum, 0.5)
+  ], state.lastCum, {}, 0.5)
   assert.deepEqual(plain(state.accounting), [])
 })
 
@@ -185,16 +185,128 @@ test('pktz parser rejects malformed records and counter discontinuities establis
   assert.equal(logic.parsePktzLine('{"type":"process","ts":"t","pid":1,"comm":"app","rx_bytes":-1,"tx_bytes":2}'), null)
 
   const first = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:00Z","pid":42,"comm":"app","rx_bps":1,"tx_bps":2,"rx_bytes":1000,"tx_bytes":500,"conns":1}')
-  let state = logic.commitPktzBatch([first], {}, 0)
+  let state = logic.commitPktzBatch([first], {}, {}, 0)
   const shrunk = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:00.5Z","pid":42,"comm":"app","rx_bps":999999,"tx_bps":999999,"rx_bytes":20,"tx_bytes":10,"conns":1}')
-  state = logic.commitPktzBatch([shrunk], state.lastCum, 0.5)
+  state = logic.commitPktzBatch([shrunk], state.lastCum, {}, 0.5)
   assert.deepEqual(plain(state.accounting), [])
   assert.deepEqual(plain(state.rates), [])
 
   const resumed = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:01.5Z","pid":42,"comm":"app","rx_bps":999999,"tx_bps":999999,"rx_bytes":50,"tx_bytes":20,"conns":1}')
-  state = logic.commitPktzBatch([resumed], state.lastCum, 1)
+  state = logic.commitPktzBatch([resumed], state.lastCum, {}, 1)
   assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 30, tx: 10 }])
   assert.deepEqual(plain(state.rates), [{ name: 'app', down: 30, up: 10 }])
+})
+
+
+test('pktz conn records parse for TCP with state and UDP without, rejecting malformed ones', async () => {
+  const logic = await loadLogic()
+  const tcp = logic.parsePktzLine('{"type":"conn","ts":"2026-08-24T00:00:00Z","pid":7,"comm":"app","src_ip":"192.168.0.2","src_port":50000,"dst_ip":"1.2.3.4","dst_port":443,"proto":"TCP","state":"ESTABLISHED","rx_bps":0,"tx_bps":0,"rx_bytes":10,"tx_bytes":20}')
+  assert.deepEqual(plain(tcp), { kind: 'conn', ts: '2026-08-24T00:00:00Z', pid: '7', comm: 'app', src: '192.168.0.2', sport: 50000, dst: '1.2.3.4', dport: 443, proto: 'TCP', rx: 10, tx: 20 })
+  const udp = logic.parsePktzLine('{"type":"conn","ts":"2026-08-24T00:00:00Z","pid":7,"comm":"app","src_ip":"192.168.0.2","src_port":50001,"dst_ip":"8.8.8.8","dst_port":53,"proto":"UDP","rx_bps":0,"tx_bps":0,"rx_bytes":1,"tx_bytes":2}')
+  assert.equal(udp.kind, 'conn')
+  assert.equal(udp.proto, 'UDP')
+  assert.equal(logic.parsePktzLine('{"type":"conn","ts":"2026-08-24T00:00:00Z","pid":7,"comm":"app","src_ip":"","src_port":1,"dst_ip":"1.2.3.4","dst_port":2,"proto":"TCP","rx_bps":0,"tx_bps":0,"rx_bytes":1,"tx_bytes":2}'), null)
+  assert.equal(logic.parsePktzLine('{"type":"conn","ts":"2026-08-24T00:00:00Z","pid":7,"comm":"app","src_ip":"1.2.3.4","src_port":-1,"dst_ip":"1.2.3.4","dst_port":2,"proto":"TCP","rx_bps":0,"tx_bps":0,"rx_bytes":1,"tx_bytes":2}'), null)
+  assert.equal(logic.parsePktzLine('{"type":"conn","ts":"2026-08-24T00:00:00Z","pid":7,"comm":"app","src_ip":"1.2.3.4","src_port":1,"dst_ip":"1.2.3.4","dst_port":2,"proto":"","rx_bps":0,"tx_bps":0,"rx_bytes":1,"tx_bytes":2}'), null)
+})
+
+test('excluded endpoints cover loopback, mapped loopback, and tailscale ranges only', async () => {
+  const logic = await loadLogic()
+  assert.equal(logic.excludedTrafficEndpoint('127.0.0.1'), true)
+  assert.equal(logic.excludedTrafficEndpoint('127.8.9.10'), true)
+  assert.equal(logic.excludedTrafficEndpoint('::1'), true)
+  assert.equal(logic.excludedTrafficEndpoint('::ffff:127.0.0.1'), true)
+  assert.equal(logic.excludedTrafficEndpoint('100.64.0.1'), true)
+  assert.equal(logic.excludedTrafficEndpoint('100.127.255.254'), true)
+  assert.equal(logic.excludedTrafficEndpoint('fd7a:115c:a1e0::1234'), true)
+  assert.equal(logic.excludedTrafficEndpoint('100.63.255.255'), false)
+  assert.equal(logic.excludedTrafficEndpoint('100.128.0.1'), false)
+  assert.equal(logic.excludedTrafficEndpoint('192.168.0.131'), false)
+  assert.equal(logic.excludedTrafficEndpoint('8.8.8.8'), false)
+  assert.equal(logic.excludedTrafficEndpoint(''), false)
+  assert.equal(logic.excludedTrafficEndpoint(null), false)
+})
+
+test('loopback conn deltas are carved out of pktz process deltas', async () => {
+  const logic = await loadLogic()
+  const conn = (rx, tx) => ({ kind: 'conn', pid: '9', comm: 'proxy', src: '127.0.0.1', sport: 4000, dst: '127.0.0.1', dport: 5000, proto: 'TCP', rx, tx })
+  const wan = (rx, tx) => ({ kind: 'conn', pid: '9', comm: 'proxy', src: '192.168.0.2', sport: 4001, dst: '1.2.3.4', dport: 443, proto: 'TCP', rx, tx })
+  let state = logic.commitPktzBatch([
+    { pid: '9', comm: 'proxy', rx: 1000, tx: 1000 }, conn(600, 600), wan(400, 400),
+  ], {}, {}, 0)
+  assert.deepEqual(plain(state.accounting), [])
+
+  state = logic.commitPktzBatch([
+    { pid: '9', comm: 'proxy', rx: 1500, tx: 1400 }, conn(900, 850), wan(600, 550),
+  ], state.lastCum, state.connCum, 0.5)
+  // process delta rx 500 minus loopback conn delta 300 = 200; tx 400-250=150.
+  assert.deepEqual(plain(state.accounting), [{ name: 'proxy', rx: 200, tx: 150 }])
+  assert.deepEqual(plain(state.rates), [{ name: 'proxy', down: 400, up: 300 }])
+})
+
+test('a first-sighted loopback conn on an established process subtracts its full bytes', async () => {
+  const logic = await loadLogic()
+  let state = logic.commitPktzBatch([
+    { pid: '9', comm: 'proxy', rx: 100, tx: 100 },
+  ], {}, {}, 0)
+  state = logic.commitPktzBatch([
+    { pid: '9', comm: 'proxy', rx: 400, tx: 400 },
+    { kind: 'conn', pid: '9', comm: 'proxy', src: '127.0.0.1', sport: 1, dst: '127.0.0.1', dport: 2, proto: 'TCP', rx: 250, tx: 300 },
+  ], state.lastCum, state.connCum, 0.5)
+  assert.deepEqual(plain(state.accounting), [{ name: 'proxy', rx: 50, tx: 0 }])
+})
+
+test('excluded conn subtraction clamps at zero and conn counter shrink resets its baseline', async () => {
+  const logic = await loadLogic()
+  const lo = (rx, tx) => ({ kind: 'conn', pid: '3', comm: 'app', src: '::1', sport: 1, dst: '::1', dport: 2, proto: 'TCP', rx, tx })
+  let state = logic.commitPktzBatch([
+    { pid: '3', comm: 'app', rx: 100, tx: 100 }, lo(90, 90),
+  ], {}, {}, 0)
+  // Oversubtraction (conn eviction return) clamps instead of going negative.
+  state = logic.commitPktzBatch([
+    { pid: '3', comm: 'app', rx: 150, tx: 150 },
+    { kind: 'conn', pid: '3', comm: 'app', src: '::1', sport: 9, dst: '::1', dport: 8, proto: 'TCP', rx: 400, tx: 400 },
+  ], state.lastCum, state.connCum, 0.5)
+  assert.deepEqual(plain(state.accounting), [])
+
+  // Conn counter shrink: fresh baseline, no subtraction, process delta intact.
+  state = logic.commitPktzBatch([
+    { pid: '3', comm: 'app', rx: 260, tx: 260 },
+    { kind: 'conn', pid: '3', comm: 'app', src: '::1', sport: 9, dst: '::1', dport: 8, proto: 'TCP', rx: 5, tx: 5 },
+  ], state.lastCum, state.connCum, 0.5)
+  assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 110, tx: 110 }])
+})
+
+test('processes without conn coverage keep their full process deltas', async () => {
+  const logic = await loadLogic()
+  let state = logic.commitPktzBatch([
+    { pid: '5', comm: 'daemon', rx: 10, tx: 10 },
+  ], {}, {}, 0)
+  state = logic.commitPktzBatch([
+    { pid: '5', comm: 'daemon', rx: 40, tx: 25 },
+  ], state.lastCum, state.connCum, 0.5)
+  assert.deepEqual(plain(state.accounting), [{ name: 'daemon', rx: 30, tx: 15 }])
+})
+
+test('ss totals skip loopback and tailscale sockets and keep WAN sockets', async () => {
+  const logic = await loadLogic()
+  const text = [
+    'ESTAB 0 0 192.168.0.131:54070 101.91.134.222:443 users:(("chrome",pid=1,fd=9))',
+    '\t cubic wscale:8,7 bytes_sent:1000 bytes_received:5000',
+    'ESTAB 0 0 127.0.0.1:6463 127.0.0.1:39572 users:(("Discord",pid=2,fd=3))',
+    '\t cubic bytes_sent:7777 bytes_received:8888',
+    'ESTAB 0 0 [::1]:8080 [::1]:9090 users:(("proxy",pid=3,fd=4))',
+    '\t cubic bytes_sent:100 bytes_received:100',
+    'ESTAB 0 0 100.64.0.5:1111 100.64.0.9:2222 users:(("tsapp",pid=4,fd=5))',
+    '\t cubic bytes_sent:50 bytes_received:60',
+    'ESTAB 0 0 192.168.0.131:50000 8.8.8.8:443 users:(("chrome",pid=1,fd=10))',
+    '\t cubic bytes_sent:200 bytes_received:300',
+  ].join('\n')
+  assert.deepEqual(plain(logic.parseSsTotals(text)), {
+    chrome: { rx: 5300, tx: 1200 },
+  })
+  assert.deepEqual(plain(logic.parseSsTotals('')), {})
+  assert.deepEqual(plain(logic.parseSsTotals(null)), {})
 })
 
 test('collector requests TCP and UDP cumulative bytes', async () => {

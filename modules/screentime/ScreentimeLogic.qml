@@ -219,7 +219,10 @@ Item {
             } else if (day.k < root.curDayKey) {
                 // The shell was last running on an earlier day: that day is
                 // over, fold it into history before starting today from zero.
-                past = past.concat([root.foldedDay(day.k, day.apps, day.hours,
+                // Incomplete hour buckets (mid-day upgrade) must not enter
+                // the heatmap as if the missing early hours were zero.
+                past = past.concat([root.foldedDay(day.k, day.apps,
+                    day.hoursComplete !== false ? day.hours : undefined,
                     Number(dayAi.u) || 0, Number(dayAi.s) || 0, Number(dayAi.p) || 0)])
             }
         }

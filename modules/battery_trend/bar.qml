@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Io
 import qs
 import qs.modules.common
 import qs.modules.common.widgets
@@ -11,20 +10,15 @@ import qs.mod.battery_trend
 /*
  * Bar slot entry — but NOT a bar widget by default. The stock bar already
  * has a battery gauge, so this module claims zero bar space out of the box
- * (showBar defaults to false): this root exists to host the sampling
- * instance, the config file, and the detail panel with its IPC surface,
- * and stays invisible (layouts skip invisible items, so no ghost margins).
- * The sidebar tile / `ipc call battery_trend toggle` is the primary entry.
+ * (showBar defaults to false). Sampling, persistence, the detail panel, and
+ * the IPC surface all live in the window-slot entry (main.qml), which the
+ * module host instantiates exactly once; this per-monitor instance is a
+ * pure reader that re-derives its views from the watched config file.
  *
  * Opting into showBar renders a sparkline-only pill (percentage text is a
  * further opt-in — the stock widget already shows the number) with the
- * hover popup and click-to-open panel.
- *
- * Multi-monitor: the bar slot is instantiated once per screen, but the
- * history file must have exactly one writer. The instance on the first
- * screen is elected primary (samples + persists + materialises config
- * defaults + registers the IPC target); the others run the logic in reader
- * mode, re-deriving their views from the watched config file.
+ * hover popup; clicking asks the window-slot owner to open the panel over
+ * IPC, the same path the stock indicator and the sidebar tile use.
  */
 BarGroup {
     id: barGroup
@@ -38,21 +32,12 @@ BarGroup {
         implicitHeight: root.barVertical ? content.implicitHeight + 8 : Appearance.sizes.baseBarHeight
         hoverEnabled: !Config.options.bar.tooltips.clickToShow
         acceptedButtons: Qt.LeftButton
-        onPressed: detailPanel.toggle()
+        onPressed: Quickshell.execDetached(["qs", "-c", "ii", "ipc", "--any-display",
+                                            "call", "battery_trend", "toggle"])
 
         readonly property bool barVertical: barGroup.vertical
-        readonly property int hPadding: root.barVertical ? 2 : 8
 
-        // Primary election: the window attaches to its screen asynchronously,
-        // so this settles a moment after creation; ConfigLoader.owner and
-        // BatteryLogic.sampling both follow it.
-        readonly property bool isPrimary: {
-            const scr = Quickshell.screens
-            if (scr.length <= 1)
-                return true
-            const name = barGroup.QsWindow.window?.screen?.name ?? ""
-            return name !== "" && name === scr[0].name
-        }
+        readonly property int hPadding: root.barVertical ? 2 : 8
 
         // Sparkline needs ≥2 samples; until then (first minutes of a fresh
         // install) the percentage stands in so the pill is never blank.
@@ -60,32 +45,14 @@ BarGroup {
 
         ConfigLoader {
             id: cfg
-            owner: root.isPrimary
-        }
-
-        // Sidebar tile entry point. Gated to the primary instance: the bar
-        // slot exists once per screen and duplicate IpcHandler targets would
-        // collide.
-        LazyLoader {
-            active: root.isPrimary
-
-            IpcHandler {
-                target: "battery_trend"
-
-                function toggle(): void {
-                    // Opened from the sidebar tile: drop the sidebar first so
-                    // the two focus grabs don't fight over who closes whom.
-                    GlobalStates.sidebarRightOpen = false
-                    detailPanel.toggle()
-                }
-            }
+            owner: false
         }
 
         BatteryLogic {
             id: logic
             store: cfg.options
             storeReady: cfg.ready
-            sampling: root.isPrimary
+            sampling: false
             intervalSec: {
                 const v = cfg.options.samplingIntervalSec
                 return v >= 15 && v <= 600 ? v : 60
@@ -94,7 +61,7 @@ BarGroup {
             keepDaily: cfg.options.keepDaily === true
             keepSessions: cfg.options.keepSessions === true
             batteryName: cfg.options.batteryName !== "" ? cfg.options.batteryName : "auto"
-            fastPoll: popup.active === true || detailPanel.visible
+            fastPoll: popup.active === true
         }
 
         // Reserved width so the pill doesn't jitter as digits change.
@@ -151,12 +118,6 @@ BarGroup {
             id: popup
             hoverTarget: root
             logic: logic
-        }
-
-        DetailPanel {
-            id: detailPanel
-            logic: logic
-            openerScreen: barGroup.QsWindow.window?.screen ?? null
         }
     }
 }

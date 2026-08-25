@@ -76,6 +76,7 @@ test("weekly report defaults to the last complete week and can browse history", 
     assert.match(report, /Translation\.tr\("Week %1 of %2"\)/)
     assert.match(report, /text: fmt\.dur\(root\.report\.current\.total\)/)
     assert.match(report, /root\.report\.current\.coverage/)
+    assert.match(report, /root\.report\.current\.recordedDays/)
     assert.match(report, /root\.report\.current\.expectedDays/)
     assert.match(report, /present: root\.report\.current\.days\.map\(day => day\.total !== null\)/)
     assert.match(report, /Translation\.tr\("vs previous week"\)/)
@@ -95,16 +96,27 @@ test("weekly report identifies top apps and compares each with last week", async
     assert.doesNotMatch(source, /root\.ranking\[0\]\.(?:n|s|delta)/)
 })
 
-test("weekly report retains broader hourly and 30-day context", async () => {
-    const source = await read("WeeklyReport.qml")
+test("weekly report shows the selected week's actual per-day hour matrix", async () => {
+    const [source, panel] = await Promise.all([
+        read("WeeklyReport.qml"), read("DetailsPanel.qml")
+    ])
 
     assert.match(source, /HourHeatmap \{/)
-    assert.match(source, /root\.heatmap\.coverage/)
+    assert.match(source, /days: root\.weekHours\.days/)
+    assert.match(source, /root\.weekHours\.recordedDays/)
+    assert.match(source, /stateLabel: index => root\.heatmapStateLabel\(index\)/)
+    assert.match(source, /Translation\.tr\("No hourly detail"\)/)
+    assert.match(source, /Translation\.tr\("No record"\)/)
     assert.match(source, /present: root\.days30\.map\(day => day\.total !== null\)/)
     assert.ok(source.indexOf('Translation.tr("Selected week")')
-        < source.indexOf('Translation.tr("Typical hours")'))
-    assert.ok(source.indexOf('Translation.tr("Typical hours")')
+        < source.indexOf('Translation.tr("Hours in selected week")'))
+    assert.ok(source.indexOf('Translation.tr("Hours in selected week")')
         < source.indexOf('Translation.tr("Most used app")'))
+    // The matrix is date-anchored to the selected week — never a multi-week
+    // average wearing a date row.
+    assert.match(panel, /HistoryLogic\.weekHourMatrix\(\{/)
+    assert.match(panel, /startKey: root\.selectedWeekStartKey/)
+    assert.doesNotMatch(panel, /hourHeatmap|heatmap28/)
 })
 
 test("hour heatmap is keyboard-readable and uses a Material sequential scale", async () => {
@@ -150,7 +162,7 @@ test("all historical folds persist complete hourly buckets while old records sta
     assert.match(logic, /day\.hoursComplete !== false/)
     assert.match(logic, /if \(root\.curDayKey === ""\) return/)
     assert.doesNotMatch(logic, /root\.todayTotal <= 0/)
-    assert.match(logic, /foldedDay\(day\.k, day\.apps, day\.hours,/)
+    assert.match(logic, /foldedDay\(day\.k, day\.apps,\s*\n\s*day\.hoursComplete !== false \? day\.hours : undefined,/)
     assert.match(logic, /function foldedDay\(key, appsMap, hourValues, aiU, aiS, aiP\)/)
     assert.match(logic, /folded\.hours = hours/)
     assert.match(config, /hours\?:\[24\]/)
@@ -187,8 +199,8 @@ test("daily and calendar-week reports are documented, translated, and versioned 
     assert.match(readme, /上一個完整週/)
     assert.match(readme, /完整週對完整週/)
     assert.match(readme, /選取週應用排行/)
-    assert.match(readme, /星期×時段熱力圖/)
-    assert.match(readme, /N\/28/)
+    assert.match(readme, /選取週每日×時段熱力圖/)
+    assert.match(readme, /N\/7/)
     for (const text of [zhTw, zhCn]) {
         const translation = JSON.parse(text)
         assert.ok(translation["Previous day"])
@@ -206,10 +218,11 @@ test("daily and calendar-week reports are documented, translated, and versioned 
         assert.ok(translation["Most used app"])
         assert.ok(translation["Apps in selected week"])
         assert.ok(translation["vs previous week"])
-        assert.ok(translation["Typical hours"])
-        assert.ok(translation["%1 of 28 days have hourly detail"])
+        // "Hours in selected week", "%1 of %2 days have hourly detail", and
+        // "No hourly detail" are frozen new sources pending the i18n handoff;
+        // catalog entries land with that pass.
     }
-    assert.equal(manifest.version, "1.5.0")
+    assert.equal(manifest.version, "1.6.0")
     assert.match(manifest.description.en_US, /Daily and Weekly tabs/)
     assert.match(manifest.description.en_US, /last complete ISO calendar week/)
     assert.match(manifest.description.en_US, /per-app comparison/)

@@ -8,7 +8,7 @@ import qs.mod.screentime
 ColumnLayout {
     id: root
     required property var report
-    required property var heatmap
+    required property var weekHours
     required property var days30
     required property color surfaceColor
     spacing: 14
@@ -40,8 +40,23 @@ ColumnLayout {
             + Translation.tr("vs previous week")
     }
 
-    function heatmapLabel(dow, hour, minutes) {
-        return `${root.weekdayLetter(dow)} ${String(hour).padStart(2, "0")}:00 · ${fmt.dur(minutes * 60)}`
+    function heatmapDayLabel(index) {
+        const day = root.weekHours.days[index]
+        return `${root.weekdayLetter(index)} ${root.mdLabel(day?.k ?? "")}`
+    }
+
+    function heatmapLabel(index, hour, minutes) {
+        return `${root.heatmapDayLabel(index)} ${String(hour).padStart(2, "0")}:00 · ${fmt.dur(minutes * 60)}`
+    }
+
+    // Hover text for rows whose hourly distribution is unknown: a recorded
+    // pre-v1.3 day has a total but no hourly detail; a pre-tracking day has
+    // no record at all.
+    function heatmapStateLabel(index) {
+        const day = root.weekHours.days[index]
+        const stateText = day?.state === "nohours"
+            ? Translation.tr("No hourly detail") : Translation.tr("No record")
+        return `${root.heatmapDayLabel(index)} · ${stateText}`
     }
 
     Format { id: fmt }
@@ -66,7 +81,7 @@ ColumnLayout {
             font.pixelSize: Appearance.font.pixelSize.smaller
             color: Appearance.colors.colSubtext
             text: Translation.tr("%1 of %2 days recorded")
-                .arg(root.report.current.coverage).arg(root.report.current.expectedDays)
+                .arg(root.report.current.recordedDays).arg(root.report.current.expectedDays)
         }
         RowLayout {
             spacing: 3
@@ -123,25 +138,27 @@ ColumnLayout {
             font.pixelSize: Appearance.font.pixelSize.small
             font.weight: Font.DemiBold
             color: Appearance.colors.colOnSurfaceVariant
-            text: Translation.tr("Typical hours")
+            text: Translation.tr("Hours in selected week")
         }
         StyledText {
             font.pixelSize: Appearance.font.pixelSize.smaller
             color: Appearance.colors.colSubtext
-            text: Translation.tr("%1 of 28 days have hourly detail").arg(root.heatmap.coverage)
+            text: Translation.tr("%1 of %2 days have hourly detail")
+                .arg(root.weekHours.recordedDays).arg(root.report.current.expectedDays)
         }
         HourHeatmap {
             Layout.fillWidth: true
-            values: root.heatmap.values
-            dayLabels: [root.weekdayLetter(0), root.weekdayLetter(1),
-                        root.weekdayLetter(2), root.weekdayLetter(3),
-                        root.weekdayLetter(4), root.weekdayLetter(5),
-                        root.weekdayLetter(6)]
-            valueLabel: (dow, hour, minutes) => root.heatmapLabel(dow, hour, minutes)
-            defaultLabel: root.heatmap.peak
+            days: root.weekHours.days
+            dayLabels: [root.heatmapDayLabel(0), root.heatmapDayLabel(1),
+                        root.heatmapDayLabel(2), root.heatmapDayLabel(3),
+                        root.heatmapDayLabel(4), root.heatmapDayLabel(5),
+                        root.heatmapDayLabel(6)]
+            valueLabel: (index, hour, minutes) => root.heatmapLabel(index, hour, minutes)
+            stateLabel: index => root.heatmapStateLabel(index)
+            defaultLabel: root.weekHours.peak
                 ? Translation.tr("Peak") + " · "
-                    + root.heatmapLabel(root.heatmap.peak.dow, root.heatmap.peak.hour,
-                                        root.heatmap.peak.minutes)
+                    + root.heatmapLabel(root.weekHours.peak.day, root.weekHours.peak.hour,
+                                        root.weekHours.peak.minutes)
                 : Translation.tr("Hourly detail starts accumulating after this update")
         }
     }

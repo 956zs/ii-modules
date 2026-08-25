@@ -137,6 +137,21 @@ frame 才視為封口並提交；EOF、主動停止或 ownership handoff 會捨�
 - process command 改變
 - process 從可觀測 snapshot 消失後重新出現
 
+Per-app 來源會跳過排除端點的流量，使其與全系統流量計對帳：loopback
+（`127/8`、`::1`）與 tailscale 範圍（CGNAT `100.64/10`、`fd7a:115c:a1e0::/48`）。
+不過各 backend 的排除精度不同：
+
+| Backend | 排除方式 | 精度 |
+|---|---|---|
+| `pktz` | 以 conn record 的端點位址扣回 process delta 中的排除端點位元組 | Best-effort：upstream conn 覆蓋有缺口時，該部分無法扣除 |
+| `nethogs` | 預設不監聽 loopback 裝置 | tailscale/tun 裝置仍會被捕捉 |
+| `ss` | 依 socket 的 local/peer 位址過濾 | 完整（TCP only 範圍內） |
+
+沒有這層排除時，localhost proxy 鏈（例如 adb→scrcpy、本機 API proxy）每一段
+都會被記一次，tailscale 內層流量也會與 `tailscaled` 的加密線路流量重複計算，
+per-app 累計因此可能超過實體介面總量。1.7.0 之前累積的 per-app 資料含有這類
+inflation，會隨日／月滾動自然汰除。
+
 記帳分類如下：
 
 | 分類 | 來源與規則 |
@@ -193,6 +208,10 @@ schema 1 會把任何舊版未標記或 schema 0 的 `boot` 選擇遷移成 `tod
   已超過舊 sample 時可能誤判為連續，跨日／跨月 gap 也會全數記在重啟當下週期。
 - `pktz` 計算 process socket payload，不含 headers 與 TCP 線路重傳，因此不應與
   `/proc/net/dev` 逐 byte 相等。
+- 排除端點扣除是 best-effort：`pktz` conn record 對部分流量（尤其短命或未覆蓋的
+  UDP flow）沒有對應紀錄，該部分的 loopback/tailscale 流量無法扣除；conn 從
+  upstream 輸出短暫消失又回來時，首見會扣除其全部累計位元組，超扣部分被夾在
+  零。其他 VPN（如 wg 上的 RFC1918 位址）無法與 LAN 區分，不做排除。
 - `pktz` upstream 的 UDP RX 與 IPv6 UDP TX probes 是 optional；attach 失敗時可能
   靜默降低涵蓋率。
 - `pktz --log` 沒有 heartbeat、empty-frame、exit record 或 schema version。健康但
