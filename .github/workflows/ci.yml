@@ -52,6 +52,9 @@ jobs:
       - name: Test module contracts
         run: node --test modules/*/tests/*.test.mjs
 
+      - name: Check ConfigLoader drift against golden master
+        run: node tools/lib-sync/check-configloader.mjs
+
       - name: Check module translations
         run: tools/iimod/target/debug/iimod i18n check --all --deny-orphans
 

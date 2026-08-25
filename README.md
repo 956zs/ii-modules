@@ -277,7 +277,10 @@ tools/release/   獨立 module / iimod CLI release build、verify 腳本
 .github/         namespaced tag release workflows 與 Pages release projection
 .claude/skills/  Claude Code project skills ×3
 skills/          portable skill copies ×3
-modules/         參考模塊（network_traffic）
+lib/             共用基礎設施母本（vendored golden masters）
+tools/lib-sync/  ConfigLoader drift checker＋白名單
+docs/            模塊開發踩坑手冊（module-dev-gotchas.md）
+modules/         第一方模塊 ×8
 examples/        最小範例（hello_window）
 ```
 

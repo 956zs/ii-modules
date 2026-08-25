@@ -1,0 +1,12 @@
+{
+  "animation_tuner": {
+    "block-writes": "document-string commit flow gated by an explicit writable flag; converge at next release (plans/ISSUES.md)",
+    "atomic-writes": "same commit-flow deviation; converge at next release (plans/ISSUES.md)",
+    "materializing-guard": "uses writable gate instead of materializing; converge at next release (plans/ISSUES.md)"
+  },
+  "memory_center": {
+    "block-writes": "pre-template loader generation; converge at next release (plans/ISSUES.md)",
+    "atomic-writes": "pre-template loader generation; converge at next release (plans/ISSUES.md)",
+    "materializing-guard": "pre-template loader generation; converge at next release (plans/ISSUES.md)"
+  }
+}

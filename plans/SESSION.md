@@ -1,3 +1,28 @@
+## 2026-08-24 module fixes + architecture hygiene
+
+User-reported symptoms (2026-08-24):
+- battery_trend: detail-info popup misbehaves ("詳細資料彈出有問題").
+- network_traffic: per-app traffic source accounting mismatch ("流量來源不對帳").
+- screentime: heatmap broken; zero-usage days (machine off) MUST still be counted
+  in weekly report statistics (user requirement, not optional).
+
+Task list:
+- ✅ T1 battery_trend 1.3.0: IPC/sampling/DetailPanel moved to a once-only window slot (racy per-screen primary election killed the battery_trend IPC target after reload/screen churn — log-evidenced); charts got hidden-window repaint guards; ConfigLoader aligned to lib golden master (blockWrites/atomicWrites/materializing guard, drift checker clean); validate/check/i18n/qmlformat pass; live install pending lead.
+- ✅ T2 network_traffic 1.7.0: per-app sources now carve loopback/tailscale-range endpoint bytes out of pktz process deltas via conn records, filter ss sockets by address, and settle parked nethogs deltas on backend switches; 47/47 tests, validate/check/i18n pass (subagent B)
+- ✅ T3 screentime 1.6.0: tracked-era off-days now count as real zeros in weekly totals/averages/comparison; stale-day fold no longer persists incomplete hour buckets. REOPENED mid-round by the user with the precise severe symptom (8/11 zero-usage day still showed heatmap activity): root cause was the heatmap being a 28-day weekday-hour AVERAGE wearing the selected week's dates. Redesigned: HistoryLogic.weekHourMatrix date-anchors the heatmap to the selected week's 7 actual days with states recorded/off/nohours/pretracking; off rows render fully zero; the average path is removed. i18n handoff done by independent subagent (3 added, 2 retired keys, zh_TW+zh_CN strict pass). 31/31 tests; validate/check/i18n exit 0; 7 commits on release/screentime-1.6.0; live reinstall + panel toggle verified.
+- ✅ T4 Lead: diffs independently reviewed (main.qml ownership model, capabilities, fold fix); repo checks green (drift 0 undeclared, module tests 134/134, i18n --all --deny-orphans, validate+check ×3); live upgrades with worktree iimod 1.3.0: battery_trend 1.2.0→1.3.0, network_traffic 1.6.1→1.7.0, screentime 1.5.0→1.6.0; `iimod verify` all intact; iimp ping pong; battery_trend + screentime panels toggled open/closed via IPC. Residual: live log ring uses an older encoder the current qs reader cannot decode, so log-level error inspection was impossible; behavioral checks substituted. Commits on per-module release branches + chore/architecture-hygiene.
+- ✅ T5 lib/ConfigLoader.template.qml + lib/README.md + tools/lib-sync/check-configloader.mjs (invariant lint + allowlist) wired into CI; battery_trend/screentime hardened to the skeleton, animation_tuner/memory_center allowlisted (converge next release, see ISSUES).
+- ✅ T6 `iimod init` scaffolds ConfigLoader from the golden master (include_str!, id substituted); integration test pins invariants + validate exit 0; rides unreleased CLI 1.3.0.
+- ✅ T7 memory_center: tests/sampler-logic.test.mjs (vm-executed MemInfo/ProcTop/blockRows logic) + tests/contracts.test.mjs (polling gates, LazyLoader shadow, escalation, kill flow) — 21/21 pass; no version bump (tests-only). battery_trend/network_traffic/screentime coverage extended by their fix tasks.
+- ✅ T8 docs/module-dev-gotchas.md added; AGENTS.md + both ii-module-author skill copies + README updated with golden-master policy.
+
+Not yet done (needs user decision): pushing branches / PRs / `publish.sh --push`
+releases for battery_trend 1.3.0, network_traffic 1.7.0, screentime 1.6.0.
+
+Rules in effect: only the lead runs mutating iimod commands; subagents may run
+read-only iimod validate/check/i18n and node tests. Version bumps: defect fix →
+patch; screentime zero-day stats semantics change → minor.
+
 ## iimod host freshness/downgrade protection
 
 - ✅ Kept registry `schemaVersion: 2` and its fields unchanged. Added independent `HOST_GENERATION=2` durable state at `$STATE/host/current.json` and immutable `$STATE/host/generations/<generation>-<contentId>/` bundles containing manifest, both QML assets, and sorted target/optional/full host `PatchInstance` records.

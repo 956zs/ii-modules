@@ -19,3 +19,29 @@
 
 - ✅ Fixed: `.github/workflows/pages.yml` omitted `release.unpublished`, so unpublishing a Release would not withdraw it from Pages until another deployment.
 - ✅ Fixed: `site/scripts/release-projection.mjs` accepted extra assets in a namespaced Release, allowing mixed-product Releases to bypass the one-product contract. Projection now requires exactly the product artifact and `SHA256SUMS`.
+
+## ConfigLoader drift convergence (2026-08-24)
+
+- 🟢 P3: `lib/ConfigLoader.template.qml` + `tools/lib-sync/check-configloader.mjs`
+  now define and enforce skeleton invariants; `animation_tuner` and
+  `memory_center` deviations are allowlisted with reasons in
+  `tools/lib-sync/allowlist.json`. Converge each at its next release:
+  add `blockWrites`/`atomicWrites` and a materializing (or writable-echo)
+  guard, then remove the allowlist entries.
+- 🟡 P2 (latent): `memory_center/ConfigLoader.qml:21` has an unconditional
+  `onAdapterUpdated: writeAdapter()` with no materializing guard. If
+  Quickshell fires adapterUpdated for load-driven value changes, every
+  external file change makes every instance (per-monitor bars + settings)
+  write back — a cross-instance echo. Same pre-template generation as the
+  battery_trend loader had. Verify against Quickshell FileView semantics and
+  harden at next memory_center release.
+
+## Module follow-ups from 2026-08-24 fix round
+
+- 🟢 P3 battery_trend: live analytics showed implausible drain rates
+  ("30 d: 40.5 %/h") — likely short discharge windows plus chunky sysfs
+  percent drops inflating dis/disSec aggregates. Data semantics, separate
+  from the fixed popup defect.
+- 🟢 P3 network_traffic: pktz truncates comm names to 15 chars
+  ("laptop-monitor-", "RvControlSvc.ex") — cosmetic naming in the per-app
+  list, accounting unaffected.

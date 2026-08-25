@@ -6,7 +6,8 @@ description: Author IIMP v1 modules for the illogical-impulse (end-4 dots-hyprla
 # IIMP Module Author
 
 Author modules under IIMP SPEC 1.0. `iimod` is the reference tool and
-`module.json` is the install contract.
+`module.json` is the install contract. Before writing or live-testing any
+module, read `docs/module-dev-gotchas.md` for known runtime pitfalls.
 
 ## Required Rules
 
@@ -30,7 +31,11 @@ Author modules under IIMP SPEC 1.0. `iimod` is the reference tool and
    forbidden; `requires.modules` is lifecycle dependency only, not QML sharing.
 8. Store persistent options only in
    `~/.config/illogical-impulse/modules/<id>.json` using the ConfigLoader
-   pattern. Never write module state into the shell's `config.json`.
+   pattern. Start from the golden master `lib/ConfigLoader.template.qml`
+   (scaffolded by `iimod init`) and keep
+   `node tools/lib-sync/check-configloader.mjs` green; declare intentional
+   deviations with a reason in `tools/lib-sync/allowlist.json`. Never write
+   module state into the shell's `config.json`.
    Never declare `property var` inside a `JsonAdapter`/`JsonObject`:
    Quickshell's deserializer segfaults writing a JSON object into it.
    Represent maps as a JSON string property and `JSON.parse` at the reader.
