@@ -1,3 +1,8 @@
+// Vendored from lib/ConfigLoader.template.qml (golden master; see
+// lib/README.md in the ii-modules repository). Each module ships its own
+// copy — IIMP modules are self-contained and never import another module's
+// files. Keep the skeleton invariants; tools/lib-sync/check-configloader.mjs
+// verifies every first-party copy.
 import Quickshell.Io
 import qs.modules.common
 
@@ -13,9 +18,12 @@ import qs.modules.common
  * side by side — a multi-field flush could be read back as a torn snapshot.
  * One assignment per blob makes a torn read structurally impossible.
  * (Learned the hard way in network_traffic; see its README.)
+ * atomicWrites additionally makes each blob write temp+rename, so a crash
+ * mid-write can never leave a truncated history file behind.
  */
 FileView {
     id: root
+
     // False until the file content (or its confirmed absence) is in the
     // adapter. Accounting must not initialise from default zeroes.
     property bool ready: false
@@ -24,24 +32,40 @@ FileView {
     // consumers (bar widget, settings fragment) must not write stale
     // snapshots over the owner's state.
     property bool owner: false
+    // Guards the reload/write echo: adapter updates during materialization
+    // must not be written back, or every reload triggers a write loop.
+    property bool materializing: true
 
     path: Directories.shellConfig + "/modules/screentime.json"
     watchChanges: true
-    onFileChanged: reload()
-    onAdapterUpdated: writeAdapter()
+    blockWrites: true
+    atomicWrites: true
+
+    onFileChanged: {
+        root.materializing = true;
+        reload();
+    }
+    onAdapterUpdated: {
+        if (!root.materializing)
+            writeAdapter();
+    }
     // Materialise the merged adapter after every successful load: a config
     // file written by an older version misses keys added since, and the
     // adapter yields type zero values for absent keys, not the declared
     // defaults. Writing back on load keeps upgrades honest.
     onLoaded: {
-        if (root.owner) writeAdapter()
-        root.ready = true
+        root.materializing = false;
+        if (root.owner)
+            writeAdapter();
+        root.ready = true;
     }
     onLoadFailed: error => {
-        if (error == FileViewError.FileNotFound) {
-            if (root.owner) writeAdapter()
-            root.ready = true
-        }
+        if (error !== FileViewError.FileNotFound)
+            return;
+        root.materializing = false;
+        if (root.owner)
+            writeAdapter();
+        root.ready = true;
     }
 
     property alias options: adapterItem

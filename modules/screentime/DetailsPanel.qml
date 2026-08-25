@@ -26,9 +26,7 @@ PanelWindow {
     property string selectedTab: "daily"
 
     readonly property int retainedHistoryDays: 30
-    readonly property int hourHeatmapSpanDays: 28
     readonly property int daysPerWeek: 7
-    readonly property int nextDayOffsetDays: 1
     readonly property int retainedHistoryOffsetDays: root.retainedHistoryDays - 1
     readonly property int weekEndOffsetDays: root.daysPerWeek - 1
     readonly property string earliestDayKey: HistoryLogic.shiftDayKey(
@@ -143,11 +141,17 @@ PanelWindow {
             days: root.logic.days
         })
     }
-    readonly property var heatmap28: {
+    // The selected week's actual per-day hour matrix: a machine-off day is a
+    // real all-zero row, never another week's average wearing its date.
+    readonly property var weekHours: {
         root.logic.revision
-        const anchorKey = HistoryLogic.shiftDayKey(
-            root.weekReport.current.endKey, root.nextDayOffsetDays)
-        return HistoryLogic.hourHeatmap(anchorKey, root.logic.days, root.hourHeatmapSpanDays)
+        return HistoryLogic.weekHourMatrix({
+            startKey: root.selectedWeekStartKey,
+            days: root.logic.days,
+            todayKey: root.logic.curDayKey,
+            todayHours: root.logic.hours,
+            todayHoursComplete: root.logic.hoursComplete
+        })
     }
     // AI dimension: the selected day's persisted summary, plus live status on
     // today. Past days never inherit the current process status.
@@ -519,7 +523,7 @@ PanelWindow {
                         Layout.fillWidth: true
                         sourceComponent: WeeklyReport {
                             report: root.weekReport
-                            heatmap: root.heatmap28
+                            weekHours: root.weekHours
                             days30: root.t30
                             surfaceColor: background.color
                         }
