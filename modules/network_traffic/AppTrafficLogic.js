@@ -205,6 +205,25 @@ function pktzCommand(executable) {
     return [binary, "--log"]
 }
 
+// The whole-system meter excludes loopback and overlay interfaces, so per-app
+// sources must too or they stop reconciling with it: localhost proxy chains
+// (adb→scrcpy, local API proxies) otherwise count every relayed byte once per
+// leg, and traffic inside a tailscale tunnel counts once as the inner flow and
+// again as tailscaled's encrypted wire bytes.
+function excludedTrafficEndpoint(ip) {
+    if (typeof ip !== "string" || ip === "") return false
+    let addr = ip.toLowerCase()
+    if (addr.startsWith("::ffff:")) addr = addr.substring(7)
+    if (addr === "::1" || addr.startsWith("127.")) return true
+    if (addr.startsWith("fd7a:115c:a1e0")) return true
+    const cgnat = addr.match(/^100\.(\d{1,3})\./)
+    if (cgnat) {
+        const octet = Number(cgnat[1])
+        if (octet >= 64 && octet <= 127) return true
+    }
+    return false
+}
+
 function parsePktzLine(data) {
     if (typeof data !== "string" || data.trim() === "") return null
 
@@ -214,8 +233,8 @@ function parsePktzLine(data) {
     } catch (error) {
         return null
     }
-    if (record === null || typeof record !== "object" || record.type !== "process")
-        return null
+    if (record === null || typeof record !== "object") return null
+    if (record.type !== "process" && record.type !== "conn") return null
     if (typeof record.ts !== "string" || pktzTimestampMs(record.ts) < 0)
         return null
     if (!Number.isSafeInteger(record.pid) || record.pid <= 0) return null
@@ -226,9 +245,32 @@ function parsePktzLine(data) {
         return null
     if (typeof record.tx_bps !== "number" || !Number.isFinite(record.tx_bps) || record.tx_bps < 0)
         return null
-    if (!Number.isInteger(record.conns) || record.conns < 0) return null
 
+    if (record.type === "conn") {
+        // `state` is TCP-only upstream; UDP conn records legitimately omit it.
+        if (typeof record.src_ip !== "string" || record.src_ip === "") return null
+        if (typeof record.dst_ip !== "string" || record.dst_ip === "") return null
+        if (!Number.isSafeInteger(record.src_port) || record.src_port < 0) return null
+        if (!Number.isSafeInteger(record.dst_port) || record.dst_port < 0) return null
+        if (typeof record.proto !== "string" || record.proto === "") return null
+        return {
+            kind: "conn",
+            ts: record.ts,
+            pid: String(record.pid),
+            comm: record.comm,
+            src: record.src_ip,
+            sport: record.src_port,
+            dst: record.dst_ip,
+            dport: record.dst_port,
+            proto: record.proto,
+            rx: record.rx_bytes,
+            tx: record.tx_bytes
+        }
+    }
+
+    if (!Number.isInteger(record.conns) || record.conns < 0) return null
     return {
+        kind: "process",
         ts: record.ts,
         pid: String(record.pid),
         comm: record.comm,
@@ -237,13 +279,41 @@ function parsePktzLine(data) {
     }
 }
 
-function commitPktzBatch(batch, lastCum, elapsed) {
+function commitPktzBatch(batch, lastCum, connCum, elapsed) {
     const previousCum = lastCum ?? {}
+    const previousConnCum = connCum ?? {}
     const nextCum = {}
+    const nextConnCum = {}
     const accounting = {}
     const rates = {}
+
+    // Per-process excluded-endpoint byte deltas from conn records. Process
+    // counters stay authoritative (conn coverage has gaps upstream); conn
+    // deltas only carve the excluded share back out. A first-sighted conn
+    // contributes its full cumulative bytes: within one collector run those
+    // bytes accrued inside the process counters being committed. Conn counter
+    // shrink establishes a fresh baseline without subtracting.
+    const excludedDelta = {}
     for (const entry of (batch ?? [])) {
-        if (!entry || typeof entry.pid !== "string" || typeof entry.comm !== "string")
+        if (!entry || entry.kind !== "conn") continue
+        const connId = `${entry.pid}/${entry.comm}|${entry.proto}|${entry.src}:${entry.sport}|${entry.dst}:${entry.dport}`
+        const previous = previousConnCum[connId]
+        nextConnCum[connId] = { rx: entry.rx, tx: entry.tx }
+        if (!excludedTrafficEndpoint(entry.src) && !excludedTrafficEndpoint(entry.dst))
+            continue
+        const drx = previous ? entry.rx - previous.rx : entry.rx
+        const dtx = previous ? entry.tx - previous.tx : entry.tx
+        if (drx < 0 || dtx < 0) continue
+        const entryId = `${entry.pid}/${entry.comm}`
+        const sum = excludedDelta[entryId] ?? { rx: 0, tx: 0 }
+        sum.rx += drx
+        sum.tx += dtx
+        excludedDelta[entryId] = sum
+    }
+
+    for (const entry of (batch ?? [])) {
+        if (!entry || entry.kind === "conn") continue
+        if (typeof entry.pid !== "string" || typeof entry.comm !== "string")
             continue
         const entryId = `${entry.pid}/${entry.comm}`
         const previous = previousCum[entryId]
@@ -251,8 +321,9 @@ function commitPktzBatch(batch, lastCum, elapsed) {
         if (!previous || entry.rx < previous.rx || entry.tx < previous.tx)
             continue
 
-        const drx = entry.rx - previous.rx
-        const dtx = entry.tx - previous.tx
+        const excluded = excludedDelta[entryId] ?? { rx: 0, tx: 0 }
+        const drx = Math.max(0, entry.rx - previous.rx - excluded.rx)
+        const dtx = Math.max(0, entry.tx - previous.tx - excluded.tx)
         if (drx + dtx === 0) continue
         addTraffic(accounting, entry.comm, drx, dtx)
         if (elapsed > 0) {
@@ -264,11 +335,55 @@ function commitPktzBatch(batch, lastCum, elapsed) {
     }
     return {
         lastCum: nextCum,
+        connCum: nextConnCum,
         accounting: Object.values(accounting),
         rates: Object.values(rates)
             .filter(app => app.down + app.up >= 1)
             .sort((left, right) => (right.down + right.up) - (left.down + left.up))
     }
+}
+
+function ssAddress(token) {
+    if (typeof token !== "string" || token === "") return ""
+    if (token.startsWith("[")) {
+        const end = token.indexOf("]")
+        return end > 0 ? token.substring(1, end) : ""
+    }
+    const cut = token.lastIndexOf(":")
+    return cut > 0 ? token.substring(0, cut) : token
+}
+
+// `ss -tinpH` pairs: the socket line carries state, queues, local/peer
+// address:port and users:(...); the following info line carries cumulative
+// bytes_received/bytes_sent. Sockets on excluded endpoints (loopback,
+// tailscale ranges) are skipped so the fallback matches the meter's scope.
+function parseSsTotals(text) {
+    const totals = {}
+    let name = null
+    let excluded = false
+    for (const line of (text ?? "").split("\n")) {
+        const pm = line.match(/users:\(\("([^"]+)",pid=\d+/)
+        if (pm) {
+            name = pm[1]
+            const tokens = line.trim().split(/\s+/)
+            const local = ssAddress(tokens[3])
+            const peer = ssAddress(tokens[4])
+            excluded = excludedTrafficEndpoint(local) || excludedTrafficEndpoint(peer)
+            continue
+        }
+        if (name === null) continue
+        const rx = line.match(/bytes_received:(\d+)/)
+        const tx = line.match(/bytes_sent:(\d+)/)
+        if (rx || tx) {
+            if (!excluded) {
+                totals[name] = totals[name] ?? { rx: 0, tx: 0 }
+                totals[name].rx += rx ? parseInt(rx[1]) : 0
+                totals[name].tx += tx ? parseInt(tx[1]) : 0
+            }
+            name = null
+        }
+    }
+    return totals
 }
 
 function nethogsCommand(seconds) {
