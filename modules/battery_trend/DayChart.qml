@@ -50,6 +50,9 @@ Item {
     Canvas {
         id: canvas
         anchors.fill: parent
+        // The detail panel starts hidden; a paint requested while the window
+        // is unmapped is dropped, so repaint when the canvas becomes usable.
+        onAvailableChanged: if (available) requestPaint()
 
         onPaint: {
             const ctx = getContext("2d")

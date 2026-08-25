@@ -86,13 +86,16 @@ iimod install modules/battery_trend/ --allow-patches
 | sysfs `charge_*` + `voltage_now` | 不提供 `energy_*` 機型的容量與功耗 fallback |
 | `cycle_count` | 循環數與健康歷史 |
 
-primary bar instance 每 60 秒取樣一次，插拔電源或充放電狀態變化時立即補樣。
-Popup／面板開啟期間的 3 秒刷新只更新即時數字，不寫入歷史。
+window-slot owner（`main.qml`，module host 只實例化一次）每 60 秒取樣一次，
+插拔電源或充放電狀態變化時立即補樣。Popup／面板開啟期間的 3 秒刷新只更新
+即時數字，不寫入歷史。
 
-每個螢幕都有 bar instance，但只有第一個螢幕的 primary 負責取樣、寫盤、補齊設定
-預設與 IPC。其他 instance 以 watched-reader 模式顯示同一份資料。
+取樣、寫盤、設定預設補齊、詳細面板與 IPC 全部由 window-slot owner 持有。
+每個螢幕的 bar instance 與 stock popup 都是 watched-reader，從同一份設定檔
+重建自己的視圖；點擊一律經 IPC 請 owner 開面板，因此不存在 primary 選舉，
+螢幕增減或 shell reload 也不會讓 IPC target 失效。
 
-`showBar: false` 只隱藏版面；ConfigLoader、取樣與 IPC 仍持續運作，不留下 bar
+`showBar: false` 只隱藏版面；取樣與 IPC 由 window slot 持續運作，不留下 bar
 空白。這讓 stock 電池環保留主要入口，同時避免重複占用 bar。
 
 ## 保留策略
@@ -135,7 +138,9 @@ Popup／面板開啟期間的 3 秒刷新只更新即時數字，不寫入歷史
 
 | 檔案 | 職責 |
 |---|---|
-| `BatteryLogic.qml` | primary/reader lifecycle、取樣、累計與分析 |
+| `main.qml` | window-slot 單例：config owner、取樣 instance、詳細面板與 IPC |
+| `bar.qml` | 每螢幕 reader：可選 sparkline pill 與 hover popup |
+| `BatteryLogic.qml` | owner/reader lifecycle、取樣、累計與分析 |
 | `ConfigLoader.qml` | 設定與單一歷史 blob 持久化 |
 | `StockBatteryPopup.qml` | stock 指示器使用的模塊 popup 與 detail-panel 入口 |
 | `TrendGraph.qml` | 時間軸感知的 3 小時 sparkline |

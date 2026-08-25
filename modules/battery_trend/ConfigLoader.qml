@@ -1,3 +1,6 @@
+// Vendored from lib/ConfigLoader.template.qml (golden master; see
+// lib/README.md). Simple variant: the window-slot entry (loaded once) is the
+// owner; bar/settings copies are read-mostly consumers.
 import Quickshell.Io
 import qs.modules.common
 
@@ -11,43 +14,59 @@ import qs.modules.common
  * every assignment rewrites the whole file, watchChanges reloads race with
  * our own writes, and iimod's hot reload briefly runs old and new instances
  * side by side — a multi-field flush can be read back as a torn snapshot.
- * One assignment per blob makes a torn read structurally impossible
- * (established in network_traffic; see its README).
+ * One assignment per blob makes a torn adapter write structurally
+ * impossible; atomicWrites (temp file + rename) additionally keeps the
+ * on-disk file all-or-nothing for concurrent watchers, and blockWrites makes
+ * writeAdapter() synchronous so a flush has really hit disk when it returns.
  *
  * `property var` inside a JsonAdapter is forbidden: Quickshell's
  * deserializer segfaults writing a JSON object into it. Hence the string.
  */
 FileView {
     id: root
+
     // False until the file content (or its confirmed absence) is in the
     // adapter. History must not initialise from default zeroes.
     property bool ready: false
-    // Exactly one instance (the primary screen's bar widget) materialises
+    // Exactly one instance (the window-slot entry, loaded once) materialises
     // defaults into the file and hosts the history flushes. Read-only
-    // consumers (settings fragment, secondary screens) must not write stale
-    // snapshots over the owner's state.
+    // consumers (settings fragment, per-monitor bars, stock popup) must not
+    // write stale snapshots over the owner's state.
     property bool owner: false
+    // Guards the reload/write echo: adapter updates during materialization
+    // must not be written back, or every reload triggers a write loop.
+    property bool materializing: true
 
     path: Directories.shellConfig + "/modules/battery_trend.json"
     watchChanges: true
-    onFileChanged: reload()
-    onAdapterUpdated: writeAdapter()
+    blockWrites: true
+    atomicWrites: true
+
+    onFileChanged: {
+        root.materializing = true
+        reload()
+    }
+    onAdapterUpdated: {
+        if (!root.materializing)
+            writeAdapter()
+    }
     // Materialise the merged adapter after every successful load: a file
     // written by an older version misses keys added since, and the adapter
     // yields type zero values for absent keys, not the declared defaults.
     onLoaded: {
-        if (root.owner) writeAdapter()
+        root.materializing = false
+        if (root.owner)
+            writeAdapter()
         root.ready = true
     }
     onLoadFailed: error => {
-        if (error == FileViewError.FileNotFound) {
-            if (root.owner) writeAdapter()
-            root.ready = true
-        }
+        if (error !== FileViewError.FileNotFound)
+            return
+        root.materializing = false
+        if (root.owner)
+            writeAdapter()
+        root.ready = true
     }
-    // Primary-screen election can settle after the first load (the window
-    // attaches to its screen asynchronously); materialise then.
-    onOwnerChanged: if (root.owner && root.ready) writeAdapter()
 
     property alias options: adapterItem
     adapter: JsonAdapter {
