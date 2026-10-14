@@ -1,0 +1,5 @@
+{
+  "Caps the left and right center sections even when there is room. 360 keeps the stock width; the stock narrow-screen widths still apply below it.": "即使空間足夠，也會限制中央左右兩側的最大寬度。設為 360 即維持原始寬度；原始的窄螢幕寬度若低於此值，仍會照常套用。",
+  "Maximum center side width (px)": "中央兩側最大寬度（px）",
+  "When the right side of the horizontal bar runs out of room, pinned tray icons fold into the tray overflow menu first, then both center sections shrink equally. Workspaces stay at the exact screen center.": "水平 bar 右側空間不足時，會先把已釘選的系統匣圖示收進系統匣溢位選單，再等量縮窄中央左右兩側。工作區會保持在螢幕正中央。"
+}
