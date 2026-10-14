@@ -22,8 +22,6 @@ FileView {
             writeAdapter();
     }
     onLoaded: {
-        if (adapterItem.centerSideWidth < 280 || adapterItem.centerSideWidth > 360)
-            adapterItem.centerSideWidth = 280;
         root.materializing = false;
         if (root.owner)
             writeAdapter();
@@ -48,7 +46,6 @@ FileView {
         property string separator: "•"
         property int contentSpacing: 4
         property int horizontalPadding: 0
-        property int centerSideWidth: 280
         property int timeSizeOffset: 0
         property int dateSizeOffset: 0
         property bool slimPopup: true
