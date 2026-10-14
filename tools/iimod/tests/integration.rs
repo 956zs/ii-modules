@@ -9,7 +9,7 @@ use std::process::Output;
 /// Mirrors `hoststate::HOST_GENERATION` of the binary under test. Fixtures
 /// derive "newer" and "stale" generations from it, and
 /// `newer_candidate_upgrades_older_descriptor` fails if the two drift apart.
-const CURRENT_HOST_GENERATION: u64 = 2;
+const CURRENT_HOST_GENERATION: u64 = 3;
 
 fn bin() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_BIN_EXE_iimod"));

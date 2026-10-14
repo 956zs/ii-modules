@@ -60,7 +60,16 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                 ),
             ),
         ),
-        // P3: bar slot host (renders left of the Weather group).
+        // P3: bar slot host (renders left of the Weather group). The modules
+        // sit in a Row inside the RTL right-section RowLayout so a module that
+        // hides its own root reserves no space: its Loader collapses to zero
+        // width and the positioner skips it. Width (never Loader.visible)
+        // follows item.visible, because item.visible is EFFECTIVE visibility
+        // and would read false forever once the Loader itself were hidden.
+        // Row spacing 9 = the former RowLayout spacing 5 + leftMargin 4;
+        // RightToLeft keeps the first enabledBar id rightmost. The explicit
+        // preferred width stops the RowLayout from falling back to (and
+        // latching) the Row's last width when every module is hidden.
         (
             "modules/ii/bar/BarContent.qml",
             p(
@@ -68,13 +77,30 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                 PatchOp::InsertBefore,
                 "// Weather",
                 concat!(
-                    "            Repeater {\n",
-                    "                model: Config.options.iimp?.enabledBar ?? []\n",
-                    "                delegate: Loader {\n",
-                    "                    required property string modelData\n",
-                    "                    Layout.leftMargin: 4\n",
-                    "                    source: Quickshell.shellPath(`mod/${modelData}/bar.qml`)\n",
-                    "                    onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] bar module failed: ${modelData}`)\n",
+                    "            Row {\n",
+                    "                // Bar-slot modules. A Row rather than direct RowLayout children:\n",
+                    "                // a module that hides its own root collapses to a zero-width\n",
+                    "                // Loader, which the positioner skips, so it reserves no width,\n",
+                    "                // margin, or spacing. RightToLeft keeps the enabledBar order of\n",
+                    "                // the surrounding RTL RowLayout. Bind width, never Loader.visible,\n",
+                    "                // to item.visible: it reads effective visibility and would stick.\n",
+                    "                visible: iimpBarSlotRepeater.count > 0\n",
+                    "                Layout.preferredWidth: implicitWidth\n",
+                    "                Layout.leftMargin: implicitWidth > 0 ? 4 : 0\n",
+                    "                Layout.fillHeight: true\n",
+                    "                layoutDirection: Qt.RightToLeft\n",
+                    "                spacing: 9\n",
+                    "                Repeater {\n",
+                    "                    id: iimpBarSlotRepeater\n",
+                    "                    model: Config.options.iimp?.enabledBar ?? []\n",
+                    "                    delegate: Loader {\n",
+                    "                        required property string modelData\n",
+                    "                        readonly property bool shown: item !== null && item.visible\n",
+                    "                        anchors.verticalCenter: parent?.verticalCenter\n",
+                    "                        width: shown ? item.implicitWidth : 0\n",
+                    "                        source: Quickshell.shellPath(`mod/${modelData}/bar.qml`)\n",
+                    "                        onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] bar module failed: ${modelData}`)\n",
+                    "                    }\n",
                     "                }\n",
                     "            }\n",
                 ),
@@ -354,6 +380,33 @@ mod tests {
         assert!(composed.contains("ModuleHost {}"));
         let (stripped, _) = crate::patch::strip(&composed).unwrap();
         assert_eq!(stripped, shell);
+    }
+
+    #[test]
+    fn horizontal_bar_slot_collapses_hidden_modules() {
+        let (_, p3) = embedded_host_patches()
+            .into_iter()
+            .find(|(file, p)| *file == "modules/ii/bar/BarContent.qml" && p.index == 3)
+            .expect("P3 present");
+        let content = p3.content.as_str();
+        // A Row positioner skips zero-width children; direct RowLayout
+        // children would keep reserving width, margin, and spacing.
+        assert!(content.starts_with("            Row {\n"));
+        assert!(content.ends_with("            }\n"));
+        assert!(content.contains("                layoutDirection: Qt.RightToLeft\n"));
+        assert!(content.contains("                spacing: 9\n"));
+        assert!(content.contains("                Layout.preferredWidth: implicitWidth\n"));
+        assert!(content.contains("readonly property bool shown: item !== null && item.visible\n"));
+        assert!(content.contains("width: shown ? item.implicitWidth : 0\n"));
+        // item.visible is effective visibility: hiding the Loader or Row from
+        // it would read false forever, so only the model count may hide the Row.
+        let visibility: Vec<&str> = content
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("visible:"))
+            .collect();
+        assert_eq!(visibility, ["visible: iimpBarSlotRepeater.count > 0"]);
+        assert_eq!(content.matches('{').count(), content.matches('}').count());
     }
 
     #[test]
