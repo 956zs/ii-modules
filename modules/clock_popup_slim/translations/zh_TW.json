@@ -1,11 +1,9 @@
 {
-  "Center side width (px)": "中央兩側寬度（px）",
   "Content spacing (px)": "內容間距（px）",
   "Date format": "日期格式",
   "Date text size offset (px)": "日期文字尺寸偏移（px）",
   "Horizontal padding (px)": "左右留白（px）",
   "Qt date/time patterns are supported. Use HH:mm for a 24-hour clock, hh:mm AP for a 12-hour clock, and add :ss for seconds.": "支援 Qt 日期與時間格式。HH:mm 為 24 小時制，hh:mm AP 為 12 小時制，加入 :ss 可顯示秒數。",
-  "Reduces the left and right center sections equally, keeping Workspaces at the exact screen center. The clock remains left-aligned in the right section.": "等量縮短中央左右兩側，讓工作區保持在螢幕正中央；時鐘仍靠左排列在右側區域。",
   "Separator": "分隔符號",
   "Show date on the bar": "在 bar 顯示日期",
   "Slim hover popup": "精簡 hover 彈窗",
