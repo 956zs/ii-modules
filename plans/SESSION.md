@@ -1,3 +1,32 @@
+## 2026-10-14 adaptive horizontal bar (16:10 overflow)
+
+User report: the horizontal bar was tuned on a 2560 px 21:9 monitor; on the
+1920x1200 16:10 eDP-1 the right side overlaps the centred clock group while a
+blank gap sits left of the tray ("明明有空位還要被擠壓").
+
+Root causes (evidence: live screenshot pixel spans + headless qml6 repro):
+- R1 host P3: each bar-slot Loader keeps its item's implicit width even when
+  the module hides its root (battery_trend showBar=false reserved ~87 px).
+- R2 stock: the right section is an RTL RowLayout of fixed-width items; when
+  demand > available it spills left over the screen-centred middle section.
+- R3 stock: centre side groups are fixed 360 px above 1200 px screens.
+
+User decisions (2026-10-14): degrade by folding pinned tray icons into the
+overflow menu FIRST, then shrink both centre side groups symmetrically
+(workspaces stay screen-centred); new module owns centre widths and
+clock_popup_slim drops its width bindings (released as 3.0.0: removing a
+setting is breaking under repo semver); scope = local task branch +
+live install verification (no push/PR/release until asked).
+
+Tasks (branch feat/adaptive-bar-layout):
+- ✅ T1 iimod 1.4.0: host P3 bar slot is now an RTL Row (zero-width Loader per self-hidden module, 9 px gaps, order unchanged, explicit Layout.preferredWidth avoids RowLayout's latched fallback width when all hidden); HOST_GENERATION 3; fixtures derive from CURRENT_HOST_GENERATION; lead re-ran fmt/clippy/cargo tests/release build.
+- ✅ T2 adaptive_bar 1.0.0 (Tier B, 7 insert-only patches on BarContent/SysTray): per-bar FitController + pure Fit.js (fold first, then symmetric centre shrink to content min, clip residual; 8 px hysteresis; 40 ms settle). 21 node tests (planner + patch contract); headless qml6 fake-bar sim converges at 1920/2560/1700 with no binding loops. Gotcha found in sim: reading `item.Layout.*` from another file needs `import QtQuick.Layouts` there.
+- ✅ T3 clock_popup_slim 3.0.0: centre width bindings, probes and `centerSideWidth` setting removed (adaptive_bar owns centre widths); tests 7/7; README migration note.
+- ✅ T4 i18n handoff (independent subagent) for adaptive_bar + clock_popup_slim: adaptive_bar zh_TW/zh_CN 3/3 keys (stock terms: zh_TW 系統匣/釘選/溢位, zh_CN 托盘/固定/溢出); clock_popup_slim 2 retired keys removed (12/12 per locale); extract + exact checks + `check --all --deny-orphans` exit 0; node tests 28/28.
+- ✅ T5 live (2026-10-14, eDP-1 1920x1200): ~/.local/bin/iimod 1.1.0 (sha256 5dba3b1a..., false WIPED banner because it cannot parse the 1.3.0 sentinel) replaced by 1.4.0 (old binary kept at /tmp/iimod-1.1.0.bak). Installed adaptive_bar, upgraded clock_popup_slim with --no-enable; verify all intact after reapply. Screenshot: clock group intact, module pills separate, tray pinned icon folded, centre sides ~352 px symmetric around x=959.5. cap 300 -> one icon unfolds (restore path), reverted to 360. Overflow menu opened by pointer: folded icon first, 2-column grid; closed, cursor restored. Shell log unreadable (encoder v50 vs reader v2), verified behaviourally + `iimp ping`.
+- ✅ T6 iimod bug found live: `install --no-enable` composed the module's patches before marking it Disabled ("disabled but still patched", verify fence-broken). Fixed by setting Disabled before any composition; regression test `install_no_enable_leaves_tier_b_patches_unapplied` (red before fix). Live tree repaired with `iimod reapply`.
+- ✅ T7 site/public/registry.json regenerated (was already stale on main: battery_trend/network_traffic/screentime versions) + adaptive_bar/clock 3.0.0.
+
 ## 2026-08-24 module fixes + architecture hygiene
 
 User-reported symptoms (2026-08-24):

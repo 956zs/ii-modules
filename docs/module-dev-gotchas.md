@@ -78,3 +78,10 @@ protocol cannot check for you.
 - Synthetic pointer tools may apply acceleration or coordinate scaling.
   Position with a feedback loop against `hyprctl cursorpos` instead of
   trusting requested coordinates.
+- Hyprland 0.56+ takes Lua dispatchers: `hyprctl dispatch movecursor X Y`
+  now fails. Use `hyprctl dispatch 'hl.dsp.cursor.move({x=X,y=Y})'`
+  (layout coordinates, exact, no acceleration), verify with
+  `hyprctl cursorpos`, then `ydotool click 0xC0`.
+- Reading another object's attached properties (`item.Layout.fillWidth`)
+  needs that attached type imported in the reading file
+  (`import QtQuick.Layouts`); without it `item.Layout` is `undefined`.

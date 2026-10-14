@@ -45,3 +45,21 @@
 - 🟢 P3 network_traffic: pktz truncates comm names to 15 chars
   ("laptop-monitor-", "RvControlSvc.ex") — cosmetic naming in the per-app
   list, accounting unaffected.
+
+## Adaptive bar follow-ups (2026-10-14)
+
+- 🟢 P3 iimod host P5/P6 (vertical bar): bar-slot Loaders still reserve the
+  implicit height of modules that hide their own root (same defect P3 had
+  before host generation 3). Not live-verifiable without switching the user's
+  bar to vertical; apply the Column equivalent of the P3 Row fix.
+- 🟢 P3 iimod host P3: when at least one bar module is enabled but every one
+  hides itself, the right-section RowLayout still adds one 5 px spacing (only
+  an invisible layout child drops it, and hiding from item.visible latches).
+- 🟡 P2 iimod upgrade semantics: `iimod install <newer>` of a Disabled module
+  re-enables it (sandbox evidence with clock_popup_slim 2.1.0 -> 3.0.0). Use
+  `--no-enable` until upgrades preserve the previous state.
+- 🟢 P3 memory_center store drift: live store memory_center 1.2.0 has zh_TW
+  "Show percentage in the bar" = "Bar 上顯示百分比" while the repo source,
+  still version 1.2.0, says "在狀態列中顯示百分比" (same version, different
+  content), so every install warns about conflicting contributors. Release a
+  patch version and reinstall.
