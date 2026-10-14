@@ -107,6 +107,12 @@ pub fn cmd_install(source: &Path, opts: &InstallOpts) -> Result<()> {
     let Some(mut prepared) = prepare_install(source, opts, registry, mutation.host())? else {
         return Ok(());
     };
+    if opts.no_enable {
+        // Before any composition: a disabled module contributes no patches,
+        // so applying them first would strand "disabled but still patched".
+        let id = prepared.candidate.manifest.id.clone();
+        prepared.next.get_mut(&id).unwrap().state = ModuleState::Disabled;
+    }
     let backups = begin_install_journal(&prepared)?;
     let result = apply_install_mutation(&mut prepared, mutation.host())
         .and_then(|_| mutation.activate_after_host_write())
@@ -462,10 +468,6 @@ fn rollback_install(prepared: &PreparedInstall, backups: &BackupSet) {
 
 fn commit_install(prepared: &mut PreparedInstall, opts: &InstallOpts) -> Result<()> {
     prepared.next.host_version = Some(hostpatch::HOST_VERSION.to_string());
-    if opts.no_enable {
-        let id = prepared.candidate.manifest.id.clone();
-        prepared.next.get_mut(&id).unwrap().state = ModuleState::Disabled;
-    }
     registry::save(&prepared.next)?;
     project_new_state(&prepared.next)?;
     store::prune_backups(BACKUPS_TO_KEEP)?;

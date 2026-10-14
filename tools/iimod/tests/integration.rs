@@ -1460,6 +1460,67 @@ fn dependency_enforcement() {
 }
 
 #[test]
+fn install_no_enable_leaves_tier_b_patches_unapplied() {
+    let w = World::new("no-enable-tier-b");
+    let tier_b = serde_json::json!({
+        "patches": [{
+            "file": "modules/ii/bar/BarContent.qml",
+            "op": "insert-before",
+            "anchor": "            // Weather",
+            "content": "            DormantThing {}\n"
+        }],
+    });
+    let payload = w.make_module("dormant_patcher", tier_b);
+    let bar = w.ii().join("modules/ii/bar/BarContent.qml");
+
+    // Fresh install disabled: the registry says disabled, so the composition
+    // must not carry the module's patches ("disabled but still patched").
+    w.expect(
+        &[
+            "install",
+            payload.to_str().unwrap(),
+            "--allow-patches",
+            "--no-enable",
+        ],
+        0,
+    );
+    let composed = std::fs::read_to_string(&bar).unwrap();
+    assert!(!composed.contains("DormantThing"), "{composed}");
+    w.expect(&["verify"], 0);
+
+    // Enabling applies it; a disabled upgrade removes it again.
+    w.expect(&["enable", "dormant_patcher"], 0);
+    assert!(std::fs::read_to_string(&bar)
+        .unwrap()
+        .contains("DormantThing {}"));
+    let upgraded = w.make_module(
+        "dormant_patcher",
+        serde_json::json!({
+            "version": "1.1.0",
+            "patches": [{
+                "file": "modules/ii/bar/BarContent.qml",
+                "op": "insert-before",
+                "anchor": "            // Weather",
+                "content": "            DormantThing { upgraded: true }\n"
+            }],
+        }),
+    );
+    w.expect(
+        &[
+            "install",
+            upgraded.to_str().unwrap(),
+            "--allow-patches",
+            "--no-enable",
+        ],
+        0,
+    );
+    assert!(!std::fs::read_to_string(&bar)
+        .unwrap()
+        .contains("DormantThing"));
+    w.expect(&["verify"], 0);
+}
+
+#[test]
 fn wipe_and_reapply_restores_byte_identical() {
     let w = World::new("wipe");
     let payload = w.make_module(
