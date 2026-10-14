@@ -6,6 +6,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
+/// Mirrors `hoststate::HOST_GENERATION` of the binary under test. Fixtures
+/// derive "newer" and "stale" generations from it, and
+/// `newer_candidate_upgrades_older_descriptor` fails if the two drift apart.
+const CURRENT_HOST_GENERATION: u64 = 2;
+
 fn bin() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_BIN_EXE_iimod"));
     assert!(p.exists(), "binary missing: {}", p.display());
@@ -273,10 +278,11 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
     ));
     let module_host = std::fs::read(old_dir.join("assets/ModuleHost.qml")).unwrap();
     let mut modules_config = std::fs::read(old_dir.join("assets/ModulesConfig.qml")).unwrap();
-    modules_config.extend_from_slice(b"\n// persisted generation 3\n");
+    let generation = CURRENT_HOST_GENERATION + 1;
+    modules_config
+        .extend_from_slice(format!("\n// persisted generation {generation}\n").as_bytes());
     let patches: serde_json::Value =
         serde_json::from_slice(&std::fs::read(old_dir.join("patches.json")).unwrap()).unwrap();
-    let generation = 3_u64;
     let protocol = current["protocolVersion"].as_u64().unwrap();
     let canonical = serde_json::to_vec(&serde_json::json!({
         "generation": generation,
@@ -419,6 +425,8 @@ fn first_migration_rejects_stale_fence_version_before_same_version_noop() {
         "settings.qml",
         "modules/ii/verticalBar/VerticalBarContent.qml",
     ];
+    let current_fence = format!(" v{CURRENT_HOST_GENERATION} >>>");
+    let stale_fence = format!(" v{} >>>", CURRENT_HOST_GENERATION - 1);
     let mut originals = Vec::new();
     let mut expected_headers = 0;
     let mut changed_headers = 0;
@@ -432,7 +440,7 @@ fn first_migration_rejects_stale_fence_version_before_same_version_noop() {
         for line in original.split_inclusive('\n') {
             if line.contains("// >>> iimp host/") {
                 expected_headers += 1;
-                let changed = line.replace(" v2 >>>", " v1 >>>");
+                let changed = line.replace(&current_fence, &stale_fence);
                 if changed != line {
                     changed_headers += 1;
                 }
@@ -475,7 +483,7 @@ fn newer_generation_future_protocol_is_exit_10_without_mutation() {
     let w = World::new("future-host-protocol");
     let first = w.make_module("protocol_first", serde_json::json!({}));
     w.expect(&["install", first.to_str().unwrap()], 0);
-    rewrite_current_bundle(&w, 3, 2);
+    rewrite_current_bundle(&w, CURRENT_HOST_GENERATION + 1, 2);
 
     let descriptor_path = w.root.join("state/host/current.json");
     let descriptor_before = std::fs::read(&descriptor_path).unwrap();
@@ -515,7 +523,7 @@ fn newer_candidate_upgrades_older_descriptor() {
     let current: serde_json::Value =
         serde_json::from_slice(&std::fs::read(w.root.join("state/host/current.json")).unwrap())
             .unwrap();
-    assert_eq!(current["generation"], 2);
+    assert_eq!(current["generation"], CURRENT_HOST_GENERATION);
     w.expect(&["verify"], 0);
 }
 
@@ -535,7 +543,7 @@ fn stale_guard_aware_candidate_preserves_newer_host_on_install_and_reapply() {
     let descriptor: serde_json::Value =
         serde_json::from_slice(&std::fs::read(w.root.join("state/host/current.json")).unwrap())
             .unwrap();
-    assert_eq!(descriptor["generation"], 3);
+    assert_eq!(descriptor["generation"], CURRENT_HOST_GENERATION + 1);
 
     std::fs::remove_dir_all(w.ii()).unwrap();
     write_stock_tree(&w.ii());
