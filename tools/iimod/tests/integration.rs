@@ -1643,6 +1643,60 @@ fn enable_disable_projection() {
 }
 
 #[test]
+fn order_and_page_edit_config_when_shell_is_down() {
+    let w = World::new("order");
+    for id in ["ord_a", "ord_b", "ord_c"] {
+        let payload = w.make_module(id, serde_json::json!({}));
+        w.expect(&["install", payload.to_str().unwrap()], 0);
+    }
+    let config = || -> serde_json::Value {
+        serde_json::from_str(
+            &std::fs::read_to_string(w.root.join("shellconfig/config.json")).unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        config()["iimp"]["enabledBar"],
+        serde_json::json!(["ord_a", "ord_b", "ord_c"])
+    );
+
+    // Order edits only barOrderJson; the page map and enablement survive.
+    w.expect(&["page", "ord_b", "2"], 0);
+    w.expect(&["order", "ord_c", "1"], 0);
+    let v = config();
+    assert_eq!(v["iimp"]["barOrderJson"], "[\"ord_c\",\"ord_a\",\"ord_b\"]");
+    assert_eq!(v["iimp"]["barPagesJson"], "{\"ord_b\":1}");
+    assert_eq!(
+        v["iimp"]["enabledBar"],
+        serde_json::json!(["ord_a", "ord_b", "ord_c"])
+    );
+
+    // Positions clamp; a disabled module keeps a trailing slot and cannot be ordered.
+    w.expect(&["order", "ord_c", "99"], 0);
+    assert_eq!(
+        config()["iimp"]["barOrderJson"],
+        "[\"ord_a\",\"ord_b\",\"ord_c\"]"
+    );
+    w.expect(&["disable", "ord_a"], 0);
+    let out = w.run(&["order", "ord_a", "1"]);
+    assert_ne!(out.status.code(), Some(0));
+    w.expect(&["order", "ord_b", "2"], 0);
+    assert_eq!(
+        config()["iimp"]["barOrderJson"],
+        "[\"ord_c\",\"ord_b\",\"ord_a\"]"
+    );
+    w.expect(&["enable", "ord_a"], 0);
+    assert_eq!(
+        config()["iimp"]["barOrderJson"],
+        "[\"ord_c\",\"ord_b\",\"ord_a\"]"
+    );
+
+    // Non-bar and unknown modules are usage errors.
+    w.expect(&["order", "missing", "1"], 2);
+    w.expect(&["order", "ord_a", "0"], 2);
+}
+
+#[test]
 fn capability_lint_blocks_undeclared_exec() {
     let w = World::new("lint");
     let payload = w.make_module("sneaky", serde_json::json!({}));
