@@ -75,6 +75,17 @@ generation 4 (local persisted gen-4 bundle dropped by hand for live test).
   configured. Note config.json is written with a delay, so reading it right
   after the IPC call shows the previous value. Order restored to the
   alphabetical equivalent afterwards.
+- ✅ Owner report: after switching to page 2, hovering where a page-1
+  module sits still opened its popup. Reproduced with ydotool (Screen time
+  popup on page 2). Cause: Qt 6 delivers hover by geometry and
+  `MouseArea.hoverEnabled` ignores `Item.enabled`, so `enabled: false` only
+  blocked clicks. Fix in `BarSlot.qml`: `parked: !current && opacity === 0`
+  drives a `Translate { y: 4096 }` transform on the row, so a faded-out page
+  leaves the window without touching anchors, implicit widths (reserved
+  width) or effective visibility. Live after another gen-4 bundle drop +
+  reapply: hidden-page hover shows nothing, page-2 module popups work,
+  return to page 1 after leaving the bar still works. Gotcha recorded in
+  `docs/module-dev-gotchas.md`.
 - ⏳ Not covered live: ModulesConfig move buttons (click path), vertical
   bar, bar.bottom.
 - Docs: README (zh) bar order paragraph, `docs/module-dev-gotchas.md` note

@@ -48,11 +48,18 @@ protocol cannot check for you.
   font) before shipping an icon name; missing glyphs render as tofu.
 - Bar pages (`iimp.barPagesJson`, host generation 4) keep every page's
   modules instantiated; a module on a non-current page is fully visible in
-  QML terms but has `opacity: 0` and `enabled: false` on its page row. Do
+  QML terms but has `opacity: 0` and `enabled: false` on its page row, and
+  once its fade-out ends the row is translated out of the bar window. Do
   not key behaviour on `visible` to detect "my page is shown"; hover and
   click simply do not arrive while the page is away. The slot reserves the
   width of the widest page, so a module that grows on page 2 widens the slot
   on page 1 as well.
+- `enabled: false` does not stop hover in Qt 6: hover is delivered by
+  geometry and `MouseArea.hoverEnabled` is independent of `Item.enabled`, so
+  a faded-out item still raises `containsMouse` and any popup bound to it.
+  Hide hoverable content by moving it out of the window (a `Translate`
+  transform keeps anchors, implicit sizes and effective visibility intact)
+  or by `visible: false` when the effective-visibility trap does not apply.
 - Bar order (`iimp.barOrderJson`, host generation 4) is a JSON array of ids;
   `enabledBar` itself stays alphabetical (the host re-sorts it on every
   enable/disable), so never read `enabledBar` as the display order. Listed
