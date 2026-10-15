@@ -1,3 +1,38 @@
+## 2026-10-15 osu! play-state daemon (plans/osu-playing-indicator.md)
+
+Owner decided to implement sections 3 and 5 of the plan now (service + CLI +
+Claude hook, Rust); the section 4 ii bar module is deferred.
+
+Findings that changed the plan:
+- Gameplay vs song select is read from osu!lazer's own
+  `~/.local/share/osu/logs/<launch>.runtime.log` (`Starting/Ending high
+  performance session`, `entered/exit from *Player#`, `Game-wide working
+  beatmap updated to`), flushed per line. Discord RPC rejected: proxy service
+  inactive, Discord owns `discord-ipc-0`, lazer presence = Limited.
+- `graphical-session.target` never activates on this host; ii uses
+  `end4-graphical-session.target`. `discord-rpc-proxy.service` (owner's other
+  repo) is enabled under the wrong target and has never started. Not fixed here.
+
+Delivered (separate repo `~/Desktop/github/osu-state`, 3 commits on main, not
+pushed, no remote configured):
+- ✅ daemon: Hyprland socket1/socket2 + inotify log follower, replay on start,
+  SIGTERM removes state file, 1.4 MB RSS; installed as `osu-state.service`
+  (enabled, running, state `idle` at handoff).
+- ✅ CLI: `osu-state`, `status --json`, `is-busy`, `wait-free [--timeout]`
+  (exit 124), `check-config`; stale/dead-daemon file counts as not busy.
+- ✅ hook: `osu-state claude-hook` registered globally in
+  `~/.claude/settings.json` (backup `settings.json.bak-20261015`); denies
+  `cargo`/`scripts/deploy-vps.sh` while playing/cooldown, else rewrites with
+  `nice -n 19 ionice -c3` via `updatedInput` + `allow`.
+- ✅ 41 unit tests, clippy clean (-D warnings).
+- ⏳ Live acceptance of `menu`/`playing`/`cooldown`/`off` transitions needs the
+  owner to actually play; only `idle`, replay recovery, hook deny/allow and
+  wait-free timeout were exercised.
+- ⏳ ii module indicator (plan section 4): not started; reads the state file only.
+
+Worktree note: `plans/osu-playing-indicator.md` is the owner's untracked file,
+updated in place with the findings above; left untracked on purpose.
+
 ## 2026-10-14 adaptive horizontal bar (16:10 overflow)
 
 User report: the horizontal bar was tuned on a 2560 px 21:9 monitor; on the
