@@ -11,7 +11,7 @@ function loadPureLogic() {
 
   const context = vm.createContext({})
   vm.runInContext(
-    `${match[1]}\nglobalThis.api = { isFlippable, needsAttention, filterModules, reconcileSelectedId, slotKind }`,
+    `${match[1]}\nglobalThis.api = { isFlippable, needsAttention, filterModules, reconcileSelectedId, slotKind, parsePageMap, pageOf, setPageEntry }`,
     context,
   )
   return context.api
@@ -135,4 +135,23 @@ test('detail keeps lazy module settings, placement, statuses, and empty recovery
   assert.match(source, /Clear search and filters/)
   assert.match(source, /The module index could not be read\./)
   assert.match(source, /This module modifies stock shell files/)
+})
+
+test('bar page map stores non-main pages only and survives junk', () => {
+  const logic = loadPureLogic()
+  assert.equal(logic.setPageEntry('{}', 'network_traffic', 1), '{"network_traffic":1}')
+  assert.equal(logic.setPageEntry('{"network_traffic":1}', 'screentime', 2), '{"network_traffic":1,"screentime":2}')
+  assert.equal(logic.setPageEntry('{"network_traffic":1}', 'network_traffic', 0), '{}')
+  assert.equal(logic.setPageEntry('{"network_traffic":1}', 'network_traffic', -3), '{}')
+  assert.equal(logic.setPageEntry('{"network_traffic":1}', 'network_traffic', 1.5), '{}')
+  assert.equal(logic.setPageEntry('not json', 'a', 2), '{"a":2}')
+  assert.equal(logic.setPageEntry('[1,2]', 'a', 2), '{"a":2}')
+  assert.equal(logic.setPageEntry(undefined, '', 2), '{}')
+  assert.equal(logic.pageOf('{"a":3}', 'a'), 3)
+  assert.equal(logic.pageOf('{"a":"3"}', 'a'), 3)
+  assert.equal(logic.pageOf('{"a":-1}', 'a'), 0)
+  assert.equal(logic.pageOf('{', 'a'), 0)
+  assert.equal(logic.pageOf('{"a":3}', 'missing'), 0)
+  assert.match(source, /Config\.options\.iimp\.barPagesJson = setPageEntry/)
+  assert.match(source, /Horizontal bar page/)
 })

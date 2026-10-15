@@ -9,7 +9,7 @@ use std::process::Output;
 /// Mirrors `hoststate::HOST_GENERATION` of the binary under test. Fixtures
 /// derive "newer" and "stale" generations from it, and
 /// `newer_candidate_upgrades_older_descriptor` fails if the two drift apart.
-const CURRENT_HOST_GENERATION: u64 = 3;
+const CURRENT_HOST_GENERATION: u64 = 4;
 
 fn bin() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_BIN_EXE_iimod"));
@@ -39,7 +39,7 @@ fn write_stock_tree(ii: &Path) {
     .unwrap();
     std::fs::write(
         ii.join("modules/ii/bar/BarContent.qml"),
-        "Item {\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
+        "import qs.modules.common.functions\n\nItem {\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
     )
     .unwrap();
     std::fs::write(
@@ -217,16 +217,20 @@ fn rewrite_current_bundle(w: &World, generation: u64, protocol: u64) {
     ));
     let module_host = std::fs::read(old_dir.join("assets/ModuleHost.qml")).unwrap();
     let modules_config = std::fs::read(old_dir.join("assets/ModulesConfig.qml")).unwrap();
+    let bar_slot = std::fs::read(old_dir.join("assets/BarSlot.qml")).ok();
     let patches: serde_json::Value =
         serde_json::from_slice(&std::fs::read(old_dir.join("patches.json")).unwrap()).unwrap();
-    let canonical = serde_json::to_vec(&serde_json::json!({
+    let mut canonical_value = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol,
         "moduleHostQml": String::from_utf8_lossy(&module_host),
         "modulesConfigQml": String::from_utf8_lossy(&modules_config),
         "patches": patches,
-    }))
-    .unwrap();
+    });
+    if let Some(slot) = &bar_slot {
+        canonical_value["barSlotQml"] = serde_json::json!(String::from_utf8_lossy(slot));
+    }
+    let canonical = serde_json::to_vec(&canonical_value).unwrap();
     let content_id = sha256_bytes(&canonical);
     let dir = state_host
         .join("generations")
@@ -234,13 +238,16 @@ fn rewrite_current_bundle(w: &World, generation: u64, protocol: u64) {
     std::fs::create_dir_all(dir.join("assets")).unwrap();
     std::fs::write(dir.join("assets/ModuleHost.qml"), &module_host).unwrap();
     std::fs::write(dir.join("assets/ModulesConfig.qml"), &modules_config).unwrap();
+    if let Some(slot) = &bar_slot {
+        std::fs::write(dir.join("assets/BarSlot.qml"), slot).unwrap();
+    }
     let patch_bytes = serde_json::to_vec_pretty(&patches).unwrap();
     std::fs::write(
         dir.join("patches.json"),
         [patch_bytes, b"\n".to_vec()].concat(),
     )
     .unwrap();
-    let manifest = serde_json::json!({
+    let mut manifest = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol,
         "contentId": content_id,
@@ -248,6 +255,9 @@ fn rewrite_current_bundle(w: &World, generation: u64, protocol: u64) {
         "modulesConfigSha256": sha256_bytes(&modules_config),
         "patchesSha256": sha256_bytes(&serde_json::to_vec(&patches).unwrap()),
     });
+    if let Some(slot) = &bar_slot {
+        manifest["barSlotSha256"] = serde_json::json!(sha256_bytes(slot));
+    }
     std::fs::write(
         dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap() + "\n",
@@ -281,17 +291,21 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
     let generation = CURRENT_HOST_GENERATION + 1;
     modules_config
         .extend_from_slice(format!("\n// persisted generation {generation}\n").as_bytes());
+    let bar_slot = std::fs::read(old_dir.join("assets/BarSlot.qml")).ok();
     let patches: serde_json::Value =
         serde_json::from_slice(&std::fs::read(old_dir.join("patches.json")).unwrap()).unwrap();
     let protocol = current["protocolVersion"].as_u64().unwrap();
-    let canonical = serde_json::to_vec(&serde_json::json!({
+    let mut canonical_value = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol,
         "moduleHostQml": String::from_utf8_lossy(&module_host),
         "modulesConfigQml": String::from_utf8_lossy(&modules_config),
         "patches": patches,
-    }))
-    .unwrap();
+    });
+    if let Some(slot) = &bar_slot {
+        canonical_value["barSlotQml"] = serde_json::json!(String::from_utf8_lossy(slot));
+    }
+    let canonical = serde_json::to_vec(&canonical_value).unwrap();
     let content_id = sha256_bytes(&canonical);
     let dir = state_host
         .join("generations")
@@ -299,6 +313,9 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
     std::fs::create_dir_all(dir.join("assets")).unwrap();
     std::fs::write(dir.join("assets/ModuleHost.qml"), &module_host).unwrap();
     std::fs::write(dir.join("assets/ModulesConfig.qml"), &modules_config).unwrap();
+    if let Some(slot) = &bar_slot {
+        std::fs::write(dir.join("assets/BarSlot.qml"), slot).unwrap();
+    }
     let patch_bytes = serde_json::to_vec_pretty(&patches).unwrap();
     std::fs::write(
         dir.join("patches.json"),
@@ -306,7 +323,7 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
     )
     .unwrap();
     let patch_canonical = serde_json::to_vec(&patches).unwrap();
-    let manifest = serde_json::json!({
+    let mut manifest = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol,
         "contentId": content_id,
@@ -314,6 +331,9 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
         "modulesConfigSha256": sha256_bytes(&modules_config),
         "patchesSha256": sha256_bytes(&patch_canonical),
     });
+    if let Some(slot) = &bar_slot {
+        manifest["barSlotSha256"] = serde_json::json!(sha256_bytes(slot));
+    }
     std::fs::write(
         dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap() + "\n",
@@ -1129,7 +1149,7 @@ fn reapply_rolls_back_all_state_when_later_translation_write_fails() {
 
     std::fs::write(
         w.ii().join("modules/ii/bar/BarContent.qml"),
-        "Item {\n    property string updatedStock: \"before failed reapply\"\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
+        "import qs.modules.common.functions\n\nItem {\n    property string updatedStock: \"before failed reapply\"\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
     )
     .unwrap();
     std::fs::write(
