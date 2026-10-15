@@ -61,6 +61,15 @@ Owner (Discord): asked for the osu! indicator, "想要美美的". Built
   anchor still unique); all 11 dry-runs pass. memory_center is deliberately
   not released: open P2 (ConfigLoader materializing guard) says harden at
   its next release.
+- ✅ Released from main d9dbb9c: iimod/v1.5.0, activewindow_fix 1.0.0,
+  adaptive_bar 1.0.0, animation_tuner 1.0.1, battery_trend 1.3.0,
+  clock_popup_slim 3.0.0, indicator_tools 3.4.7, network_traffic 1.7.0,
+  screentime 1.6.0 (release + Pages workflows green). osu_indicator 1.0.0
+  failed in CI: `requires.system` made `osu-state` a hard dependency and
+  the runner has no such binary. The schema has no optional flag and the
+  module only hides without the daemon, so 1.0.1 drops the requirement and
+  documents it as optional in the README; the dangling v1.0.0 tag (no
+  Release was created) was deleted locally and on origin.
 - Unreleased versions after the merge (no tags/releases yet): iimod 1.5.0
   (last release 1.2.0), adaptive_bar 1.0.0, osu_indicator 1.0.0,
   clock_popup_slim 3.0.0, battery_trend 1.3.0, memory_center 1.2.0,
