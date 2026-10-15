@@ -463,6 +463,10 @@ mod tests {
         assert!(slot.contains("opacity: current ? 1 : 0"));
         assert!(slot.contains("enabled: current"));
         assert!(!slot.contains("visible: current"));
+        // Hover ignores Item.enabled: a faded-out page is parked out of the
+        // window by a transform (never by visibility or geometry changes).
+        assert!(slot.contains("readonly property bool parked: !current && opacity === 0"));
+        assert!(slot.contains("transform: Translate { y: pageRow.parked ? 4096 : 0 }"));
         // Reserved width of the widest page keeps neighbours still.
         assert!(slot.contains("width: root.pagesWidth"));
         // Modules render in bar order within their page.

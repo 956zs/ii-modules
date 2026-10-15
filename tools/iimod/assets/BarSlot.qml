@@ -148,6 +148,15 @@ Item {
                     spacing: 9
                     opacity: current ? 1 : 0
                     enabled: current
+                    // Hover is delivered by geometry alone: Qt 6 ignores
+                    // Item.enabled for hover and MouseArea.hoverEnabled is
+                    // independent of it, so a faded-out page would still pop
+                    // its modules' tooltips. Once the fade has finished the
+                    // row is shoved out of the bar window with a transform,
+                    // which leaves anchors, implicit sizes (reserved width)
+                    // and effective visibility untouched.
+                    readonly property bool parked: !current && opacity === 0
+                    transform: Translate { y: pageRow.parked ? 4096 : 0 }
                     // Slight rise on entry, drop on exit, with the fade.
                     anchors.verticalCenterOffset: current ? 0 : 6
                     anchors.verticalCenter: parent.verticalCenter
