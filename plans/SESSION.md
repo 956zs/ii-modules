@@ -1,3 +1,15 @@
+## 2026-10-16 osu-state quit grace
+
+Owner: quitting a map midway left the indicator/hook "busy" for the full
+120 s cooldown. Daemon journal confirmed detection was instant (playing ->
+cooldown within 1 s); the semantics were wrong, not the detection.
+Fix in `~/Desktop/github/osu-state`: `quit_grace_secs` (default 10) applies
+when a play ends without `entered *ResultsScreen`; the results screen (only
+after a completed map) upgrades the pending cooldown to `grace_secs`.
+Tracker tests cover completed / quit / retry / zero grace. Live: the owner
+was playing while this was built, and the global hook correctly denied the
+`cargo build` (waited with `osu-state wait-free`).
+
 ## 2026-10-15 osu_indicator bar module (plan section 4)
 
 Owner (Discord): asked for the osu! indicator, "想要美美的". Built
