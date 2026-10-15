@@ -37,6 +37,28 @@ Owner (Discord): asked for the osu! indicator, "想要美美的". Built
 - Note: on this palette the theme primary is near-white, so "theme" accent
   reads white; osu! pink is one switch away in Settings > Modules.
 
+## 2026-10-16 project tidy-up and publish
+
+- ✅ PR #26 (feat/bar-shelf, 30 commits: adaptive_bar, clock_popup_slim
+  3.0.0, iimod 1.5.0 bar pages/order/hover fix, osu_indicator 1.0.0, plan
+  docs) passed CI and merged to main at 5c75a08; local branches
+  feat/bar-shelf and feat/adaptive-bar-layout removed.
+- ✅ Pages deploy on that merge failed: VitePress dead link
+  `./../adaptive_bar/index` from clock_popup_slim's README, whose
+  repository-relative `../adaptive_bar/` link is inlined into
+  `/docs/modules/<id>`. Fix in `site/scripts/module-catalog.mjs`:
+  `rewriteModuleLinks` maps `../<id>/`, `../<id>`, `../<id>/README(.en).md`
+  (+anchor) of catalog modules to `./<id>` for both locales; other relative
+  links untouched. `site/public/registry.json` regenerated (osu_indicator
+  was missing). Local `npm run build` (catalog, 49 tests, tsc, vite,
+  vitepress) exits 0.
+- Unreleased versions after the merge (no tags/releases yet): iimod 1.5.0
+  (last release 1.2.0), adaptive_bar 1.0.0, osu_indicator 1.0.0,
+  clock_popup_slim 3.0.0, battery_trend 1.3.0, memory_center 1.2.0,
+  activewindow_fix 1.0.0, animation_tuner 1.0.1, indicator_tools 3.4.7
+  (3.4.5 released), network_traffic 1.7.0 (1.6.1), screentime 1.6.0 (1.5.0).
+  Releasing is the owner's call (`tools/release/publish.sh ... --push`).
+
 ## 2026-10-16 bar order (arrange bar modules)
 
 Owner asked whether the Bartender-style paging lets them arrange bar module
