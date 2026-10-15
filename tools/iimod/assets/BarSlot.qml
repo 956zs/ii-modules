@@ -24,6 +24,9 @@ Item {
     property var ids: []
     // JSON-encoded map of module id -> page index (0 = main page).
     property string pagesJson: "{}"
+    // JSON-encoded array of module ids: listed ids come first in this order
+    // (first id is rightmost), unlisted ids follow in `ids` order.
+    property string orderJson: "[]"
     // Pointer currently over the bar's right section.
     property bool barHovered: false
     // Index into pageList of the page shown; 0 is the main page.
@@ -36,6 +39,19 @@ Item {
         } catch (error) {
             return {};
         }
+    }
+    readonly property var orderList: {
+        try {
+            const parsed = JSON.parse(root.orderJson || "[]");
+            return Array.isArray(parsed) ? Array.from(new Set(parsed.filter(id => typeof id === "string"))) : [];
+        } catch (error) {
+            return [];
+        }
+    }
+    // Enabled ids in display order; see orderJson.
+    readonly property var orderedIds: {
+        const ids = root.ids ?? [];
+        return root.orderList.filter(id => ids.includes(id)).concat(ids.filter(id => !root.orderList.includes(id)));
     }
     function pageOf(id) {
         const page = Number(root.pageMap[id]);
@@ -147,7 +163,7 @@ Item {
                     Component.onDestruction: Qt.callLater(root.recomputeWidth)
 
                     Repeater {
-                        model: (root.ids ?? []).filter(id => root.pageOf(id) === pageRow.modelData)
+                        model: root.orderedIds.filter(id => root.pageOf(id) === pageRow.modelData)
                         delegate: Loader {
                             required property string modelData
                             readonly property bool shown: item !== null && item.visible

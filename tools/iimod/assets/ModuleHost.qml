@@ -89,5 +89,25 @@ Scope {
             else delete pages[id];
             Config.options.iimp.barPagesJson = JSON.stringify(pages);
         }
+        // Bar order: place a bar module at a 1-based position among the
+        // enabled bar modules (1 = rightmost in the horizontal bar, topmost
+        // in the vertical bar). The stored array lists every enabled bar id
+        // in display order; ids no longer enabled keep their slot at the end
+        // so they do not shadow enabled modules' positions.
+        function setOrder(id: string, position: int): void {
+            const ids = [...(Config.options.iimp.enabledBar ?? [])];
+            if (!ids.includes(id)) return;
+            let stored = [];
+            try {
+                const parsed = JSON.parse(Config.options.iimp.barOrderJson ?? "[]");
+                if (Array.isArray(parsed)) stored = Array.from(new Set(parsed.filter(x => typeof x === "string")));
+            } catch (error) {
+                stored = [];
+            }
+            const current = stored.filter(x => ids.includes(x)).concat(ids.filter(x => !stored.includes(x)));
+            current.splice(current.indexOf(id), 1);
+            current.splice(Math.max(0, Math.min(position - 1, current.length)), 0, id);
+            Config.options.iimp.barOrderJson = JSON.stringify(current.concat(stored.filter(x => !ids.includes(x))));
+        }
     }
 }

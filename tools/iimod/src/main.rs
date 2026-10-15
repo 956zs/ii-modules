@@ -110,6 +110,13 @@ enum Command {
         #[arg(value_parser = clap::value_parser!(u32).range(1..=99))]
         page: u32,
     },
+    /// Place a bar module at a position among the enabled bar modules
+    /// (1 = rightmost in the horizontal bar, topmost in the vertical bar)
+    Order {
+        id: String,
+        #[arg(value_parser = clap::value_parser!(u32).range(1..=99))]
+        position: u32,
+    },
     /// List installed modules and their states
     List,
     /// Show full registry record for one module
@@ -228,6 +235,7 @@ fn run() -> anyhow::Result<()> {
         Command::Enable { id } => commands::cmd_set_state(&id, true),
         Command::Disable { id } => commands::cmd_set_state(&id, false),
         Command::Page { id, page } => commands::cmd_page(&id, page),
+        Command::Order { id, position } => commands::cmd_order(&id, position),
         Command::List => commands::cmd_list(),
         Command::Info { id } => commands::cmd_info(&id),
         Command::Pack {
