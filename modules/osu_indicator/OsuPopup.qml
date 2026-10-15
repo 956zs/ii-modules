@@ -13,10 +13,10 @@ import "OsuStateLogic.js" as Logic
  */
 StyledPopup {
     id: root
-    required property var osu
+    required property var reader
 
     function stateLabel() {
-        switch (root.osu.state) {
+        switch (root.reader.state) {
         case "playing":
             return Translation.tr("Playing");
         case "cooldown":
@@ -31,7 +31,7 @@ StyledPopup {
     }
 
     function stateIcon() {
-        switch (root.osu.state) {
+        switch (root.reader.state) {
         case "playing":
             return "play_circle";
         case "cooldown":
@@ -78,33 +78,33 @@ StyledPopup {
                 Layout.fillWidth: true
                 icon: "schedule"
                 label: Translation.tr("For:")
-                value: Logic.formatDuration(root.osu.elapsedSecs)
+                value: Logic.formatDuration(root.reader.elapsedSecs)
             }
             StyledPopupValueRow {
-                visible: root.osu.state === "cooldown"
+                visible: root.reader.state === "cooldown"
                 Layout.fillWidth: true
                 icon: "timer"
                 label: Translation.tr("Back to menu in:")
-                value: Logic.formatDuration(root.osu.cooldownLeftSecs)
+                value: Logic.formatDuration(root.reader.cooldownLeftSecs)
             }
             StyledPopupValueRow {
-                visible: root.osu.beatmap.title !== ""
+                visible: root.reader.beatmap.title !== ""
                 Layout.fillWidth: true
                 icon: "music_note"
-                label: root.osu.state === "playing" ? Translation.tr("Map:") : Translation.tr("Last map:")
-                value: root.osu.beatmap.title
+                label: root.reader.state === "playing" ? Translation.tr("Map:") : Translation.tr("Last map:")
+                value: root.reader.beatmap.title
             }
             StyledPopupValueRow {
-                visible: root.osu.beatmap.difficulty !== ""
+                visible: root.reader.beatmap.difficulty !== ""
                 Layout.fillWidth: true
                 icon: "speed"
                 label: Translation.tr("Difficulty:")
-                value: root.osu.beatmap.mapper !== "" ? `${root.osu.beatmap.difficulty} · ${root.osu.beatmap.mapper}` : root.osu.beatmap.difficulty
+                value: root.reader.beatmap.mapper !== "" ? `${root.reader.beatmap.difficulty} · ${root.reader.beatmap.mapper}` : root.reader.beatmap.difficulty
             }
         }
 
         StyledText {
-            visible: root.osu.state === "playing" || root.osu.state === "cooldown"
+            visible: root.reader.state === "playing" || root.reader.state === "cooldown"
             Layout.fillWidth: true
             Layout.maximumWidth: 260
             wrapMode: Text.WordWrap

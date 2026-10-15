@@ -187,7 +187,7 @@ BarGroup {
 
         OsuPopup {
             hoverTarget: root
-            osu: osu
+            reader: osu
         }
     }
 }
