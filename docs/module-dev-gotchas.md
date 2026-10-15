@@ -25,6 +25,27 @@ protocol cannot check for you.
   `baseline`), `property string icon` on a Controls `Button`. Pick
   non-builtin names (`topProcs`, `barAtBottom`, `iconName`). A host asset
   failing this way breaks the whole shell reload, not just one module.
+- Inside a `LazyLoader { component: ... }`, a binding whose property name
+  equals an outer id (`mem: mem`) resolves to the property itself and stays
+  permanently undefined, even though the same pattern works for direct
+  children. The same happens for a property declared on a `StyledPopup`
+  (itself a LazyLoader) root and bound at the use site (`osu: osu` on
+  `OsuPopup` resolved to the popup's own property, so the popup never
+  rendered). Give ids different names from the properties they feed
+  (`memInfo`, `procTop`, `reader: osu`).
+- Never declare `property var` inside a `JsonAdapter`/`JsonObject`:
+  Quickshell's deserializer segfaults writing a JSON object into it.
+  Represent maps as a JSON string property and `JSON.parse` at the reader.
+- `StyledPopup` content loads lazily on first hover, so QML errors inside it
+  never appear at module load. Always hover-open every popup once after
+  editing its content.
+- Quickshell 0.2.1 emits `runningChanged` but no `exited` on
+  `QProcess::FailedToStart`. A fallback chain that waits for `exited` hangs;
+  guard with a zero-delay check on the failed-to-start path (see
+  `modules/network_traffic`).
+- Material Symbols coverage varies by installed font build. Verify a glyph
+  name exists (for example with fontTools against the installed variable
+  font) before shipping an icon name; missing glyphs render as tofu.
 - Bar pages (`iimp.barPagesJson`, host generation 4) keep every page's
   modules instantiated; a module on a non-current page is fully visible in
   QML terms but has `opacity: 0` and `enabled: false` on its page row. Do
