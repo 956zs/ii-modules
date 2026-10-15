@@ -37,6 +37,49 @@ Owner (Discord): asked for the osu! indicator, "想要美美的". Built
 - Note: on this palette the theme primary is near-white, so "theme" accent
   reads white; osu! pink is one switch away in Settings > Modules.
 
+## 2026-10-16 bar order (arrange bar modules)
+
+Owner asked whether the Bartender-style paging lets them arrange bar module
+order. It did not: `enabledBar` is re-sorted alphabetically by
+`ModuleHost.setEnabled` on every flip, so the horizontal bar was always id
+order (first id rightmost). Added ordering at host level, same pattern as
+pages; gen 4 / 1.5.0 is still unreleased so the content changes stay in
+generation 4 (local persisted gen-4 bundle dropped by hand for live test).
+
+- ✅ Config P2 `iimp.barOrderJson`: JSON array of ids, listed ids first in
+  that order (first = rightmost horizontally, topmost vertically), unlisted
+  enabled ids follow in `enabledBar` (alphabetical) order. Stored list keeps
+  disabled ids at the tail so a re-enable returns to its slot. P3 passes
+  `orderJson` to `BarSlot`; P5/P6 vertical models apply the same rule inline
+  (no new host asset, so the bundle layout is unchanged).
+- ✅ `BarSlot.qml` `orderedIds`; `ModuleHost` IPC `setOrder(id, position)`;
+  CLI `iimod order <id> <n>` (1-99, IPC or config.json fallback; the module
+  must be enabled in the bar, exit 7 otherwise); `commands::reorder_bar` is
+  the pure Rust twin of the QML logic.
+- ✅ ModulesConfig: "Bar order: n of m" row with move right/left buttons
+  (up/down labels and icons when `Config.options.bar.vertical`), pure
+  helpers `parseOrderList`/`orderedBarIds`/`moveOrderEntry` in the
+  PURE_LOGIC block.
+- ✅ Tests: Rust unit (`reorder_bar_tests`, hostpatch contracts for P2/P3
+  and the P5/P6 model line), integration
+  `order_and_page_edit_config_when_shell_is_down`, node UI test for the
+  order helpers. 70 unit + 18 i18n + 40 integration + 13 node pass;
+  clippy/fmt clean. The P5/P6 model expressions were also evaluated under
+  node with a stub Config (order applied before the placement filter).
+- ✅ Live (eDP-1): persisted gen-4 bundle rolled back to gen 3 by hand and
+  the gen-4 dir removed (unreleased generation, same loop as 2026-10-15),
+  release binary installed, `reapply` + `verify` all intact (new gen-4
+  contentId 1d0134f5…). `iimod order network_traffic 1`, `screentime 1`,
+  `memory_center 3` over IPC; screenshot of the right section shows page 1
+  right-to-left screentime, memory_center, battery_trend, osu_indicator as
+  configured. Note config.json is written with a delay, so reading it right
+  after the IPC call shows the previous value. Order restored to the
+  alphabetical equivalent afterwards.
+- ⏳ Not covered live: ModulesConfig move buttons (click path), vertical
+  bar, bar.bottom.
+- Docs: README (zh) bar order paragraph, `docs/module-dev-gotchas.md` note
+  that `enabledBar` is never the display order.
+
 ## 2026-10-15 bar pages (Bartender-style in-place paging of bar modules)
 
 Owner (via Discord bridge): the bar is out of room. First asked to verify the

@@ -53,6 +53,11 @@ protocol cannot check for you.
   click simply do not arrive while the page is away. The slot reserves the
   width of the widest page, so a module that grows on page 2 widens the slot
   on page 1 as well.
+- Bar order (`iimp.barOrderJson`, host generation 4) is a JSON array of ids;
+  `enabledBar` itself stays alphabetical (the host re-sorts it on every
+  enable/disable), so never read `enabledBar` as the display order. Listed
+  ids render first, unlisted ones follow alphabetically, and the horizontal
+  bar's first id is the rightmost one.
 
 ## IIMP / iimod workflow
 
