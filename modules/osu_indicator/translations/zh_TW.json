@@ -1,0 +1,22 @@
+{
+  "Accent colour": "強調色",
+  "Approach circle animation while playing": "打圖時顯示 approach circle 動畫",
+  "Back to menu in:": "回到選單倒數：",
+  "Between maps": "兩圖之間",
+  "Both off: the pill appears only while a map is being played or just finished.": "兩者都關閉時，膠囊只在正在打圖或剛打完時出現。",
+  "Difficulty:": "難度：",
+  "For:": "已持續：",
+  "Heavy builds wait while this shows.": "此膠囊顯示期間，重量級編譯會先等候。",
+  "In the menus": "在選單中",
+  "Last map:": "上一張圖：",
+  "Map:": "目前的圖：",
+  "Not running": "未執行",
+  "Open in the background": "在背景開著",
+  "Playing": "打圖中",
+  "Show play time and cooldown countdown": "顯示打圖時間與冷卻倒數",
+  "Show while osu! is in the background": "osu! 在背景時也顯示",
+  "Show while osu! is in the menus": "osu! 在選單時也顯示",
+  "The pill reads $XDG_RUNTIME_DIR/osu-state.json written by the osu-state daemon; it detects nothing itself.": "膠囊只讀取 osu-state daemon 寫入的 $XDG_RUNTIME_DIR/osu-state.json，本身不做任何偵測。",
+  "Theme": "主題",
+  "osu! pink": "osu! 粉紅"
+}
