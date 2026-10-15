@@ -70,6 +70,15 @@ Owner (Discord): asked for the osu! indicator, "想要美美的". Built
   module only hides without the daemon, so 1.0.1 drops the requirement and
   documents it as optional in the README; the dangling v1.0.0 tag (no
   Release was created) was deleted locally and on origin.
+- ✅ Owner: "順手做一下" → memory_center 1.2.1: ConfigLoader converged on
+  `lib/ConfigLoader.template.qml` (materializing guard, blockWrites,
+  atomicWrites), allowlist entry removed, ISSUES P2 and the translation
+  store-drift P3 closed. check-configloader 0 undeclared deviations,
+  validate/i18n/node 21 pass, dry-run verified. Live upgrade 1.2.0 → 1.2.1
+  with --allow-patches: verify intact, popup renders on page 2, external
+  touch of the options file causes no write back, live zh_TW value restored.
+  animation_tuner's allowlist entry remains (not touched; released 1.0.1
+  earlier today without converging).
 - Unreleased versions after the merge (no tags/releases yet): iimod 1.5.0
   (last release 1.2.0), adaptive_bar 1.0.0, osu_indicator 1.0.0,
   clock_popup_slim 3.0.0, battery_trend 1.3.0, memory_center 1.2.0,

@@ -23,18 +23,15 @@
 ## ConfigLoader drift convergence (2026-08-24)
 
 - 🟢 P3: `lib/ConfigLoader.template.qml` + `tools/lib-sync/check-configloader.mjs`
-  now define and enforce skeleton invariants; `animation_tuner` and
-  `memory_center` deviations are allowlisted with reasons in
-  `tools/lib-sync/allowlist.json`. Converge each at its next release:
-  add `blockWrites`/`atomicWrites` and a materializing (or writable-echo)
-  guard, then remove the allowlist entries.
-- 🟡 P2 (latent): `memory_center/ConfigLoader.qml:21` has an unconditional
-  `onAdapterUpdated: writeAdapter()` with no materializing guard. If
-  Quickshell fires adapterUpdated for load-driven value changes, every
-  external file change makes every instance (per-monitor bars + settings)
-  write back — a cross-instance echo. Same pre-template generation as the
-  battery_trend loader had. Verify against Quickshell FileView semantics and
-  harden at next memory_center release.
+  now define and enforce skeleton invariants; the `animation_tuner`
+  deviation is allowlisted with reasons in `tools/lib-sync/allowlist.json`.
+  Converge it at its next release: add `blockWrites`/`atomicWrites` and a
+  materializing (or writable-echo) guard, then remove the allowlist entry.
+  `memory_center` converged in 1.2.1 (2026-10-16) and left the allowlist.
+- ✅ P2 resolved (2026-10-16): `memory_center/ConfigLoader.qml` now carries
+  the golden-master skeleton (`materializing` guard, `blockWrites`,
+  `atomicWrites`, FileNotFound-only materialization). Live 1.2.1: an
+  external `touch` of `modules/memory_center.json` triggers no write back.
 
 ## Module follow-ups from 2026-08-24 fix round
 
@@ -58,11 +55,9 @@
 - 🟡 P2 iimod upgrade semantics: `iimod install <newer>` of a Disabled module
   re-enables it (sandbox evidence with clock_popup_slim 2.1.0 -> 3.0.0). Use
   `--no-enable` until upgrades preserve the previous state.
-- 🟢 P3 memory_center store drift: live store memory_center 1.2.0 has zh_TW
-  "Show percentage in the bar" = "Bar 上顯示百分比" while the repo source,
-  still version 1.2.0, says "在狀態列中顯示百分比" (same version, different
-  content), so every install warns about conflicting contributors. Release a
-  patch version and reinstall.
+- ✅ P3 memory_center store drift resolved (2026-10-16): 1.2.1 installed
+  over the drifted 1.2.0 store without a conflicting-contributor warning;
+  live zh_TW "Show percentage in the bar" is the repo value again.
 
 ## Bar pages follow-ups (2026-10-15)
 
