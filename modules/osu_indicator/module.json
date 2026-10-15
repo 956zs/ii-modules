@@ -1,0 +1,39 @@
+{
+  "protocolVersion": 1,
+  "id": "osu_indicator",
+  "name": {
+    "en_US": "osu! Play Indicator",
+    "zh_TW": "osu! 遊玩指標",
+    "zh_CN": "osu! 游玩指示器"
+  },
+  "description": {
+    "en_US": "Shows whether osu!lazer is open, in the menus, playing a map, or between maps, as a hit-circle pill with an approach-circle animation, elapsed play time or cooldown countdown, and a hover popup with the current beatmap. Reads only the osu-state daemon's state file; nothing is detected by the module itself.",
+    "zh_TW": "以打擊圈樣式的膠囊顯示 osu!lazer 是開著、在選單、正在打圖還是剛打完：打圖時有 approach circle 動畫，旁邊顯示已打時間或冷卻倒數，hover 彈窗顯示目前的圖。只讀 osu-state daemon 的狀態檔，模組本身不做任何偵測。",
+    "zh_CN": "以打击圈样式的胶囊显示 osu!lazer 是开着、在菜单、正在打图还是刚打完：打图时有 approach circle 动画，旁边显示已打时间或冷却倒计时，悬停弹窗显示当前的图。只读 osu-state daemon 的状态文件，模块本身不做任何检测。"
+  },
+  "version": "1.0.0",
+  "authors": ["nlcat"],
+  "license": "MIT",
+  "slots": ["bar"],
+  "entries": {
+    "bar": "bar.qml",
+    "settings": "settings.qml"
+  },
+  "requires": {
+    "system": [
+      {"bin": "osu-state", "hint": "osu-state daemon (separate project by the same author) writes $XDG_RUNTIME_DIR/osu-state.json; without it the pill stays hidden"}
+    ]
+  },
+  "compat": {
+    "probes": [
+      {"type": "file-exists", "path": "modules/ii/bar/BarGroup.qml", "reason": "bar group container for the pill look"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopup.qml", "reason": "hover popup component"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopupValueRow.qml", "reason": "label/value rows in the popup"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSwitch.qml", "reason": "toggle options in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSelectionArray.qml", "reason": "accent choice in the settings fragment"},
+      {"type": "file-contains", "path": "modules/common/Appearance.qml", "pattern": "property QtObject elementMoveFast", "reason": "colour and motion transitions use the stock fast preset"}
+    ],
+    "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.2.1"}
+  },
+  "capabilities": []
+}

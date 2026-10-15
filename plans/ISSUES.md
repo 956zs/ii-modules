@@ -45,3 +45,38 @@
 - 🟢 P3 network_traffic: pktz truncates comm names to 15 chars
   ("laptop-monitor-", "RvControlSvc.ex") — cosmetic naming in the per-app
   list, accounting unaffected.
+
+## Adaptive bar follow-ups (2026-10-14)
+
+- 🟢 P3 iimod host P5/P6 (vertical bar): bar-slot Loaders still reserve the
+  implicit height of modules that hide their own root (same defect P3 had
+  before host generation 3). Not live-verifiable without switching the user's
+  bar to vertical; apply the Column equivalent of the P3 Row fix.
+- 🟢 P3 iimod host P3: when at least one bar module is enabled but every one
+  hides itself, the right-section RowLayout still adds one 5 px spacing (only
+  an invisible layout child drops it, and hiding from item.visible latches).
+- 🟡 P2 iimod upgrade semantics: `iimod install <newer>` of a Disabled module
+  re-enables it (sandbox evidence with clock_popup_slim 2.1.0 -> 3.0.0). Use
+  `--no-enable` until upgrades preserve the previous state.
+- 🟢 P3 memory_center store drift: live store memory_center 1.2.0 has zh_TW
+  "Show percentage in the bar" = "Bar 上顯示百分比" while the repo source,
+  still version 1.2.0, says "在狀態列中顯示百分比" (same version, different
+  content), so every install warns about conflicting contributors. Release a
+  patch version and reinstall.
+
+## Bar pages follow-ups (2026-10-15)
+
+- 🟢 P3 iimod host dev loop: a changed asset at the same HOST_GENERATION is a
+  content collision (fails closed by design), so iterating on an unreleased
+  generation requires hand-editing `~/.local/share/iimp/host/`. Consider a
+  `doctor --drop-generation <n>` guarded to generations newer than the last
+  released one.
+- 🟢 P3 `ensure_host` writes host assets but never prunes files no longer in
+  the bundle; a renamed asset leaves the old file in `$II/mod/iimp/`.
+- 🟢 P3 bar pages reserve the widest page's width; a module that only grows
+  on a secondary page also widens the main page. Acceptable for now; a
+  per-page width with animated resize would need adaptive_bar to tolerate
+  the churn.
+- 🟢 P3 adaptive_bar could page modules automatically when the right section
+  overflows (would write `barPagesJson`, churning config.json); deferred,
+  explicit pages only for now.

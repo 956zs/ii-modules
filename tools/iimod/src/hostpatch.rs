@@ -56,11 +56,27 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                     // supported representation; consumers JSON.parse it and
                     // reassign the whole string to trigger change notification.
                     "                property string barPlacementsJson: \"{}\"\n",
+                    // Horizontal bar pages: JSON-encoded map of module id -> page
+                    // index (0 = main page, the default). Same string encoding
+                    // rationale as barPlacementsJson.
+                    "                property string barPagesJson: \"{}\"\n",
+                    // Bar order: JSON-encoded array of module ids. Enabled bar
+                    // modules listed here come first, in this order (first id is
+                    // rightmost in the horizontal bar, topmost in the vertical
+                    // bar); unlisted ones follow in enabledBar order.
+                    "                property string barOrderJson: \"[]\"\n",
                     "            }\n",
                 ),
             ),
         ),
-        // P3: bar slot host (renders left of the Weather group).
+        // P3: bar slot host (renders left of the Weather group). The BarSlot
+        // host asset owns the module Loaders and Bartender-style pages
+        // (iimp.barPagesJson): one page shown at a time, every page kept
+        // instantiated, width reserved for the widest page so nothing beside
+        // it moves on a switch. The explicit preferred width stops the
+        // RowLayout from latching the slot's last width when every module is
+        // hidden; visibility follows the model count only, never a module's
+        // effective visibility.
         (
             "modules/ii/bar/BarContent.qml",
             p(
@@ -68,14 +84,15 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                 PatchOp::InsertBefore,
                 "// Weather",
                 concat!(
-                    "            Repeater {\n",
-                    "                model: Config.options.iimp?.enabledBar ?? []\n",
-                    "                delegate: Loader {\n",
-                    "                    required property string modelData\n",
-                    "                    Layout.leftMargin: 4\n",
-                    "                    source: Quickshell.shellPath(`mod/${modelData}/bar.qml`)\n",
-                    "                    onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] bar module failed: ${modelData}`)\n",
-                    "                }\n",
+                    "            BarSlot {\n",
+                    "                // Bar-slot modules with pages; see mod/iimp/BarSlot.qml.\n",
+                    "                ids: Config.options.iimp?.enabledBar ?? []\n",
+                    "                pagesJson: Config.options.iimp?.barPagesJson ?? \"{}\"\n",
+                    "                orderJson: Config.options.iimp?.barOrderJson ?? \"[]\"\n",
+                    "                barHovered: barRightSideMouseArea.hovered\n",
+                    "                Layout.preferredWidth: implicitWidth\n",
+                    "                Layout.leftMargin: implicitWidth > 0 ? 4 : 0\n",
+                    "                Layout.fillHeight: true\n",
                     "            }\n",
                 ),
             ),
@@ -104,7 +121,9 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
         // upward into the centred clock/battery group). Declaration order
         // puts modules above the sidebar button; with none enabled the bar
         // is stock-identical. Modules read Config.options.bar.vertical
-        // (baseline API) to adapt their layout.
+        // (baseline API) to adapt their layout. Model order: ids listed in
+        // iimp.barOrderJson first (top to bottom), the rest in enabledBar
+        // order — the same rule BarSlot.qml applies to the horizontal bar.
         (
             VERTICAL_BAR_FILE,
             p(
@@ -113,7 +132,7 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                 "spacing: 10",
                 concat!(
                     "            Repeater {\n",
-                    "                model: (Config.options.iimp?.enabledBar ?? []).filter(id => ((JSON.parse(Config.options.iimp?.barPlacementsJson ?? \"{}\"))[id] ?? \"top\") !== \"bottom\")\n",
+                    "                model: ((ids, order) => order.filter(id => ids.includes(id)).concat(ids.filter(id => !order.includes(id))))(Config.options.iimp?.enabledBar ?? [], JSON.parse(Config.options.iimp?.barOrderJson ?? \"[]\")).filter(id => ((JSON.parse(Config.options.iimp?.barPlacementsJson ?? \"{}\"))[id] ?? \"top\") !== \"bottom\")\n",
                     "                delegate: Loader {\n",
                     "                    required property string modelData\n",
                     "                    required property int index\n",
@@ -140,7 +159,7 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                 "Bar.SysTray {",
                 concat!(
                     "            Repeater {\n",
-                    "                model: (Config.options.iimp?.enabledBar ?? []).filter(id => ((JSON.parse(Config.options.iimp?.barPlacementsJson ?? \"{}\"))[id] ?? \"top\") === \"bottom\")\n",
+                    "                model: ((ids, order) => order.filter(id => ids.includes(id)).concat(ids.filter(id => !order.includes(id))))(Config.options.iimp?.enabledBar ?? [], JSON.parse(Config.options.iimp?.barOrderJson ?? \"[]\")).filter(id => ((JSON.parse(Config.options.iimp?.barPlacementsJson ?? \"{}\"))[id] ?? \"top\") === \"bottom\")\n",
                     "                delegate: Loader {\n",
                     "                    required property string modelData\n",
                     "                    Layout.alignment: Qt.AlignHCenter\n",
@@ -150,6 +169,18 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                     "                }\n",
                     "            }\n",
                 ),
+            ),
+        ),
+        // P7: BarContent import for the host types used by P3 (BarSlot).
+        // Shares its anchor line with module patches (e.g. adaptive_bar);
+        // anchors resolve against stripped stock text, so both coexist.
+        (
+            "modules/ii/bar/BarContent.qml",
+            p(
+                7,
+                PatchOp::InsertAfter,
+                "import qs.modules.common.functions",
+                "import qs.mod.iimp\n",
             ),
         ),
     ]
@@ -262,6 +293,7 @@ pub fn ensure_host(
         paths::host_dir().join("ModulesConfig.qml"),
         &bundle.modules_config_qml,
     )?;
+    std::fs::write(paths::host_dir().join("BarSlot.qml"), &bundle.bar_slot_qml)?;
     if !paths::host_dir().join("ModuleImports.qml").exists() {
         write_module_imports(&[])?;
     }
@@ -354,6 +386,111 @@ mod tests {
         assert!(composed.contains("ModuleHost {}"));
         let (stripped, _) = crate::patch::strip(&composed).unwrap();
         assert_eq!(stripped, shell);
+    }
+
+    #[test]
+    fn horizontal_bar_slot_delegates_to_host_asset() {
+        let patches = embedded_host_patches();
+        let (_, p3) = patches
+            .iter()
+            .find(|(file, p)| *file == "modules/ii/bar/BarContent.qml" && p.index == 3)
+            .expect("P3 present");
+        let content = p3.content.as_str();
+        assert!(content.starts_with("            BarSlot {\n"));
+        assert!(content.ends_with("            }\n"));
+        assert!(content.contains("ids: Config.options.iimp?.enabledBar ?? []\n"));
+        assert!(content.contains("pagesJson: Config.options.iimp?.barPagesJson ?? \"{}\"\n"));
+        assert!(content.contains("orderJson: Config.options.iimp?.barOrderJson ?? \"[]\"\n"));
+        assert!(content.contains("barHovered: barRightSideMouseArea.hovered\n"));
+        assert!(content.contains("Layout.preferredWidth: implicitWidth\n"));
+        // No visibility binding in the patch: the asset decides from its
+        // model count, never from a module's effective visibility.
+        assert!(!content.contains("visible:"));
+        assert_eq!(content.matches('{').count(), content.matches('}').count());
+        // P7 brings the host type into BarContent.
+        let (_, p7) = patches
+            .iter()
+            .find(|(file, p)| *file == "modules/ii/bar/BarContent.qml" && p.index == 7)
+            .expect("P7 present");
+        assert_eq!(p7.content, "import qs.mod.iimp\n");
+        // Config projection declares the page map.
+        let (_, p2) = patches
+            .iter()
+            .find(|(file, p)| *file == "modules/common/Config.qml" && p.index == 2)
+            .expect("P2 present");
+        assert!(p2
+            .content
+            .contains("property string barPagesJson: \"{}\"\n"));
+        assert!(p2
+            .content
+            .contains("property string barOrderJson: \"[]\"\n"));
+    }
+
+    #[test]
+    fn vertical_bar_slots_apply_bar_order_before_placement() {
+        let patches = embedded_host_patches();
+        for index in [5, 6] {
+            let (_, p) = patches
+                .iter()
+                .find(|(file, p)| *file == VERTICAL_BAR_FILE && p.index == index)
+                .expect("vertical patch present");
+            let model = p
+                .content
+                .lines()
+                .find(|l| l.trim_start().starts_with("model:"))
+                .expect("model line");
+            // Listed ids first, unlisted appended in enabledBar order, then
+            // the placement filter — same rule as BarSlot.qml.
+            assert!(model.contains("order.filter(id => ids.includes(id)).concat(ids.filter(id => !order.includes(id)))"));
+            assert!(model.contains("JSON.parse(Config.options.iimp?.barOrderJson ?? \"[]\")"));
+            let order_at = model.find("barOrderJson").unwrap();
+            let filter_at = model
+                .find(".filter(id => ((JSON.parse(Config.options.iimp?.barPlacementsJson")
+                .unwrap();
+            assert!(order_at < filter_at);
+        }
+    }
+
+    #[test]
+    fn bar_slot_asset_keeps_pages_instantiated_and_collapses_hidden_modules() {
+        let slot = include_str!("../assets/BarSlot.qml");
+        // Same collapse rule as before: width, never Loader.visible, follows
+        // item.visible; the root hides only from the model count.
+        assert!(slot.contains("readonly property bool shown: item !== null && item.visible"));
+        assert!(slot.contains("width: shown ? item.implicitWidth : 0"));
+        assert!(slot.contains("visible: (root.ids ?? []).length > 0"));
+        // Non-current pages stay visible (effective visibility!) and fade.
+        assert!(slot.contains("opacity: current ? 1 : 0"));
+        assert!(slot.contains("enabled: current"));
+        assert!(!slot.contains("visible: current"));
+        // Hover ignores Item.enabled: a faded-out page is parked out of the
+        // window by a transform (never by visibility or geometry changes).
+        assert!(slot.contains("readonly property bool parked: !current && opacity === 0"));
+        assert!(slot.contains("transform: Translate { y: pageRow.parked ? 4096 : 0 }"));
+        // Reserved width of the widest page keeps neighbours still.
+        assert!(slot.contains("width: root.pagesWidth"));
+        // Modules render in bar order within their page.
+        assert!(slot.contains("property string orderJson: \"[]\""));
+        assert!(slot.contains(
+            "model: root.orderedIds.filter(id => root.pageOf(id) === pageRow.modelData)"
+        ));
+        assert!(slot.contains("widest = Math.max(widest, page.implicitWidth);"));
+        // Paging: cycle, malformed JSON -> main page, auto return.
+        assert!(slot.contains(
+            "root.pageIndex = root.pageCount > 0 ? (root.pageIndex + 1) % root.pageCount : 0;"
+        ));
+        assert!(slot.contains("return Number.isInteger(page) && page > 0 ? page : 0;"));
+        assert!(slot.contains("interval: 5000"));
+        // No FINAL anchor-line names on the Item root.
+        for name in [
+            "property bool bottom",
+            "property bool top",
+            "property var left",
+            "property var right",
+        ] {
+            assert!(!slot.contains(name), "{name}");
+        }
+        assert_eq!(slot.matches('{').count(), slot.matches('}').count());
     }
 
     #[test]

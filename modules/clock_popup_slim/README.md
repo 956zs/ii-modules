@@ -12,7 +12,6 @@
 - 只顯示時間，或顯示時間、分隔符與日期。
 - 使用 Qt time/date format，例如 `HH:mm:ss`、`hh:mm AP`、`ddd, dd/MM`。
 - 調整內容間距、水平 padding 與時間／日期字級偏移。
-- 以相同上限調整工作區左右的中央區寬度，保持 workspaces 在螢幕中央。
 - 選擇是否在共用 stock popup 隱藏 System uptime 與 To Do。
 - 時間格式包含未被引號包住的 seconds token 時，以每秒精度更新模塊時鐘。
 
@@ -25,9 +24,6 @@
 ```
 
 預設只顯示 `HH:mm`、水平 padding 為 `0`，並啟用精簡 popup。
-`centerSideWidth` 可設為 280-360 px；它是左右兩側的上限，不是固定寬度。
-實作使用 `Math.min(stockResponsiveWidth, centerSideWidth)`，所以較窄 viewport 仍由
-stock responsive width 決定。
 
 模塊不修改 shell `config.json` 或全域時間格式。Lock screen、桌面時鐘與其他使用
 `DateTime.time` 的元件不受影響。
@@ -37,17 +33,25 @@ stock responsive width 決定。
 - 自訂 time/date layout 只取代水平 bar 的 `ClockWidget`。
 - 垂直 bar 保留 stock 堆疊式時鐘，避免單行格式破壞固定寬度版面。
 - `slimPopup` 修改水平與垂直 bar 共用的 stock popup visibility。
-- 中央區寬度依賴目前 `leftCenterGroup` 與 `rightCenterGroup` 結構。
+- 不調整中央左右區塊寬度；寬度上限與窄螢幕自適應由
+  [`adaptive_bar`](../adaptive_bar/) 負責。
 - 模塊沒有 capabilities，也不執行外部命令。
 
 | 相容性 | 值 |
 |---|---|
 | Tested dots commit | `446504ad42` |
 | Tested Quickshell | `0.2.1` |
-| Tier | B，九個 insert-only patches |
+| Tier | B，七個 insert-only patches |
 
 錨點或 probes 因上游改動而失效時，`iimod check` 或 `reapply` 會停止，不會靜默
 套用部分客製化。
+
+## 3.0.0 遷移
+
+3.0.0 移除 `centerSideWidth` 設定與中央群組寬度 patches，避免與
+[`adaptive_bar`](../adaptive_bar/) 同時綁定同一屬性。需要較窄的中央區時，安裝
+`adaptive_bar` 並設定 **Maximum center side width**；舊設定檔中的
+`centerSideWidth` 不再被讀取。
 
 ## 安裝
 
@@ -83,7 +87,6 @@ IIMP 會從乾淨基底重組 stock QML。設定檔會保留，重新安裝時�
 |---|---|
 | `BarContent.qml` import | 載入模塊元件 |
 | stock `ClockWidget` | 隱藏 stock instance，在相同 layout 位置插入 `ClockBar` |
-| 左右中央群組 | 以兩個對稱 `Binding` 套用相同 responsive width 上限 |
 | `ClockWidgetPopup.qml` import/reader | 載入 readonly `ConfigLoader` |
 | Uptime / To Do | 以兩個 visibility patches 跟隨 `slimPopup` |
 

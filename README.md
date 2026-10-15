@@ -52,7 +52,17 @@ iimod update --dry-run   # 查有什麼新版
 iimod update             # 全部更新（Tier B 更新需再次 --allow-patches）
 ```
 
-設定 app（`Ctrl+Super+,`）會多出 **Modules** 頁：開關模塊、看各模塊設定。
+設定 app（`Ctrl+Super+,`）會多出 **Modules** 頁：開關模塊、看各模塊設定、決定 bar
+模塊的擺位。`iimod` 1.5.0（host generation 4）起，水平 bar 的模塊區可以**翻頁**：
+每個 bar 模塊設定它在第幾頁（Modules 頁的「Horizontal bar page」，或
+`iimod page <id> <n>`，1 是主頁），bar 一次只顯示一頁的模塊；用到兩頁以上時模塊區
+右側出現「1/2」按鈕，點一下原地換成下一頁，最後一頁再點回第一頁，滑鼠離開 bar
+5 秒後自動回到第一頁。垂直 bar 不翻頁，仍照 `top`/`bottom` 擺位。
+
+bar 模塊的**排列順序**也可以調：Modules 頁的「Bar order」有往右／往左（垂直 bar
+是往上／往下）兩顆按鈕，或 `iimod order <id> <n>`（n 是在已啟用 bar 模塊中的位置，
+1 最靠近系統列，水平 bar 即最右邊、垂直 bar 即最上面）。順序存在
+`iimp.barOrderJson`，停用再啟用不會丟；沒排過的模塊照 id 字母序接在最後。
 
 `iimod` 1.2.0+ 第一次執行 mutating command 時會在
 `~/.local/share/iimp/lock` 安裝永久 legacy fence，並改由

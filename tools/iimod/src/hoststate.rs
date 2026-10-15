@@ -15,7 +15,7 @@ use crate::patch::{self, PatchInstance};
 use crate::paths;
 use crate::registry::{self, Lock};
 
-pub const HOST_GENERATION: u32 = 2;
+pub const HOST_GENERATION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -42,6 +42,10 @@ struct BundleManifest {
     content_id: String,
     module_host_sha256: String,
     modules_config_sha256: String,
+    // Generation 4+: the bar slot asset. Absent in older persisted bundles,
+    // which carry no slot and must still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bar_slot_sha256: Option<String>,
     patches_sha256: String,
 }
 
@@ -50,6 +54,8 @@ pub struct HostBundle {
     pub descriptor: HostDescriptor,
     pub module_host_qml: Vec<u8>,
     pub modules_config_qml: Vec<u8>,
+    /// Empty for pre-generation-4 bundles.
+    pub bar_slot_qml: Vec<u8>,
     pub patches: Vec<StoredHostPatch>,
 }
 
@@ -84,6 +90,7 @@ pub fn candidate_bundle() -> HostBundle {
         SUPPORTED_PROTOCOL_MAX,
         include_bytes!("../assets/ModuleHost.qml").to_vec(),
         include_bytes!("../assets/ModulesConfig.qml").to_vec(),
+        include_bytes!("../assets/BarSlot.qml").to_vec(),
         hostpatch::embedded_host_patches()
             .into_iter()
             .map(|(target, patch)| StoredHostPatch {
@@ -100,19 +107,26 @@ fn build_bundle(
     protocol_version: u32,
     module_host_qml: Vec<u8>,
     modules_config_qml: Vec<u8>,
+    bar_slot_qml: Vec<u8>,
     mut patches: Vec<StoredHostPatch>,
 ) -> HostBundle {
     patches.sort_by(|a, b| {
         (&a.target, &a.patch.owner, a.patch.index).cmp(&(&b.target, &b.patch.owner, b.patch.index))
     });
-    let canonical = serde_json::to_vec(&serde_json::json!({
+    let mut canonical_value = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol_version,
         "moduleHostQml": String::from_utf8_lossy(&module_host_qml),
         "modulesConfigQml": String::from_utf8_lossy(&modules_config_qml),
         "patches": patches,
-    }))
-    .expect("canonical host serialization");
+    });
+    // Keyed only when present so pre-generation-4 bundles on disk keep
+    // reproducing the content id they were persisted with.
+    if !bar_slot_qml.is_empty() {
+        canonical_value["barSlotQml"] =
+            serde_json::Value::String(String::from_utf8_lossy(&bar_slot_qml).into_owned());
+    }
+    let canonical = serde_json::to_vec(&canonical_value).expect("canonical host serialization");
     let content_id = sha256(&canonical);
     HostBundle {
         descriptor: HostDescriptor {
@@ -122,6 +136,7 @@ fn build_bundle(
         },
         module_host_qml,
         modules_config_qml,
+        bar_slot_qml,
         patches,
     }
 }
@@ -269,6 +284,9 @@ fn persist_bundle(bundle: &HostBundle) -> Result<()> {
         &tmp.join("assets/ModulesConfig.qml"),
         &bundle.modules_config_qml,
     )?;
+    if !bundle.bar_slot_qml.is_empty() {
+        atomic_file(&tmp.join("assets/BarSlot.qml"), &bundle.bar_slot_qml)?;
+    }
     let patches = serde_json::to_vec_pretty(&bundle.patches)?;
     atomic_file(
         &tmp.join("patches.json"),
@@ -280,6 +298,7 @@ fn persist_bundle(bundle: &HostBundle) -> Result<()> {
         content_id: bundle.descriptor.content_id.clone(),
         module_host_sha256: sha256(&bundle.module_host_qml),
         modules_config_sha256: sha256(&bundle.modules_config_qml),
+        bar_slot_sha256: (!bundle.bar_slot_qml.is_empty()).then(|| sha256(&bundle.bar_slot_qml)),
         patches_sha256: sha256(&serde_json::to_vec(&bundle.patches)?),
     };
     let bytes = serde_json::to_vec_pretty(&manifest)?;
@@ -311,9 +330,17 @@ fn load_bundle_from_dir(descriptor: &HostDescriptor, dir: &Path) -> Result<HostB
     }
     let module_host_qml = read_required(&dir.join("assets/ModuleHost.qml"))?;
     let modules_config_qml = read_required(&dir.join("assets/ModulesConfig.qml"))?;
+    let bar_slot_qml = match &manifest.bar_slot_sha256 {
+        Some(_) => read_required(&dir.join("assets/BarSlot.qml"))?,
+        None => Vec::new(),
+    };
     let patches: Vec<StoredHostPatch> = read_json(&dir.join("patches.json"), "host patches")?;
     if sha256(&module_host_qml) != manifest.module_host_sha256
         || sha256(&modules_config_qml) != manifest.modules_config_sha256
+        || manifest
+            .bar_slot_sha256
+            .as_deref()
+            .is_some_and(|expected| sha256(&bar_slot_qml) != expected)
         || sha256(&serde_json::to_vec(&patches)?) != manifest.patches_sha256
     {
         return Err(bail(exit::STATE, "host bundle integrity check failed"));
@@ -323,6 +350,7 @@ fn load_bundle_from_dir(descriptor: &HostDescriptor, dir: &Path) -> Result<HostB
         manifest.protocol_version,
         module_host_qml,
         modules_config_qml,
+        bar_slot_qml,
         patches,
     );
     if rebuilt.descriptor.content_id != descriptor.content_id {
@@ -422,6 +450,11 @@ pub fn live_matches(bundle: &HostBundle) -> Result<bool> {
             .ok()
             .as_deref()
             != Some(bundle.modules_config_qml.as_slice())
+        || (!bundle.bar_slot_qml.is_empty()
+            && fs::read(paths::host_dir().join("BarSlot.qml"))
+                .ok()
+                .as_deref()
+                != Some(bundle.bar_slot_qml.as_slice()))
     {
         return Ok(false);
     }
@@ -555,6 +588,7 @@ mod tests {
             content_id: "b".repeat(64),
             module_host_sha256: "c".repeat(64),
             modules_config_sha256: "d".repeat(64),
+            bar_slot_sha256: None,
             patches_sha256: "e".repeat(64),
         };
         let bytes = serde_json::to_vec(&manifest).unwrap();
@@ -583,6 +617,7 @@ mod tests {
             content_id: descriptor.content_id.clone(),
             module_host_sha256: "0".repeat(64),
             modules_config_sha256: "0".repeat(64),
+            bar_slot_sha256: None,
             patches_sha256: "0".repeat(64),
         };
         std::fs::write(
@@ -605,8 +640,45 @@ mod tests {
             base.descriptor.protocol_version,
             base.module_host_qml.clone(),
             base.modules_config_qml.clone(),
+            base.bar_slot_qml.clone(),
             changed,
         );
         assert_ne!(base.descriptor.content_id, other.descriptor.content_id);
+    }
+
+    #[test]
+    fn canonical_id_covers_bar_slot_and_legacy_bundles_omit_it() {
+        let base = candidate_bundle();
+        assert!(!base.bar_slot_qml.is_empty());
+        let mut slot = base.bar_slot_qml.clone();
+        slot.extend_from_slice(b"\n// changed\n");
+        let other = build_bundle(
+            base.descriptor.generation,
+            base.descriptor.protocol_version,
+            base.module_host_qml.clone(),
+            base.modules_config_qml.clone(),
+            slot,
+            base.patches.clone(),
+        );
+        assert_ne!(base.descriptor.content_id, other.descriptor.content_id);
+
+        // A generation-3 style bundle (no slot) must hash exactly as before.
+        let legacy = build_bundle(
+            3,
+            base.descriptor.protocol_version,
+            base.module_host_qml.clone(),
+            base.modules_config_qml.clone(),
+            Vec::new(),
+            base.patches.clone(),
+        );
+        let canonical = serde_json::to_vec(&serde_json::json!({
+            "generation": 3,
+            "protocolVersion": base.descriptor.protocol_version,
+            "moduleHostQml": String::from_utf8_lossy(&base.module_host_qml),
+            "modulesConfigQml": String::from_utf8_lossy(&base.modules_config_qml),
+            "patches": base.patches,
+        }))
+        .unwrap();
+        assert_eq!(legacy.descriptor.content_id, sha256(&canonical));
     }
 }

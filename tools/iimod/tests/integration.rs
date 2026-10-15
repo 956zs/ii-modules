@@ -6,6 +6,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
+/// Mirrors `hoststate::HOST_GENERATION` of the binary under test. Fixtures
+/// derive "newer" and "stale" generations from it, and
+/// `newer_candidate_upgrades_older_descriptor` fails if the two drift apart.
+const CURRENT_HOST_GENERATION: u64 = 4;
+
 fn bin() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_BIN_EXE_iimod"));
     assert!(p.exists(), "binary missing: {}", p.display());
@@ -34,7 +39,7 @@ fn write_stock_tree(ii: &Path) {
     .unwrap();
     std::fs::write(
         ii.join("modules/ii/bar/BarContent.qml"),
-        "Item {\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
+        "import qs.modules.common.functions\n\nItem {\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
     )
     .unwrap();
     std::fs::write(
@@ -212,16 +217,20 @@ fn rewrite_current_bundle(w: &World, generation: u64, protocol: u64) {
     ));
     let module_host = std::fs::read(old_dir.join("assets/ModuleHost.qml")).unwrap();
     let modules_config = std::fs::read(old_dir.join("assets/ModulesConfig.qml")).unwrap();
+    let bar_slot = std::fs::read(old_dir.join("assets/BarSlot.qml")).ok();
     let patches: serde_json::Value =
         serde_json::from_slice(&std::fs::read(old_dir.join("patches.json")).unwrap()).unwrap();
-    let canonical = serde_json::to_vec(&serde_json::json!({
+    let mut canonical_value = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol,
         "moduleHostQml": String::from_utf8_lossy(&module_host),
         "modulesConfigQml": String::from_utf8_lossy(&modules_config),
         "patches": patches,
-    }))
-    .unwrap();
+    });
+    if let Some(slot) = &bar_slot {
+        canonical_value["barSlotQml"] = serde_json::json!(String::from_utf8_lossy(slot));
+    }
+    let canonical = serde_json::to_vec(&canonical_value).unwrap();
     let content_id = sha256_bytes(&canonical);
     let dir = state_host
         .join("generations")
@@ -229,13 +238,16 @@ fn rewrite_current_bundle(w: &World, generation: u64, protocol: u64) {
     std::fs::create_dir_all(dir.join("assets")).unwrap();
     std::fs::write(dir.join("assets/ModuleHost.qml"), &module_host).unwrap();
     std::fs::write(dir.join("assets/ModulesConfig.qml"), &modules_config).unwrap();
+    if let Some(slot) = &bar_slot {
+        std::fs::write(dir.join("assets/BarSlot.qml"), slot).unwrap();
+    }
     let patch_bytes = serde_json::to_vec_pretty(&patches).unwrap();
     std::fs::write(
         dir.join("patches.json"),
         [patch_bytes, b"\n".to_vec()].concat(),
     )
     .unwrap();
-    let manifest = serde_json::json!({
+    let mut manifest = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol,
         "contentId": content_id,
@@ -243,6 +255,9 @@ fn rewrite_current_bundle(w: &World, generation: u64, protocol: u64) {
         "modulesConfigSha256": sha256_bytes(&modules_config),
         "patchesSha256": sha256_bytes(&serde_json::to_vec(&patches).unwrap()),
     });
+    if let Some(slot) = &bar_slot {
+        manifest["barSlotSha256"] = serde_json::json!(sha256_bytes(slot));
+    }
     std::fs::write(
         dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap() + "\n",
@@ -273,19 +288,24 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
     ));
     let module_host = std::fs::read(old_dir.join("assets/ModuleHost.qml")).unwrap();
     let mut modules_config = std::fs::read(old_dir.join("assets/ModulesConfig.qml")).unwrap();
-    modules_config.extend_from_slice(b"\n// persisted generation 3\n");
+    let generation = CURRENT_HOST_GENERATION + 1;
+    modules_config
+        .extend_from_slice(format!("\n// persisted generation {generation}\n").as_bytes());
+    let bar_slot = std::fs::read(old_dir.join("assets/BarSlot.qml")).ok();
     let patches: serde_json::Value =
         serde_json::from_slice(&std::fs::read(old_dir.join("patches.json")).unwrap()).unwrap();
-    let generation = 3_u64;
     let protocol = current["protocolVersion"].as_u64().unwrap();
-    let canonical = serde_json::to_vec(&serde_json::json!({
+    let mut canonical_value = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol,
         "moduleHostQml": String::from_utf8_lossy(&module_host),
         "modulesConfigQml": String::from_utf8_lossy(&modules_config),
         "patches": patches,
-    }))
-    .unwrap();
+    });
+    if let Some(slot) = &bar_slot {
+        canonical_value["barSlotQml"] = serde_json::json!(String::from_utf8_lossy(slot));
+    }
+    let canonical = serde_json::to_vec(&canonical_value).unwrap();
     let content_id = sha256_bytes(&canonical);
     let dir = state_host
         .join("generations")
@@ -293,6 +313,9 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
     std::fs::create_dir_all(dir.join("assets")).unwrap();
     std::fs::write(dir.join("assets/ModuleHost.qml"), &module_host).unwrap();
     std::fs::write(dir.join("assets/ModulesConfig.qml"), &modules_config).unwrap();
+    if let Some(slot) = &bar_slot {
+        std::fs::write(dir.join("assets/BarSlot.qml"), slot).unwrap();
+    }
     let patch_bytes = serde_json::to_vec_pretty(&patches).unwrap();
     std::fs::write(
         dir.join("patches.json"),
@@ -300,7 +323,7 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
     )
     .unwrap();
     let patch_canonical = serde_json::to_vec(&patches).unwrap();
-    let manifest = serde_json::json!({
+    let mut manifest = serde_json::json!({
         "generation": generation,
         "protocolVersion": protocol,
         "contentId": content_id,
@@ -308,6 +331,9 @@ fn install_newer_host_bundle(w: &World) -> Vec<u8> {
         "modulesConfigSha256": sha256_bytes(&modules_config),
         "patchesSha256": sha256_bytes(&patch_canonical),
     });
+    if let Some(slot) = &bar_slot {
+        manifest["barSlotSha256"] = serde_json::json!(sha256_bytes(slot));
+    }
     std::fs::write(
         dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap() + "\n",
@@ -419,6 +445,8 @@ fn first_migration_rejects_stale_fence_version_before_same_version_noop() {
         "settings.qml",
         "modules/ii/verticalBar/VerticalBarContent.qml",
     ];
+    let current_fence = format!(" v{CURRENT_HOST_GENERATION} >>>");
+    let stale_fence = format!(" v{} >>>", CURRENT_HOST_GENERATION - 1);
     let mut originals = Vec::new();
     let mut expected_headers = 0;
     let mut changed_headers = 0;
@@ -432,7 +460,7 @@ fn first_migration_rejects_stale_fence_version_before_same_version_noop() {
         for line in original.split_inclusive('\n') {
             if line.contains("// >>> iimp host/") {
                 expected_headers += 1;
-                let changed = line.replace(" v2 >>>", " v1 >>>");
+                let changed = line.replace(&current_fence, &stale_fence);
                 if changed != line {
                     changed_headers += 1;
                 }
@@ -475,7 +503,7 @@ fn newer_generation_future_protocol_is_exit_10_without_mutation() {
     let w = World::new("future-host-protocol");
     let first = w.make_module("protocol_first", serde_json::json!({}));
     w.expect(&["install", first.to_str().unwrap()], 0);
-    rewrite_current_bundle(&w, 3, 2);
+    rewrite_current_bundle(&w, CURRENT_HOST_GENERATION + 1, 2);
 
     let descriptor_path = w.root.join("state/host/current.json");
     let descriptor_before = std::fs::read(&descriptor_path).unwrap();
@@ -515,7 +543,7 @@ fn newer_candidate_upgrades_older_descriptor() {
     let current: serde_json::Value =
         serde_json::from_slice(&std::fs::read(w.root.join("state/host/current.json")).unwrap())
             .unwrap();
-    assert_eq!(current["generation"], 2);
+    assert_eq!(current["generation"], CURRENT_HOST_GENERATION);
     w.expect(&["verify"], 0);
 }
 
@@ -535,7 +563,7 @@ fn stale_guard_aware_candidate_preserves_newer_host_on_install_and_reapply() {
     let descriptor: serde_json::Value =
         serde_json::from_slice(&std::fs::read(w.root.join("state/host/current.json")).unwrap())
             .unwrap();
-    assert_eq!(descriptor["generation"], 3);
+    assert_eq!(descriptor["generation"], CURRENT_HOST_GENERATION + 1);
 
     std::fs::remove_dir_all(w.ii()).unwrap();
     write_stock_tree(&w.ii());
@@ -1121,7 +1149,7 @@ fn reapply_rolls_back_all_state_when_later_translation_write_fails() {
 
     std::fs::write(
         w.ii().join("modules/ii/bar/BarContent.qml"),
-        "Item {\n    property string updatedStock: \"before failed reapply\"\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
+        "import qs.modules.common.functions\n\nItem {\n    property string updatedStock: \"before failed reapply\"\n    RowLayout {\n            // Weather\n            Loader {}\n    }\n}\n",
     )
     .unwrap();
     std::fs::write(
@@ -1452,6 +1480,67 @@ fn dependency_enforcement() {
 }
 
 #[test]
+fn install_no_enable_leaves_tier_b_patches_unapplied() {
+    let w = World::new("no-enable-tier-b");
+    let tier_b = serde_json::json!({
+        "patches": [{
+            "file": "modules/ii/bar/BarContent.qml",
+            "op": "insert-before",
+            "anchor": "            // Weather",
+            "content": "            DormantThing {}\n"
+        }],
+    });
+    let payload = w.make_module("dormant_patcher", tier_b);
+    let bar = w.ii().join("modules/ii/bar/BarContent.qml");
+
+    // Fresh install disabled: the registry says disabled, so the composition
+    // must not carry the module's patches ("disabled but still patched").
+    w.expect(
+        &[
+            "install",
+            payload.to_str().unwrap(),
+            "--allow-patches",
+            "--no-enable",
+        ],
+        0,
+    );
+    let composed = std::fs::read_to_string(&bar).unwrap();
+    assert!(!composed.contains("DormantThing"), "{composed}");
+    w.expect(&["verify"], 0);
+
+    // Enabling applies it; a disabled upgrade removes it again.
+    w.expect(&["enable", "dormant_patcher"], 0);
+    assert!(std::fs::read_to_string(&bar)
+        .unwrap()
+        .contains("DormantThing {}"));
+    let upgraded = w.make_module(
+        "dormant_patcher",
+        serde_json::json!({
+            "version": "1.1.0",
+            "patches": [{
+                "file": "modules/ii/bar/BarContent.qml",
+                "op": "insert-before",
+                "anchor": "            // Weather",
+                "content": "            DormantThing { upgraded: true }\n"
+            }],
+        }),
+    );
+    w.expect(
+        &[
+            "install",
+            upgraded.to_str().unwrap(),
+            "--allow-patches",
+            "--no-enable",
+        ],
+        0,
+    );
+    assert!(!std::fs::read_to_string(&bar)
+        .unwrap()
+        .contains("DormantThing"));
+    w.expect(&["verify"], 0);
+}
+
+#[test]
 fn wipe_and_reapply_restores_byte_identical() {
     let w = World::new("wipe");
     let payload = w.make_module(
@@ -1551,6 +1640,60 @@ fn enable_disable_projection() {
     w.expect(&["enable", "toggle_me"], 0);
     let v: serde_json::Value = serde_json::from_str(&config()).unwrap();
     assert_eq!(v["iimp"]["enabledBar"][0], "toggle_me");
+}
+
+#[test]
+fn order_and_page_edit_config_when_shell_is_down() {
+    let w = World::new("order");
+    for id in ["ord_a", "ord_b", "ord_c"] {
+        let payload = w.make_module(id, serde_json::json!({}));
+        w.expect(&["install", payload.to_str().unwrap()], 0);
+    }
+    let config = || -> serde_json::Value {
+        serde_json::from_str(
+            &std::fs::read_to_string(w.root.join("shellconfig/config.json")).unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        config()["iimp"]["enabledBar"],
+        serde_json::json!(["ord_a", "ord_b", "ord_c"])
+    );
+
+    // Order edits only barOrderJson; the page map and enablement survive.
+    w.expect(&["page", "ord_b", "2"], 0);
+    w.expect(&["order", "ord_c", "1"], 0);
+    let v = config();
+    assert_eq!(v["iimp"]["barOrderJson"], "[\"ord_c\",\"ord_a\",\"ord_b\"]");
+    assert_eq!(v["iimp"]["barPagesJson"], "{\"ord_b\":1}");
+    assert_eq!(
+        v["iimp"]["enabledBar"],
+        serde_json::json!(["ord_a", "ord_b", "ord_c"])
+    );
+
+    // Positions clamp; a disabled module keeps a trailing slot and cannot be ordered.
+    w.expect(&["order", "ord_c", "99"], 0);
+    assert_eq!(
+        config()["iimp"]["barOrderJson"],
+        "[\"ord_a\",\"ord_b\",\"ord_c\"]"
+    );
+    w.expect(&["disable", "ord_a"], 0);
+    let out = w.run(&["order", "ord_a", "1"]);
+    assert_ne!(out.status.code(), Some(0));
+    w.expect(&["order", "ord_b", "2"], 0);
+    assert_eq!(
+        config()["iimp"]["barOrderJson"],
+        "[\"ord_c\",\"ord_b\",\"ord_a\"]"
+    );
+    w.expect(&["enable", "ord_a"], 0);
+    assert_eq!(
+        config()["iimp"]["barOrderJson"],
+        "[\"ord_c\",\"ord_b\",\"ord_a\"]"
+    );
+
+    // Non-bar and unknown modules are usage errors.
+    w.expect(&["order", "missing", "1"], 2);
+    w.expect(&["order", "ord_a", "0"], 2);
 }
 
 #[test]

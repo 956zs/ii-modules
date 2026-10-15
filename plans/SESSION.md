@@ -1,3 +1,208 @@
+## 2026-10-16 osu-state quit grace
+
+Owner: quitting a map midway left the indicator/hook "busy" for the full
+120 s cooldown. Daemon journal confirmed detection was instant (playing ->
+cooldown within 1 s); the semantics were wrong, not the detection.
+Fix in `~/Desktop/github/osu-state`: `quit_grace_secs` (default 10) applies
+when a play ends without `entered *ResultsScreen`; the results screen (only
+after a completed map) upgrades the pending cooldown to `grace_secs`.
+Tracker tests cover completed / quit / retry / zero grace. Live: the owner
+was playing while this was built, and the global hook correctly denied the
+`cargo build` (waited with `osu-state wait-free`).
+
+## 2026-10-15 osu_indicator bar module (plan section 4)
+
+Owner (Discord): asked for the osu! indicator, "想要美美的". Built
+`modules/osu_indicator` 1.0.0, Tier A bar module, on branch feat/bar-shelf.
+
+- ✅ Visual: hit-circle glyph (ring + centre dot), approach circle shrinking
+  onto it while `playing`, dot breathing in `cooldown`, dim ring for
+  `idle`, dim ring + dot for `menu`, hidden when `off`; elapsed play time /
+  cooldown countdown with tabular digits; accent = theme primary or osu!
+  pink (`accent` setting); colour transitions via elementMoveFast.
+- ✅ Data: reads only `$XDG_RUNTIME_DIR/osu-state.json` (FileView
+  watchChanges + 5 s fallback reload + 1 s ticker only while a timer is on
+  screen). Pure `OsuStateLogic.js` with 5 node tests (parse, visibility,
+  timing, bar text, beatmap split).
+- ✅ Popup (StyledPopup): state label, duration, cooldown countdown, map
+  title / difficulty · mapper, note that heavy builds wait.
+- ✅ i18n by independent subagent: zh_TW + zh_CN exact, deny-orphans clean;
+  "For:" confirmed as time-in-state.
+- ✅ validate / check / install clean, `iimod verify` all intact, ConfigLoader
+  drift check 0 deviations.
+- ✅ Live: real daemon reported `off` (osu closed) -> pill hidden. Daemon
+  stopped and states simulated by writing the state file: idle, menu,
+  playing ("1:53" + approach ring), cooldown ("1:07"), popup; screenshots
+  OK; daemon restarted afterwards.
+- Note: on this palette the theme primary is near-white, so "theme" accent
+  reads white; osu! pink is one switch away in Settings > Modules.
+
+## 2026-10-16 bar order (arrange bar modules)
+
+Owner asked whether the Bartender-style paging lets them arrange bar module
+order. It did not: `enabledBar` is re-sorted alphabetically by
+`ModuleHost.setEnabled` on every flip, so the horizontal bar was always id
+order (first id rightmost). Added ordering at host level, same pattern as
+pages; gen 4 / 1.5.0 is still unreleased so the content changes stay in
+generation 4 (local persisted gen-4 bundle dropped by hand for live test).
+
+- ✅ Config P2 `iimp.barOrderJson`: JSON array of ids, listed ids first in
+  that order (first = rightmost horizontally, topmost vertically), unlisted
+  enabled ids follow in `enabledBar` (alphabetical) order. Stored list keeps
+  disabled ids at the tail so a re-enable returns to its slot. P3 passes
+  `orderJson` to `BarSlot`; P5/P6 vertical models apply the same rule inline
+  (no new host asset, so the bundle layout is unchanged).
+- ✅ `BarSlot.qml` `orderedIds`; `ModuleHost` IPC `setOrder(id, position)`;
+  CLI `iimod order <id> <n>` (1-99, IPC or config.json fallback; the module
+  must be enabled in the bar, exit 7 otherwise); `commands::reorder_bar` is
+  the pure Rust twin of the QML logic.
+- ✅ ModulesConfig: "Bar order: n of m" row with move right/left buttons
+  (up/down labels and icons when `Config.options.bar.vertical`), pure
+  helpers `parseOrderList`/`orderedBarIds`/`moveOrderEntry` in the
+  PURE_LOGIC block.
+- ✅ Tests: Rust unit (`reorder_bar_tests`, hostpatch contracts for P2/P3
+  and the P5/P6 model line), integration
+  `order_and_page_edit_config_when_shell_is_down`, node UI test for the
+  order helpers. 70 unit + 18 i18n + 40 integration + 13 node pass;
+  clippy/fmt clean. The P5/P6 model expressions were also evaluated under
+  node with a stub Config (order applied before the placement filter).
+- ✅ Live (eDP-1): persisted gen-4 bundle rolled back to gen 3 by hand and
+  the gen-4 dir removed (unreleased generation, same loop as 2026-10-15),
+  release binary installed, `reapply` + `verify` all intact (new gen-4
+  contentId 1d0134f5…). `iimod order network_traffic 1`, `screentime 1`,
+  `memory_center 3` over IPC; screenshot of the right section shows page 1
+  right-to-left screentime, memory_center, battery_trend, osu_indicator as
+  configured. Note config.json is written with a delay, so reading it right
+  after the IPC call shows the previous value. Order restored to the
+  alphabetical equivalent afterwards.
+- ✅ Owner report: after switching to page 2, hovering where a page-1
+  module sits still opened its popup. Reproduced with ydotool (Screen time
+  popup on page 2). Cause: Qt 6 delivers hover by geometry and
+  `MouseArea.hoverEnabled` ignores `Item.enabled`, so `enabled: false` only
+  blocked clicks. Fix in `BarSlot.qml`: `parked: !current && opacity === 0`
+  drives a `Translate { y: 4096 }` transform on the row, so a faded-out page
+  leaves the window without touching anchors, implicit widths (reserved
+  width) or effective visibility. Live after another gen-4 bundle drop +
+  reapply: hidden-page hover shows nothing, page-2 module popups work,
+  return to page 1 after leaving the bar still works. Gotcha recorded in
+  `docs/module-dev-gotchas.md`.
+- ⏳ Not covered live: ModulesConfig move buttons (click path), vertical
+  bar, bar.bottom.
+- Docs: README (zh) bar order paragraph, `docs/module-dev-gotchas.md` note
+  that `enabledBar` is never the display order.
+
+## 2026-10-15 bar pages (Bartender-style in-place paging of bar modules)
+
+Owner (via Discord bridge): the bar is out of room. First asked to verify the
+macOS "second row" tools; a shelf (second row under the bar) was built and
+installed, then rejected: the owner wants Bartender's default behaviour, the
+module row replaced in place by the next page, unbounded pages.
+
+Design decision: host-level (iimod 1.5.0, host generation 4), not a module.
+Module patches cannot target host-injected QML (anchors resolve against
+stripped stock text), and the host already owns bar-module placement
+(`barPlacementsJson` for the vertical bar).
+
+Delivered (branch feat/bar-shelf, on top of feat/adaptive-bar-layout):
+- ✅ Config P2 `iimp.barPagesJson` (id -> page index, 0 = main, stored by
+  omission); P3 is now a single `BarSlot {}` instance; new P7
+  `import qs.mod.iimp` in BarContent.
+- ✅ New host asset `assets/BarSlot.qml` owns the module Loaders: every page
+  instantiated once per bar, stacked in place, cross-fade + 6 px rise
+  (elementMoveFast), non-current pages `opacity: 0` + `enabled: false`
+  (never `visible: false`, effective-visibility trap), slot width reserved
+  for the widest page so the "1/2" button, tray and indicators never move
+  on a switch (owner feedback: "切換的按鈕盡量不要位移"), 5 s after the
+  pointer leaves `barRightSideMouseArea` it returns to page 1.
+  bundle/manifest/verify carry the third asset; legacy gen-3 bundles still
+  hash identically.
+- ✅ ModulesConfig "Horizontal bar page" spin box (1-9); ModuleHost IPC
+  `setPage`; CLI `iimod page <id> <n>` (IPC, config.json fallback).
+- ✅ Fixed `project_enabled` fallback overwriting the whole `iimp` block
+  (dropped barPlacementsJson when the shell was down).
+- ✅ Tests: 67 unit + 18 i18n + 39 integration + 12 node; clippy/fmt clean.
+  Fixture BarContent gained the import anchor line P7 needs.
+- ✅ Live (eDP-1 at layout x=3840): reapply to gen 4, verify intact,
+  `iimod page network_traffic 2`; screenshots confirm the "1/2" button at
+  the same x on both pages, tray untouched, network_traffic shows live
+  rates immediately on page 2 (state kept), 6.5 s after leaving the bar it
+  is back on page 1. First iteration (Repeater model swap, no reserved
+  width) made the tray/button jump and reset module state; replaced.
+- Gotchas hit: `property bool bottom` on an Item root collided with the
+  FINAL anchor line and broke the whole shell reload (documented). Changing
+  an asset at the same HOST_GENERATION is a content collision, so each dev
+  iteration dropped the persisted gen-4 bundle by hand
+  (`~/.local/share/iimp/host/current.json` back to gen 3 + remove the gen-4
+  dir); four times this session, final live bundle is the committed
+  content. `ensure_host` does not prune stale host-dir files; the dev-only
+  `BarShelf.qml`/`BarPager.qml` were removed by hand.
+- ⏳ Not covered live: bar.bottom, multi-monitor, vertical bar (pages are
+  ignored there by design), settings-page spin box interaction.
+
+## 2026-10-15 osu! play-state daemon (plans/osu-playing-indicator.md)
+
+Owner decided to implement sections 3 and 5 of the plan now (service + CLI +
+Claude hook, Rust); the section 4 ii bar module is deferred.
+
+Findings that changed the plan:
+- Gameplay vs song select is read from osu!lazer's own
+  `~/.local/share/osu/logs/<launch>.runtime.log` (`Starting/Ending high
+  performance session`, `entered/exit from *Player#`, `Game-wide working
+  beatmap updated to`), flushed per line. Discord RPC rejected: proxy service
+  inactive, Discord owns `discord-ipc-0`, lazer presence = Limited.
+- `graphical-session.target` never activates on this host; ii uses
+  `end4-graphical-session.target`. `discord-rpc-proxy.service` (owner's other
+  repo) is enabled under the wrong target and has never started. Not fixed here.
+
+Delivered (separate repo `~/Desktop/github/osu-state`, 3 commits on main, not
+pushed, no remote configured):
+- ✅ daemon: Hyprland socket1/socket2 + inotify log follower, replay on start,
+  SIGTERM removes state file, 1.4 MB RSS; installed as `osu-state.service`
+  (enabled, running, state `idle` at handoff).
+- ✅ CLI: `osu-state`, `status --json`, `is-busy`, `wait-free [--timeout]`
+  (exit 124), `check-config`; stale/dead-daemon file counts as not busy.
+- ✅ hook: `osu-state claude-hook` registered globally in
+  `~/.claude/settings.json` (backup `settings.json.bak-20261015`); denies
+  `cargo`/`scripts/deploy-vps.sh` while playing/cooldown, else rewrites with
+  `nice -n 19 ionice -c3` via `updatedInput` + `allow`.
+- ✅ 41 unit tests, clippy clean (-D warnings).
+- ⏳ Live acceptance of `menu`/`playing`/`cooldown`/`off` transitions needs the
+  owner to actually play; only `idle`, replay recovery, hook deny/allow and
+  wait-free timeout were exercised.
+- ⏳ ii module indicator (plan section 4): not started; reads the state file only.
+
+Worktree note: `plans/osu-playing-indicator.md` is the owner's untracked file,
+updated in place with the findings above; left untracked on purpose.
+
+## 2026-10-14 adaptive horizontal bar (16:10 overflow)
+
+User report: the horizontal bar was tuned on a 2560 px 21:9 monitor; on the
+1920x1200 16:10 eDP-1 the right side overlaps the centred clock group while a
+blank gap sits left of the tray ("明明有空位還要被擠壓").
+
+Root causes (evidence: live screenshot pixel spans + headless qml6 repro):
+- R1 host P3: each bar-slot Loader keeps its item's implicit width even when
+  the module hides its root (battery_trend showBar=false reserved ~87 px).
+- R2 stock: the right section is an RTL RowLayout of fixed-width items; when
+  demand > available it spills left over the screen-centred middle section.
+- R3 stock: centre side groups are fixed 360 px above 1200 px screens.
+
+User decisions (2026-10-14): degrade by folding pinned tray icons into the
+overflow menu FIRST, then shrink both centre side groups symmetrically
+(workspaces stay screen-centred); new module owns centre widths and
+clock_popup_slim drops its width bindings (released as 3.0.0: removing a
+setting is breaking under repo semver); scope = local task branch +
+live install verification (no push/PR/release until asked).
+
+Tasks (branch feat/adaptive-bar-layout):
+- ✅ T1 iimod 1.4.0: host P3 bar slot is now an RTL Row (zero-width Loader per self-hidden module, 9 px gaps, order unchanged, explicit Layout.preferredWidth avoids RowLayout's latched fallback width when all hidden); HOST_GENERATION 3; fixtures derive from CURRENT_HOST_GENERATION; lead re-ran fmt/clippy/cargo tests/release build.
+- ✅ T2 adaptive_bar 1.0.0 (Tier B, 7 insert-only patches on BarContent/SysTray): per-bar FitController + pure Fit.js (fold first, then symmetric centre shrink to content min, clip residual; 8 px hysteresis; 40 ms settle). 21 node tests (planner + patch contract); headless qml6 fake-bar sim converges at 1920/2560/1700 with no binding loops. Gotcha found in sim: reading `item.Layout.*` from another file needs `import QtQuick.Layouts` there.
+- ✅ T3 clock_popup_slim 3.0.0: centre width bindings, probes and `centerSideWidth` setting removed (adaptive_bar owns centre widths); tests 7/7; README migration note.
+- ✅ T4 i18n handoff (independent subagent) for adaptive_bar + clock_popup_slim: adaptive_bar zh_TW/zh_CN 3/3 keys (stock terms: zh_TW 系統匣/釘選/溢位, zh_CN 托盘/固定/溢出); clock_popup_slim 2 retired keys removed (12/12 per locale); extract + exact checks + `check --all --deny-orphans` exit 0; node tests 28/28.
+- ✅ T5 live (2026-10-14, eDP-1 1920x1200): ~/.local/bin/iimod 1.1.0 (sha256 5dba3b1a..., false WIPED banner because it cannot parse the 1.3.0 sentinel) replaced by 1.4.0 (old binary kept at /tmp/iimod-1.1.0.bak). Installed adaptive_bar, upgraded clock_popup_slim with --no-enable; verify all intact after reapply. Screenshot: clock group intact, module pills separate, tray pinned icon folded, centre sides ~352 px symmetric around x=959.5. cap 300 -> one icon unfolds (restore path), reverted to 360. Overflow menu opened by pointer: folded icon first, 2-column grid; closed, cursor restored. Shell log unreadable (encoder v50 vs reader v2), verified behaviourally + `iimp ping`.
+- ✅ T6 iimod bug found live: `install --no-enable` composed the module's patches before marking it Disabled ("disabled but still patched", verify fence-broken). Fixed by setting Disabled before any composition; regression test `install_no_enable_leaves_tier_b_patches_unapplied` (red before fix). Live tree repaired with `iimod reapply`.
+- ✅ T7 site/public/registry.json regenerated (was already stale on main: battery_trend/network_traffic/screentime versions) + adaptive_bar/clock 3.0.0.
+
 ## 2026-08-24 module fixes + architecture hygiene
 
 User-reported symptoms (2026-08-24):

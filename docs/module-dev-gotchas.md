@@ -19,14 +19,20 @@ protocol cannot check for you.
   `main.qml` loads exactly once. Any accounting or otherwise stateful owner
   must live in the window slot, or it double-counts on multi-monitor setups.
 - QML FINAL property collisions fail the whole module at load with
-  `Cannot override FINAL property`. Known traps: `property var top` on an
-  `Item`, `property string icon` on a Controls `Button`. Pick non-builtin
-  names (`topProcs`, `iconName`).
+  `Cannot override FINAL property`. Known traps: `property var top` and
+  `property bool bottom` on an `Item` (every anchor line name: `top`,
+  `bottom`, `left`, `right`, `horizontalCenter`, `verticalCenter`,
+  `baseline`), `property string icon` on a Controls `Button`. Pick
+  non-builtin names (`topProcs`, `barAtBottom`, `iconName`). A host asset
+  failing this way breaks the whole shell reload, not just one module.
 - Inside a `LazyLoader { component: ... }`, a binding whose property name
   equals an outer id (`mem: mem`) resolves to the property itself and stays
   permanently undefined, even though the same pattern works for direct
-  children. Give ids different names from the properties they feed
-  (`memInfo`, `procTop`).
+  children. The same happens for a property declared on a `StyledPopup`
+  (itself a LazyLoader) root and bound at the use site (`osu: osu` on
+  `OsuPopup` resolved to the popup's own property, so the popup never
+  rendered). Give ids different names from the properties they feed
+  (`memInfo`, `procTop`, `reader: osu`).
 - Never declare `property var` inside a `JsonAdapter`/`JsonObject`:
   Quickshell's deserializer segfaults writing a JSON object into it.
   Represent maps as a JSON string property and `JSON.parse` at the reader.
@@ -40,6 +46,25 @@ protocol cannot check for you.
 - Material Symbols coverage varies by installed font build. Verify a glyph
   name exists (for example with fontTools against the installed variable
   font) before shipping an icon name; missing glyphs render as tofu.
+- Bar pages (`iimp.barPagesJson`, host generation 4) keep every page's
+  modules instantiated; a module on a non-current page is fully visible in
+  QML terms but has `opacity: 0` and `enabled: false` on its page row, and
+  once its fade-out ends the row is translated out of the bar window. Do
+  not key behaviour on `visible` to detect "my page is shown"; hover and
+  click simply do not arrive while the page is away. The slot reserves the
+  width of the widest page, so a module that grows on page 2 widens the slot
+  on page 1 as well.
+- `enabled: false` does not stop hover in Qt 6: hover is delivered by
+  geometry and `MouseArea.hoverEnabled` is independent of `Item.enabled`, so
+  a faded-out item still raises `containsMouse` and any popup bound to it.
+  Hide hoverable content by moving it out of the window (a `Translate`
+  transform keeps anchors, implicit sizes and effective visibility intact)
+  or by `visible: false` when the effective-visibility trap does not apply.
+- Bar order (`iimp.barOrderJson`, host generation 4) is a JSON array of ids;
+  `enabledBar` itself stays alphabetical (the host re-sorts it on every
+  enable/disable), so never read `enabledBar` as the display order. Listed
+  ids render first, unlisted ones follow alphabetically, and the horizontal
+  bar's first id is the rightmost one.
 
 ## IIMP / iimod workflow
 
@@ -78,3 +103,10 @@ protocol cannot check for you.
 - Synthetic pointer tools may apply acceleration or coordinate scaling.
   Position with a feedback loop against `hyprctl cursorpos` instead of
   trusting requested coordinates.
+- Hyprland 0.56+ takes Lua dispatchers: `hyprctl dispatch movecursor X Y`
+  now fails. Use `hyprctl dispatch 'hl.dsp.cursor.move({x=X,y=Y})'`
+  (layout coordinates, exact, no acceleration), verify with
+  `hyprctl cursorpos`, then `ydotool click 0xC0`.
+- Reading another object's attached properties (`item.Layout.fillWidth`)
+  needs that attached type imported in the reading file
+  (`import QtQuick.Layouts`); without it `item.Layout` is `undefined`.

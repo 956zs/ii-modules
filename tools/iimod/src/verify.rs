@@ -140,6 +140,11 @@ fn host_state(registry: &Registry, host: Option<&HostBundle>) -> &'static str {
             .ok()
             .as_deref()
             != Some(host.modules_config_qml.as_slice())
+        || (!host.bar_slot_qml.is_empty()
+            && std::fs::read(paths::host_dir().join("BarSlot.qml"))
+                .ok()
+                .as_deref()
+                != Some(host.bar_slot_qml.as_slice()))
     {
         return "assets-modified";
     }

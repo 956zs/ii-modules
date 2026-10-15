@@ -123,28 +123,6 @@ ColumnLayout {
     }
 
     ConfigSpinBox {
-        icon: "compress"
-        text: Translation.tr("Center side width (px)")
-        value: config.options.centerSideWidth
-        from: 280
-        to: 360
-        stepSize: 10
-        onValueChanged: {
-            if (config.ready && !config.materializing)
-                config.options.centerSideWidth = value;
-        }
-    }
-
-    StyledText {
-        Layout.fillWidth: true
-        Layout.leftMargin: 8
-        color: Appearance.colors.colOnSurfaceVariant
-        font.pixelSize: Appearance.font.pixelSize.smaller
-        wrapMode: Text.WordWrap
-        text: Translation.tr("Reduces the left and right center sections equally, keeping Workspaces at the exact screen center. The clock remains left-aligned in the right section.")
-    }
-
-    ConfigSpinBox {
         icon: "text_fields"
         text: Translation.tr("Time text size offset (px)")
         value: config.options.timeSizeOffset

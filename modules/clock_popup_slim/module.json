@@ -11,7 +11,7 @@
     "zh_TW": "實驗性的 Tier B bar 時鐘客製化；若 stock 中央版面改動或有更安全的替代方案，可能棄用。",
     "zh_CN": "实验性的 Tier B bar 时钟自定义；若 stock 中央布局改动或有更安全的替代方案，可能弃用。"
   },
-  "version": "2.1.0",
+  "version": "3.0.0",
   "authors": ["nlcat"],
   "license": "MIT",
   "slots": ["window"],
@@ -32,18 +32,6 @@
         "path": "modules/ii/bar/BarContent.qml",
         "pattern": "                ClockWidget {",
         "reason": "replaces the horizontal stock clock at its layout position"
-      },
-      {
-        "type": "file-contains",
-        "path": "modules/ii/bar/BarContent.qml",
-        "pattern": "            id: leftCenterGroup",
-        "reason": "reduces the left center bookend symmetrically"
-      },
-      {
-        "type": "file-contains",
-        "path": "modules/ii/bar/BarContent.qml",
-        "pattern": "                id: rightCenterGroupContent",
-        "reason": "reduces the right center bookend symmetrically"
       },
       {
         "type": "file-contains",
@@ -94,18 +82,6 @@
       "op": "insert-before",
       "anchor": "                ClockWidget {",
       "content": "                ClockCustomizer.ClockBar {\n                    id: customBarClock\n                    Layout.alignment: Qt.AlignVCenter\n\n                    ClockWidgetPopup {\n                        hoverTarget: customBarClock.hoverTarget\n                    }\n                }\n\n"
-    },
-    {
-      "file": "modules/ii/bar/BarContent.qml",
-      "op": "insert-after",
-      "anchor": "            id: leftCenterGroup",
-      "content": "\n            property var clockCustomizerWidthBinding: Binding {\n                target: leftCenterGroup\n                property: \"implicitWidth\"\n                value: Math.min(root.centerSideModuleWidth, customBarClock.centerSideWidth)\n            }\n"
-    },
-    {
-      "file": "modules/ii/bar/BarContent.qml",
-      "op": "insert-after",
-      "anchor": "                id: rightCenterGroupContent",
-      "content": "\n                property var clockCustomizerWidthBinding: Binding {\n                    target: rightCenterGroup\n                    property: \"implicitWidth\"\n                    value: Math.min(root.centerSideModuleWidth, customBarClock.centerSideWidth)\n                }\n"
     },
     {
       "file": "modules/ii/bar/ClockWidgetPopup.qml",

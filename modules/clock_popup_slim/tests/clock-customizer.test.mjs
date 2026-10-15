@@ -62,7 +62,7 @@ test('manifest upgrades the existing id into a configurable Tier B clock', async
   const manifest = JSON.parse(await read('module.json'))
 
   assert.equal(manifest.id, 'clock_popup_slim')
-  assert.equal(manifest.version, '2.1.0')
+  assert.equal(manifest.version, '3.0.0')
   assert.equal(manifest.name.en_US, 'Bar Clock Customizer (Experimental)')
   assert.match(manifest.name.zh_TW, /實驗性/)
   assert.match(manifest.name.zh_CN, /实验性/)
@@ -90,10 +90,9 @@ test('manifest upgrades the existing id into a configurable Tier B clock', async
   assert.match(barPatch, /visible: false/)
   assert.match(barPatch, /ClockWidgetPopup/)
   assert.doesNotMatch(barPatch, /Layout\.fillWidth: true/)
-  assert.equal((barPatch.match(/property var clockCustomizerWidthBinding:/g) ?? []).length, 2)
-  assert.equal((barPatch.match(/value: Math\.min\(root\.centerSideModuleWidth, customBarClock\.centerSideWidth\)/g) ?? []).length, 2)
-  assert.match(barPatch, /target: leftCenterGroup/)
-  assert.match(barPatch, /target: rightCenterGroup/)
+  // Centre side widths belong to adaptive_bar; two owners would race.
+  assert.doesNotMatch(barPatch, /implicitWidth/)
+  assert.doesNotMatch(barPatch, /CenterGroup/)
 
   const popupPatch = manifest.patches
     .filter((patch) => patch.file.endsWith('/ClockWidgetPopup.qml'))
@@ -117,8 +116,7 @@ test('runtime and settings use one module-owned configuration contract', async (
   assert.match(config, /property bool showDate: false/)
   assert.match(config, /property string timeFormat: "HH:mm"/)
   assert.match(config, /property int horizontalPadding: 0/)
-  assert.match(config, /property int centerSideWidth: 280/)
-  assert.match(config, /centerSideWidth < 280 \|\| adapterItem\.centerSideWidth > 360/)
+  assert.doesNotMatch(config, /centerSideWidth/)
   assert.match(config, /property bool slimPopup: true/)
   assert.doesNotMatch(config, /property var\s+/)
 
@@ -127,8 +125,8 @@ test('runtime and settings use one module-owned configuration contract', async (
   assert.match(bar, /Qt\.locale\(\)\.toString\(clock\.date, root\.timeFormat\)/)
   assert.match(settings, /ConfigSwitch\s*{[\s\S]*Show date on the bar/)
   assert.match(settings, /Horizontal padding \(px\)/)
-  assert.match(settings, /Center side width \(px\)/)
-  assert.match(settings, /from: 280[\s\S]*to: 360/)
+  assert.doesNotMatch(settings, /centerSideWidth|Center side width/)
+  assert.doesNotMatch(bar, /centerSideWidth/)
   assert.match(settings, /Slim hover popup/)
 })
 

@@ -267,6 +267,145 @@ fn rollback_uninstall(
     }
 }
 
+/// A module's bar page is a placement choice, not a lifecycle state: no
+/// registry mutation, no host preflight. The shell applies it over IPC when
+/// running; otherwise config.json is edited directly, preserving every other
+/// key. `page` is 1-based on the command line (page 1 = main page).
+pub fn cmd_page(id: &str, page: u32) -> Result<()> {
+    require_bar_module(id, "a bar page")?;
+    let index = page - 1;
+    if qs::ping() && qs::set_page(id, index) {
+        println!("{id}: bar page {page}");
+        return Ok(());
+    }
+    let mut root = read_shell_config();
+    let mut pages: serde_json::Map<String, serde_json::Value> = root["iimp"]["barPagesJson"]
+        .as_str()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    if index > 0 {
+        pages.insert(id.to_string(), serde_json::json!(index));
+    } else {
+        pages.remove(id);
+    }
+    root["iimp"]["barPagesJson"] =
+        serde_json::Value::String(serde_json::to_string(&serde_json::Value::Object(pages))?);
+    write_shell_config(&root)?;
+    println!("{id}: bar page {page} (config.json edited; shell not running)");
+    Ok(())
+}
+
+/// A module's bar order is a placement choice like its page: IPC when the
+/// shell runs, direct config.json edit otherwise. `position` is 1-based among
+/// the enabled bar modules (1 = rightmost in the horizontal bar, topmost in
+/// the vertical bar); the module must currently be enabled in the bar.
+pub fn cmd_order(id: &str, position: u32) -> Result<()> {
+    if !matches!(require_bar_module(id, "a bar order")?, ModuleState::Enabled) {
+        return Err(bail(
+            exit::STATE,
+            format!("module {id:?} is not enabled in the bar; enable it before ordering"),
+        ));
+    }
+    if qs::ping() && qs::set_order(id, position) {
+        println!("{id}: bar position {position}");
+        return Ok(());
+    }
+    let mut root = read_shell_config();
+    let enabled: Vec<String> = root["iimp"]["enabledBar"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
+    if !enabled.iter().any(|e| e == id) {
+        return Err(bail(
+            exit::STATE,
+            format!("module {id:?} is not enabled in the bar; enable it before ordering"),
+        ));
+    }
+    let stored: Vec<String> = root["iimp"]["barOrderJson"]
+        .as_str()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
+    let order = reorder_bar(&stored, &enabled, id, position);
+    root["iimp"]["barOrderJson"] = serde_json::Value::String(serde_json::to_string(&order)?);
+    write_shell_config(&root)?;
+    println!("{id}: bar position {position} (config.json edited; shell not running)");
+    Ok(())
+}
+
+/// Pure counterpart of ModuleHost.setOrder: enabled ids in display order
+/// (stored first, then unlisted in `enabled` order) with `id` moved to the
+/// 1-based `position` (clamped), followed by stored ids no longer enabled.
+pub(crate) fn reorder_bar(
+    stored: &[String],
+    enabled: &[String],
+    id: &str,
+    position: u32,
+) -> Vec<String> {
+    let mut current: Vec<String> = Vec::new();
+    for entry in stored
+        .iter()
+        .filter(|s| enabled.contains(s))
+        .chain(enabled.iter().filter(|e| !stored.contains(e)))
+    {
+        if entry != id && !current.contains(entry) {
+            current.push(entry.clone());
+        }
+    }
+    let at = (position.max(1) as usize - 1).min(current.len());
+    current.insert(at, id.to_string());
+    for entry in stored.iter().filter(|s| !enabled.contains(s)) {
+        if !current.contains(entry) {
+            current.push(entry.clone());
+        }
+    }
+    current
+}
+
+/// Registry state of an installed bar module; usage error otherwise.
+fn require_bar_module(id: &str, what: &str) -> Result<ModuleState> {
+    let registry = registry::load()?;
+    let Some(module) = registry.get(id) else {
+        return Err(bail(exit::USAGE, format!("module {id:?} is not installed")));
+    };
+    if !module.manifest.slots.contains(&crate::manifest::Slot::Bar) {
+        return Err(bail(
+            exit::USAGE,
+            format!("module {id:?} has no bar slot; only bar modules have {what}"),
+        ));
+    }
+    Ok(module.state)
+}
+
+fn read_shell_config() -> serde_json::Value {
+    let config_path = paths::shell_config_root().join("config.json");
+    let mut root: serde_json::Value = std::fs::read(&config_path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !root["iimp"].is_object() {
+        root["iimp"] = serde_json::json!({});
+    }
+    root
+}
+
+fn write_shell_config(root: &serde_json::Value) -> Result<()> {
+    let config_path = paths::shell_config_root().join("config.json");
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = config_path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(root)? + "\n")?;
+    std::fs::rename(&tmp, &config_path)?;
+    Ok(())
+}
+
 pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
     let mutation = hoststate::mutation_preflight(MutationMode::Normal)?;
     let mut registry = registry::load()?;
@@ -546,4 +685,45 @@ pub fn cmd_suggest(source: &Path, max_size: u64) -> Result<()> {
     }
     println!("\nsuggestions are heuristics — review before pasting into module.json");
     Ok(())
+}
+
+#[cfg(test)]
+mod reorder_bar_tests {
+    use super::reorder_bar;
+
+    fn v(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn moves_within_enabled_ids_and_keeps_unlisted_after_listed() {
+        let enabled = v(&["a", "b", "c", "d"]);
+        assert_eq!(reorder_bar(&[], &enabled, "c", 1), v(&["c", "a", "b", "d"]));
+        assert_eq!(
+            reorder_bar(&v(&["d"]), &enabled, "b", 2),
+            v(&["d", "b", "a", "c"])
+        );
+    }
+
+    #[test]
+    fn clamps_position_and_tolerates_duplicates() {
+        let enabled = v(&["a", "b"]);
+        assert_eq!(reorder_bar(&[], &enabled, "a", 99), v(&["b", "a"]));
+        assert_eq!(reorder_bar(&[], &enabled, "b", 0), v(&["b", "a"]));
+        assert_eq!(
+            reorder_bar(&v(&["b", "b"]), &enabled, "a", 1),
+            v(&["a", "b"])
+        );
+    }
+
+    #[test]
+    fn disabled_listed_ids_trail_and_stale_ids_survive() {
+        let enabled = v(&["a", "c"]);
+        let stored = v(&["gone", "c", "a"]);
+        assert_eq!(
+            reorder_bar(&stored, &enabled, "a", 1),
+            v(&["a", "c", "gone"])
+        );
+        assert_eq!(reorder_bar(&[], &[], "a", 1), v(&["a"]));
+    }
 }

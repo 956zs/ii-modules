@@ -43,6 +43,7 @@ ContentPage {
     readonly property var selectedModule: moduleById(selectedId)
     readonly property bool hasSelection: selectedModule !== null
     readonly property int enabledCount: mods.filter(module => module.state === "enabled").length
+    readonly property int enabledBarCount: (Config.options.iimp?.enabledBar ?? []).length
     readonly property int attentionCount: mods.filter(module => needsAttention(module)).length
     readonly property var filterOptions: [
         { value: "all", label: Translation.tr("All"), count: mods.length },
@@ -116,6 +117,68 @@ ContentPage {
         const hasWindow = items.indexOf("window") !== -1;
         return hasBar && hasWindow ? "both" : hasBar ? "bar" : "window";
     }
+
+    // Page map for the horizontal bar, JSON-encoded like barPlacementsJson.
+    // Page 0 is the main page and is stored by omission; junk input yields
+    // an empty map rather than throwing inside a binding.
+    function parsePageMap(json) {
+        try {
+            const parsed = JSON.parse(typeof json === "string" && json.length > 0 ? json : "{}");
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function pageOf(json, id) {
+        const page = Number(parsePageMap(json)[id]);
+        return Number.isInteger(page) && page > 0 ? page : 0;
+    }
+
+    function setPageEntry(json, id, page) {
+        const pages = parsePageMap(json);
+        const next = Number(page);
+        if (typeof id !== "string" || id.length === 0)
+            return JSON.stringify(pages);
+        if (Number.isInteger(next) && next > 0)
+            pages[id] = next;
+        else
+            delete pages[id];
+        return JSON.stringify(pages);
+    }
+
+    // Bar order: JSON-encoded array of module ids. Listed ids render first in
+    // this order (first id is rightmost in the horizontal bar, topmost in the
+    // vertical bar); enabled ids not listed follow in their enabled order.
+    function parseOrderList(json) {
+        try {
+            const parsed = JSON.parse(typeof json === "string" && json.length > 0 ? json : "[]");
+            return Array.isArray(parsed) ? Array.from(new Set(parsed.filter(id => typeof id === "string"))) : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function orderedBarIds(json, enabled) {
+        const ids = Array.isArray(enabled) ? Array.from(new Set(enabled.filter(id => typeof id === "string"))) : [];
+        const stored = parseOrderList(json);
+        return stored.filter(id => ids.includes(id)).concat(ids.filter(id => !stored.includes(id)));
+    }
+
+    // Moves `id` to the 1-based `position` among the enabled ids (clamped);
+    // listed ids that are not enabled keep a trailing slot so a later enable
+    // does not shadow an enabled module's position.
+    function moveOrderEntry(json, enabled, id, position) {
+        const stored = parseOrderList(json);
+        const current = orderedBarIds(json, enabled);
+        const index = current.indexOf(id);
+        const target = Number(position);
+        if (index === -1 || !Number.isInteger(target))
+            return JSON.stringify(stored);
+        current.splice(index, 1);
+        current.splice(Math.max(0, Math.min(target - 1, current.length)), 0, id);
+        return JSON.stringify(current.concat(stored.filter(entry => !current.includes(entry))));
+    }
     // PURE_LOGIC_END
 
     function slotIcon(module) {
@@ -186,6 +249,32 @@ ContentPage {
         }
         next[id] = value;
         Config.options.iimp.barPlacementsJson = JSON.stringify(next);
+    }
+
+    function barPage(id) {
+        return pageOf(Config.options.iimp?.barPagesJson ?? "{}", id);
+    }
+
+    function setBarPage(id, page) {
+        Config.options.iimp.barPagesJson = setPageEntry(Config.options.iimp?.barPagesJson ?? "{}", id, page);
+    }
+
+    // 1-based position of an enabled bar module in display order; 0 when the
+    // module is not enabled in the bar.
+    function barPosition(id) {
+        return orderedBarIds(Config.options.iimp?.barOrderJson ?? "[]", Config.options.iimp?.enabledBar ?? []).indexOf(id) + 1;
+    }
+
+    function moveBar(id, delta) {
+        const position = barPosition(id);
+        if (position === 0)
+            return;
+        Config.options.iimp.barOrderJson = moveOrderEntry(
+            Config.options.iimp?.barOrderJson ?? "[]",
+            Config.options.iimp?.enabledBar ?? [],
+            id,
+            position + delta
+        );
     }
 
     onFilteredModsChanged: Qt.callLater(reconcileSelection)
@@ -824,6 +913,89 @@ ContentPage {
                                     { displayName: Translation.tr("Top"), icon: "vertical_align_top", value: "top" },
                                     { displayName: Translation.tr("Above tray"), icon: "vertical_align_bottom", value: "bottom" },
                                 ]
+                            }
+                            ConfigSpinBox {
+                                id: barPageSpin
+                                Layout.fillWidth: true
+                                Layout.topMargin: 4
+                                icon: "auto_awesome_motion"
+                                text: Translation.tr("Horizontal bar page")
+                                from: 1
+                                to: 9
+                                stepSize: 1
+                                value: root.barPage(root.selectedId) + 1
+                                onValueChanged: {
+                                    if (root.hasSelection && value - 1 !== root.barPage(root.selectedId))
+                                        root.setBarPage(root.selectedId, value - 1);
+                                }
+                            }
+                            StyledText {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: Translation.tr("The bar shows one page of modules at a time. A page switch appears next to the modules when more than one page is in use; the bar returns to page 1 a few seconds after the pointer leaves it.")
+                                color: Appearance.colors.colOnSurfaceVariant
+                                font.pixelSize: Appearance.font.pixelSize.smaller
+                            }
+                            RowLayout {
+                                id: barOrderRow
+                                Layout.fillWidth: true
+                                Layout.topMargin: 4
+                                spacing: 8
+                                readonly property int position: root.barPosition(root.selectedId)
+                                readonly property bool vertical: Config.options.bar?.vertical ?? false
+                                MaterialSymbol {
+                                    text: barOrderRow.vertical ? "swap_vert" : "swap_horiz"
+                                    iconSize: Appearance.font.pixelSize.large
+                                    color: Appearance.colors.colOnSurfaceVariant
+                                }
+                                StyledText {
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    text: barOrderRow.position > 0
+                                        ? Translation.tr("Bar order: %1 of %2").arg(barOrderRow.position).arg(root.enabledBarCount)
+                                        : Translation.tr("Bar order: enable the module to arrange it")
+                                    color: Appearance.colors.colOnSurfaceVariant
+                                    font.pixelSize: Appearance.font.pixelSize.smaller
+                                }
+                                RippleButton {
+                                    implicitWidth: 36
+                                    implicitHeight: 36
+                                    buttonRadius: Appearance.rounding.full
+                                    enabled: barOrderRow.position > 1
+                                    opacity: enabled ? 1 : 0.4
+                                    onClicked: root.moveBar(root.selectedId, -1)
+                                    Accessible.name: barOrderRow.vertical ? Translation.tr("Move up") : Translation.tr("Move right")
+                                    contentItem: MaterialSymbol {
+                                        horizontalAlignment: Text.AlignHCenter
+                                        text: barOrderRow.vertical ? "arrow_upward" : "arrow_forward"
+                                        iconSize: Appearance.font.pixelSize.larger
+                                        color: Appearance.colors.colOnLayer1
+                                    }
+                                    StyledToolTip { text: barOrderRow.vertical ? Translation.tr("Move up") : Translation.tr("Move right") }
+                                }
+                                RippleButton {
+                                    implicitWidth: 36
+                                    implicitHeight: 36
+                                    buttonRadius: Appearance.rounding.full
+                                    enabled: barOrderRow.position > 0 && barOrderRow.position < root.enabledBarCount
+                                    opacity: enabled ? 1 : 0.4
+                                    onClicked: root.moveBar(root.selectedId, 1)
+                                    Accessible.name: barOrderRow.vertical ? Translation.tr("Move down") : Translation.tr("Move left")
+                                    contentItem: MaterialSymbol {
+                                        horizontalAlignment: Text.AlignHCenter
+                                        text: barOrderRow.vertical ? "arrow_downward" : "arrow_back"
+                                        iconSize: Appearance.font.pixelSize.larger
+                                        color: Appearance.colors.colOnLayer1
+                                    }
+                                    StyledToolTip { text: barOrderRow.vertical ? Translation.tr("Move down") : Translation.tr("Move left") }
+                                }
+                            }
+                            StyledText {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: Translation.tr("Position 1 is next to the system tray (rightmost in the horizontal bar, topmost in the vertical bar). Newly enabled modules are added at the far end.")
+                                color: Appearance.colors.colOnSurfaceVariant
+                                font.pixelSize: Appearance.font.pixelSize.smaller
                             }
                         }
 

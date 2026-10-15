@@ -21,7 +21,6 @@ Item {
     readonly property string separator: ClockFormat.safeSeparator(config.options.separator, "•")
     readonly property int contentSpacing: ClockFormat.clampInteger(config.options.contentSpacing, 0, 24, 4)
     readonly property int horizontalPadding: ClockFormat.clampInteger(config.options.horizontalPadding, 0, 32, 0)
-    readonly property int centerSideWidth: ClockFormat.clampInteger(config.options.centerSideWidth, 280, 360, 280)
     readonly property int timeSizeOffset: ClockFormat.clampInteger(config.options.timeSizeOffset, -4, 8, 0)
     readonly property int dateSizeOffset: ClockFormat.clampInteger(config.options.dateSizeOffset, -4, 8, 0)
 

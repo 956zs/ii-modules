@@ -75,5 +75,39 @@ Scope {
             else return;
             Config.options.iimp[key] = cur.sort();
         }
+        // Horizontal bar page of a bar module (0 = main page); enablement
+        // stays in enabledBar. The map is JSON-encoded (see Config P2).
+        function setPage(id: string, page: int): void {
+            let pages = {};
+            try {
+                const parsed = JSON.parse(Config.options.iimp.barPagesJson ?? "{}");
+                if (parsed && typeof parsed === "object") pages = parsed;
+            } catch (error) {
+                pages = {};
+            }
+            if (page > 0) pages[id] = page;
+            else delete pages[id];
+            Config.options.iimp.barPagesJson = JSON.stringify(pages);
+        }
+        // Bar order: place a bar module at a 1-based position among the
+        // enabled bar modules (1 = rightmost in the horizontal bar, topmost
+        // in the vertical bar). The stored array lists every enabled bar id
+        // in display order; ids no longer enabled keep their slot at the end
+        // so they do not shadow enabled modules' positions.
+        function setOrder(id: string, position: int): void {
+            const ids = [...(Config.options.iimp.enabledBar ?? [])];
+            if (!ids.includes(id)) return;
+            let stored = [];
+            try {
+                const parsed = JSON.parse(Config.options.iimp.barOrderJson ?? "[]");
+                if (Array.isArray(parsed)) stored = Array.from(new Set(parsed.filter(x => typeof x === "string")));
+            } catch (error) {
+                stored = [];
+            }
+            const current = stored.filter(x => ids.includes(x)).concat(ids.filter(x => !stored.includes(x)));
+            current.splice(current.indexOf(id), 1);
+            current.splice(Math.max(0, Math.min(position - 1, current.length)), 0, id);
+            Config.options.iimp.barOrderJson = JSON.stringify(current.concat(stored.filter(x => !ids.includes(x))));
+        }
     }
 }

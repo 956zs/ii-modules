@@ -1,0 +1,204 @@
+{
+  "protocolVersion": 1,
+  "id": "adaptive_bar",
+  "name": {
+    "en_US": "Adaptive Bar Layout",
+    "zh_TW": "自適應 Bar 版面",
+    "zh_CN": "自适应 Bar 布局"
+  },
+  "description": {
+    "en_US": "Keeps the horizontal bar intact on narrower screens. When the right side runs out of room, pinned tray icons fold into the tray overflow menu first, then both center sections shrink equally, so nothing spills over the screen-centered workspaces. Wide screens keep the stock layout.",
+    "zh_TW": "讓水平 bar 在較窄的螢幕上維持完整。右側空間不足時，先把已釘選的系統匣圖示收進系統匣溢位選單，再對稱縮窄中央兩側區塊，避免內容壓到螢幕置中的工作區。寬螢幕維持 stock 版面。",
+    "zh_CN": "让水平 bar 在较窄的屏幕上保持完整。右侧空间不足时，先把固定的托盘图标收进托盘溢出菜单，再对称缩窄中央两侧区块，避免内容压到屏幕居中的工作区。宽屏幕保持 stock 布局。"
+  },
+  "version": "1.0.0",
+  "authors": [
+    "nlcat"
+  ],
+  "license": "MIT",
+  "slots": [
+    "window"
+  ],
+  "entries": {
+    "window": "main.qml",
+    "settings": "settings.qml"
+  },
+  "compat": {
+    "probes": [
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "import qs.modules.common.functions",
+        "reason": "imports the fit controller beside the stock imports"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "readonly property int centerSideModuleWidth:",
+        "reason": "stock responsive centre side width the fit treats as its upper bound"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "id: middleSection",
+        "reason": "screen-centred middle section measured for the right section's room"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "id: leftCenterGroup",
+        "reason": "left centre side group resized symmetrically"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "id: rightCenterGroup",
+        "reason": "right centre side group resized symmetrically"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "id: rightCenterGroupContent",
+        "reason": "right centre content whose natural width bounds shrinking"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "id: rightSectionRowLayout",
+        "reason": "right section layout whose implicit width is the demand"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "id: barRightSideMouseArea",
+        "reason": "right section clipped only when nothing else fits"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarContent.qml",
+        "pattern": "invertSide: Config?.options.bar.bottom",
+        "reason": "horizontal tray instance receives the fold count"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/BarGroup.qml",
+        "pattern": "default property alias items: gridLayout.children",
+        "reason": "centre group children read for the left content minimum"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "property bool showOverflowMenu: true",
+        "reason": "tray fold state lives beside the stock overflow switch"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "property list<var> pinnedItems",
+        "reason": "pinned icons are the foldable set"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "id: trayOverflowButton",
+        "reason": "overflow button revealed when folded icons need it"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "id: overflowPopup",
+        "reason": "overflow popup opens for folded icons"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "id: trayOverflowLayout",
+        "reason": "overflow grid columns follow the folded set"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "        columnSpacing: 15",
+        "reason": "tray grid gap counted per folded icon"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "onMenuOpened: (qsWindow) => {",
+        "reason": "pinned delegate hides folded icons"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "                    rowSpacing: 10",
+        "reason": "overflow grid hosts the folded-model bindings"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTray.qml",
+        "pattern": "model: root.unpinnedItems",
+        "reason": "overflow repeater shows folded icons"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/bar/SysTrayItem.qml",
+        "pattern": "implicitWidth: 20",
+        "reason": "fixed tray icon width freed per folded icon"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/ConfigSpinBox.qml",
+        "reason": "numeric settings control"
+      }
+    ],
+    "testedOn": {
+      "dotsCommit": "446504ad42",
+      "qsVersion": "0.2.1"
+    }
+  },
+  "capabilities": [],
+  "patches": [
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-after",
+      "anchor": "import qs.modules.common.functions",
+      "content": "import qs.mod.adaptive_bar as AdaptiveBar\n"
+    },
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-after",
+      "anchor": "readonly property int centerSideModuleWidth:",
+      "content": "\n    // adaptive_bar: fold pinned tray icons first, then shrink both centre side\n    // groups, whenever the right section would spill over the centred middle\n    // section; clip only what still cannot fit.\n    AdaptiveBar.FitController {\n        id: adaptiveBarFit\n        barWidth: root.width\n        stockSideWidth: root.centerSideModuleWidth\n        middle: middleSection\n        leftSide: leftCenterGroup\n        rightSide: rightCenterGroup\n        rightContent: rightCenterGroupContent\n        rightRow: rightSectionRowLayout\n        tray: adaptiveBarTray\n    }\n    Binding {\n        target: leftCenterGroup\n        property: \"implicitWidth\"\n        value: adaptiveBarFit.side\n    }\n    Binding {\n        target: rightCenterGroup\n        property: \"implicitWidth\"\n        value: adaptiveBarFit.side\n    }\n    Binding {\n        target: barRightSideMouseArea\n        property: \"clip\"\n        value: adaptiveBarFit.overflow > 0\n    }\n"
+    },
+    {
+      "file": "modules/ii/bar/BarContent.qml",
+      "op": "insert-after",
+      "anchor": "invertSide: Config?.options.bar.bottom",
+      "content": "                id: adaptiveBarTray\n                adaptiveBarFoldCount: adaptiveBarFit.fold\n"
+    },
+    {
+      "file": "modules/ii/bar/SysTray.qml",
+      "op": "insert-after",
+      "anchor": "property bool showOverflowMenu: true",
+      "content": "\n    // adaptive_bar: the horizontal bar folds the first N pinned icons into the\n    // overflow menu while it is short on space (0 keeps the stock tray).\n    property int adaptiveBarFoldCount: 0\n    readonly property int adaptiveBarFolded: Math.max(0, Math.min(root.adaptiveBarFoldCount, root.pinnedItems.length))\n    readonly property var adaptiveBarOverflowItems: {\n        const items = [];\n        for (let i = 0; i < root.adaptiveBarFolded; i++)\n            items.push(root.pinnedItems[i]);\n        for (let i = 0; i < root.unpinnedItems.length; i++)\n            items.push(root.unpinnedItems[i]);\n        return items;\n    }\n    // Width freed per folded icon: stock SysTrayItem (20 px) plus one grid gap.\n    readonly property real adaptiveBarFoldUnit: 20 + gridLayout.columnSpacing\n    // Folding reveals the overflow button when nothing is unpinned.\n    readonly property real adaptiveBarOverflowOverhead: root.showOverflowMenu && root.unpinnedItems.length === 0 ? trayOverflowButton.implicitWidth + gridLayout.columnSpacing : 0\n    Binding {\n        target: trayOverflowButton\n        property: \"visible\"\n        value: root.showOverflowMenu && root.adaptiveBarOverflowItems.length > 0\n        when: root.adaptiveBarFolded > 0\n    }\n    Binding {\n        target: overflowPopup\n        property: \"active\"\n        value: root.trayOverflowOpen && root.adaptiveBarOverflowItems.length > 0\n        when: root.adaptiveBarFolded > 0\n    }\n"
+    },
+    {
+      "file": "modules/ii/bar/SysTray.qml",
+      "op": "insert-before",
+      "anchor": "onMenuOpened: (qsWindow) => {",
+      "content": "                required property int index\n                visible: index >= root.adaptiveBarFolded\n"
+    },
+    {
+      "file": "modules/ii/bar/SysTray.qml",
+      "op": "insert-after",
+      "anchor": "                    rowSpacing: 10",
+      "content": "                    Binding {\n                        target: adaptiveBarOverflowRepeater\n                        property: \"model\"\n                        value: root.adaptiveBarOverflowItems\n                        when: root.adaptiveBarFolded > 0\n                    }\n                    Binding {\n                        target: trayOverflowLayout\n                        property: \"columns\"\n                        value: Math.ceil(Math.sqrt(root.adaptiveBarOverflowItems.length))\n                        when: root.adaptiveBarFolded > 0\n                    }\n"
+    },
+    {
+      "file": "modules/ii/bar/SysTray.qml",
+      "op": "insert-after",
+      "anchor": "model: root.unpinnedItems",
+      "content": "                        id: adaptiveBarOverflowRepeater\n"
+    }
+  ]
+}

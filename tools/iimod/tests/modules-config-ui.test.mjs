@@ -11,7 +11,7 @@ function loadPureLogic() {
 
   const context = vm.createContext({})
   vm.runInContext(
-    `${match[1]}\nglobalThis.api = { isFlippable, needsAttention, filterModules, reconcileSelectedId, slotKind }`,
+    `${match[1]}\nglobalThis.api = { isFlippable, needsAttention, filterModules, reconcileSelectedId, slotKind, parsePageMap, pageOf, setPageEntry, parseOrderList, orderedBarIds, moveOrderEntry }`,
     context,
   )
   return context.api
@@ -135,4 +135,46 @@ test('detail keeps lazy module settings, placement, statuses, and empty recovery
   assert.match(source, /Clear search and filters/)
   assert.match(source, /The module index could not be read\./)
   assert.match(source, /This module modifies stock shell files/)
+})
+
+test('bar page map stores non-main pages only and survives junk', () => {
+  const logic = loadPureLogic()
+  assert.equal(logic.setPageEntry('{}', 'network_traffic', 1), '{"network_traffic":1}')
+  assert.equal(logic.setPageEntry('{"network_traffic":1}', 'screentime', 2), '{"network_traffic":1,"screentime":2}')
+  assert.equal(logic.setPageEntry('{"network_traffic":1}', 'network_traffic', 0), '{}')
+  assert.equal(logic.setPageEntry('{"network_traffic":1}', 'network_traffic', -3), '{}')
+  assert.equal(logic.setPageEntry('{"network_traffic":1}', 'network_traffic', 1.5), '{}')
+  assert.equal(logic.setPageEntry('not json', 'a', 2), '{"a":2}')
+  assert.equal(logic.setPageEntry('[1,2]', 'a', 2), '{"a":2}')
+  assert.equal(logic.setPageEntry(undefined, '', 2), '{}')
+  assert.equal(logic.pageOf('{"a":3}', 'a'), 3)
+  assert.equal(logic.pageOf('{"a":"3"}', 'a'), 3)
+  assert.equal(logic.pageOf('{"a":-1}', 'a'), 0)
+  assert.equal(logic.pageOf('{', 'a'), 0)
+  assert.equal(logic.pageOf('{"a":3}', 'missing'), 0)
+  assert.match(source, /Config\.options\.iimp\.barPagesJson = setPageEntry/)
+  assert.match(source, /Horizontal bar page/)
+})
+
+test('bar order lists enabled ids first, moves within enabled ids, and survives junk', () => {
+  const logic = loadPureLogic()
+  const enabled = ['a', 'b', 'c', 'd']
+  assert.deepEqual(Array.from(logic.orderedBarIds('[]', enabled)), ['a', 'b', 'c', 'd'])
+  assert.deepEqual(Array.from(logic.orderedBarIds('["d","gone","b"]', enabled)), ['d', 'b', 'a', 'c'])
+  assert.deepEqual(Array.from(logic.orderedBarIds('{"a":1}', enabled)), ['a', 'b', 'c', 'd'])
+  assert.deepEqual(Array.from(logic.orderedBarIds('[1,"b",null,"b"]', ['b', 'a', 'a'])), ['b', 'a'])
+  assert.deepEqual(Array.from(logic.orderedBarIds(undefined, null)), [])
+  assert.deepEqual(Array.from(logic.parseOrderList('not json')), [])
+
+  assert.equal(logic.moveOrderEntry('[]', enabled, 'c', 1), '["c","a","b","d"]')
+  assert.equal(logic.moveOrderEntry('["d"]', enabled, 'b', 2), '["d","b","a","c"]')
+  assert.equal(logic.moveOrderEntry('[]', enabled, 'a', 99), '["b","c","d","a"]')
+  assert.equal(logic.moveOrderEntry('[]', enabled, 'd', 0), '["d","a","b","c"]')
+  assert.equal(logic.moveOrderEntry('["gone","c","a"]', ['a', 'c'], 'a', 1), '["a","c","gone"]')
+  assert.equal(logic.moveOrderEntry('["gone"]', enabled, 'missing', 1), '["gone"]')
+  assert.equal(logic.moveOrderEntry('[]', enabled, 'a', 'x'), '[]')
+  assert.match(source, /Config\.options\.iimp\.barOrderJson = moveOrderEntry\(/)
+  assert.match(source, /onClicked:\s*root\.moveBar\(root\.selectedId, -1\)/)
+  assert.match(source, /onClicked:\s*root\.moveBar\(root\.selectedId, 1\)/)
+  assert.match(source, /Bar order: %1 of %2/)
 })
