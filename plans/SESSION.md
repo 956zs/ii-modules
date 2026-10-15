@@ -52,6 +52,15 @@ Owner (Discord): asked for the osu! indicator, "想要美美的". Built
   links untouched. `site/public/registry.json` regenerated (osu_indicator
   was missing). Local `npm run build` (catalog, 49 tests, tsc, vite,
   vitepress) exits 0.
+- ✅ Owner: "自行合併" → release on my own judgement. Release dry-runs
+  failed for adaptive_bar (probes), clock_popup_slim and indicator_tools
+  (host P7 anchor `import qs.modules.common.functions`): the hand-trimmed
+  `spec/fixtures/ii-stock` snippets predate host generation 4 and
+  adaptive_bar. Extended BarContent/SysTray/SysTrayItem/BarGroup fixtures
+  with the missing anchors and probe patterns (indentation-exact, every
+  anchor still unique); all 11 dry-runs pass. memory_center is deliberately
+  not released: open P2 (ConfigLoader materializing guard) says harden at
+  its next release.
 - Unreleased versions after the merge (no tags/releases yet): iimod 1.5.0
   (last release 1.2.0), adaptive_bar 1.0.0, osu_indicator 1.0.0,
   clock_popup_slim 3.0.0, battery_trend 1.3.0, memory_center 1.2.0,
