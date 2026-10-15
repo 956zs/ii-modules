@@ -9,6 +9,7 @@ import {
   moduleDocPaths,
   moduleFromManifest,
   registryJson,
+  rewriteModuleLinks,
 } from './module-catalog.mjs'
 
 function manifest(overrides = {}) {
@@ -92,6 +93,32 @@ test('moduleDocPaths uses English README and documents the Chinese fallback', as
   const [translated] = await moduleDocPaths('en_US', { modulesDir })
   assert.equal(translated.content, '# English details\n')
   assert.equal(translated.params.editPath, 'modules/sample/README.en.md')
+})
+
+test('rewriteModuleLinks turns sibling module links into site pages', () => {
+  const ids = ['adaptive_bar', 'clock_popup_slim']
+  assert.equal(rewriteModuleLinks('see [a](../adaptive_bar/)', ids), 'see [a](./adaptive_bar)')
+  assert.equal(rewriteModuleLinks('[a](../adaptive_bar)', ids), '[a](./adaptive_bar)')
+  assert.equal(rewriteModuleLinks('[a](../adaptive_bar/README.md#limits)', ids), '[a](./adaptive_bar#limits)')
+  assert.equal(rewriteModuleLinks('[a](../adaptive_bar/README.en.md)', ids), '[a](./adaptive_bar)')
+  // Unknown modules, deeper paths, and non-module relative links are untouched.
+  assert.equal(rewriteModuleLinks('[a](../unknown/)', ids), '[a](../unknown/)')
+  assert.equal(rewriteModuleLinks('[a](../adaptive_bar/docs/x.md)', ids), '[a](../adaptive_bar/docs/x.md)')
+  assert.equal(rewriteModuleLinks('[a](../../README.md)', ids), '[a](../../README.md)')
+  assert.equal(rewriteModuleLinks('', ids), '')
+  assert.equal(rewriteModuleLinks('[a](../adaptive_bar/)', []), '[a](../adaptive_bar/)')
+})
+
+test('moduleDocPaths rewrites sibling module links in both locales', async () => {
+  const modulesDir = await fixture({
+    other: { manifest: manifest({ id: 'other', name: { en_US: 'Other', zh_TW: '其他' } }), readme: '# 其他\n' },
+    sample: { manifest: manifest(), readme: '# 範例\n\n見 [other](../other/)。' },
+  })
+  const chinese = (await moduleDocPaths('zh_TW', { modulesDir })).find((page) => page.params.id === 'sample')
+  assert.match(chinese.content, /\]\(\.\/other\)/)
+  await writeFile(path.join(modulesDir, 'sample', 'README.en.md'), '# Sample\n\nSee [other](../other/README.md).\n')
+  const english = (await moduleDocPaths('en_US', { modulesDir })).find((page) => page.params.id === 'sample')
+  assert.equal(english.content, '# Sample\n\nSee [other](./other).\n')
 })
 
 test('documentationEditUrl resolves generated and ordinary documentation sources', () => {

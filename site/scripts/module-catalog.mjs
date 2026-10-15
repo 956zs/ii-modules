@@ -123,12 +123,25 @@ export function registryJson(modules) {
   return `${JSON.stringify({ modules: publicModules }, null, 2)}\n`
 }
 
+// READMEs link to sibling modules repository-relatively (`../<id>/`,
+// `../<id>/README.md`); on the site every module page is a sibling under
+// /modules/, so those links become `./<id>`. Other relative paths are left
+// alone.
+export function rewriteModuleLinks(markdown, ids) {
+  const known = new Set(ids)
+  return markdown.replace(
+    /\]\(\.\.\/([a-z][a-z0-9_]*)(?:\/(?:README(?:\.en)?\.md)?)?(#[^)\s]*)?\)/g,
+    (match, id, anchor = '') => (known.has(id) ? `](./${id}${anchor})` : match),
+  )
+}
+
 export async function moduleDocPaths(locale, options) {
   if (!REQUIRED_LOCALES.includes(locale)) throw new Error(`Unsupported locale: ${locale}`)
   const modules = await loadModuleCatalog(options)
+  const ids = modules.map((module) => module.id)
   return Promise.all(
     modules.map(async (module) => {
-      const readme = await readFile(module.readmePath, 'utf8')
+      const readme = rewriteModuleLinks(await readFile(module.readmePath, 'utf8'), ids)
       const readmeParams = {
         id: module.id,
         editPath: `modules/${module.id}/README.md`,
@@ -142,7 +155,7 @@ export async function moduleDocPaths(locale, options) {
             id: module.id,
             editPath: `modules/${module.id}/README.en.md`,
           },
-          content: await readFile(englishReadme, 'utf8'),
+          content: rewriteModuleLinks(await readFile(englishReadme, 'utf8'), ids),
         }
       } catch (error) {
         if (error?.code !== 'ENOENT') throw error
