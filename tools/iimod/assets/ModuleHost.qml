@@ -75,5 +75,19 @@ Scope {
             else return;
             Config.options.iimp[key] = cur.sort();
         }
+        // Horizontal bar page of a bar module (0 = main page); enablement
+        // stays in enabledBar. The map is JSON-encoded (see Config P2).
+        function setPage(id: string, page: int): void {
+            let pages = {};
+            try {
+                const parsed = JSON.parse(Config.options.iimp.barPagesJson ?? "{}");
+                if (parsed && typeof parsed === "object") pages = parsed;
+            } catch (error) {
+                pages = {};
+            }
+            if (page > 0) pages[id] = page;
+            else delete pages[id];
+            Config.options.iimp.barPagesJson = JSON.stringify(pages);
+        }
     }
 }

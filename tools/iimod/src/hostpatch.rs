@@ -56,20 +56,22 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                     // supported representation; consumers JSON.parse it and
                     // reassign the whole string to trigger change notification.
                     "                property string barPlacementsJson: \"{}\"\n",
+                    // Horizontal bar pages: JSON-encoded map of module id -> page
+                    // index (0 = main page, the default). Same string encoding
+                    // rationale as barPlacementsJson.
+                    "                property string barPagesJson: \"{}\"\n",
                     "            }\n",
                 ),
             ),
         ),
-        // P3: bar slot host (renders left of the Weather group). The modules
-        // sit in a Row inside the RTL right-section RowLayout so a module that
-        // hides its own root reserves no space: its Loader collapses to zero
-        // width and the positioner skips it. Width (never Loader.visible)
-        // follows item.visible, because item.visible is EFFECTIVE visibility
-        // and would read false forever once the Loader itself were hidden.
-        // Row spacing 9 = the former RowLayout spacing 5 + leftMargin 4;
-        // RightToLeft keeps the first enabledBar id rightmost. The explicit
-        // preferred width stops the RowLayout from falling back to (and
-        // latching) the Row's last width when every module is hidden.
+        // P3: bar slot host (renders left of the Weather group). The BarSlot
+        // host asset owns the module Loaders and Bartender-style pages
+        // (iimp.barPagesJson): one page shown at a time, every page kept
+        // instantiated, width reserved for the widest page so nothing beside
+        // it moves on a switch. The explicit preferred width stops the
+        // RowLayout from latching the slot's last width when every module is
+        // hidden; visibility follows the model count only, never a module's
+        // effective visibility.
         (
             "modules/ii/bar/BarContent.qml",
             p(
@@ -77,31 +79,14 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                 PatchOp::InsertBefore,
                 "// Weather",
                 concat!(
-                    "            Row {\n",
-                    "                // Bar-slot modules. A Row rather than direct RowLayout children:\n",
-                    "                // a module that hides its own root collapses to a zero-width\n",
-                    "                // Loader, which the positioner skips, so it reserves no width,\n",
-                    "                // margin, or spacing. RightToLeft keeps the enabledBar order of\n",
-                    "                // the surrounding RTL RowLayout. Bind width, never Loader.visible,\n",
-                    "                // to item.visible: it reads effective visibility and would stick.\n",
-                    "                visible: iimpBarSlotRepeater.count > 0\n",
+                    "            BarSlot {\n",
+                    "                // Bar-slot modules with pages; see mod/iimp/BarSlot.qml.\n",
+                    "                ids: Config.options.iimp?.enabledBar ?? []\n",
+                    "                pagesJson: Config.options.iimp?.barPagesJson ?? \"{}\"\n",
+                    "                barHovered: barRightSideMouseArea.hovered\n",
                     "                Layout.preferredWidth: implicitWidth\n",
                     "                Layout.leftMargin: implicitWidth > 0 ? 4 : 0\n",
                     "                Layout.fillHeight: true\n",
-                    "                layoutDirection: Qt.RightToLeft\n",
-                    "                spacing: 9\n",
-                    "                Repeater {\n",
-                    "                    id: iimpBarSlotRepeater\n",
-                    "                    model: Config.options.iimp?.enabledBar ?? []\n",
-                    "                    delegate: Loader {\n",
-                    "                        required property string modelData\n",
-                    "                        readonly property bool shown: item !== null && item.visible\n",
-                    "                        anchors.verticalCenter: parent?.verticalCenter\n",
-                    "                        width: shown ? item.implicitWidth : 0\n",
-                    "                        source: Quickshell.shellPath(`mod/${modelData}/bar.qml`)\n",
-                    "                        onStatusChanged: if (status === Loader.Error) console.warn(`[iimp] bar module failed: ${modelData}`)\n",
-                    "                    }\n",
-                    "                }\n",
                     "            }\n",
                 ),
             ),
@@ -176,6 +161,18 @@ pub fn embedded_host_patches() -> Vec<(&'static str, PatchInstance)> {
                     "                }\n",
                     "            }\n",
                 ),
+            ),
+        ),
+        // P7: BarContent import for the host types used by P3 (BarSlot).
+        // Shares its anchor line with module patches (e.g. adaptive_bar);
+        // anchors resolve against stripped stock text, so both coexist.
+        (
+            "modules/ii/bar/BarContent.qml",
+            p(
+                7,
+                PatchOp::InsertAfter,
+                "import qs.modules.common.functions",
+                "import qs.mod.iimp\n",
             ),
         ),
     ]
@@ -288,6 +285,7 @@ pub fn ensure_host(
         paths::host_dir().join("ModulesConfig.qml"),
         &bundle.modules_config_qml,
     )?;
+    std::fs::write(paths::host_dir().join("BarSlot.qml"), &bundle.bar_slot_qml)?;
     if !paths::host_dir().join("ModuleImports.qml").exists() {
         write_module_imports(&[])?;
     }
@@ -383,30 +381,70 @@ mod tests {
     }
 
     #[test]
-    fn horizontal_bar_slot_collapses_hidden_modules() {
-        let (_, p3) = embedded_host_patches()
-            .into_iter()
+    fn horizontal_bar_slot_delegates_to_host_asset() {
+        let patches = embedded_host_patches();
+        let (_, p3) = patches
+            .iter()
             .find(|(file, p)| *file == "modules/ii/bar/BarContent.qml" && p.index == 3)
             .expect("P3 present");
         let content = p3.content.as_str();
-        // A Row positioner skips zero-width children; direct RowLayout
-        // children would keep reserving width, margin, and spacing.
-        assert!(content.starts_with("            Row {\n"));
+        assert!(content.starts_with("            BarSlot {\n"));
         assert!(content.ends_with("            }\n"));
-        assert!(content.contains("                layoutDirection: Qt.RightToLeft\n"));
-        assert!(content.contains("                spacing: 9\n"));
-        assert!(content.contains("                Layout.preferredWidth: implicitWidth\n"));
-        assert!(content.contains("readonly property bool shown: item !== null && item.visible\n"));
-        assert!(content.contains("width: shown ? item.implicitWidth : 0\n"));
-        // item.visible is effective visibility: hiding the Loader or Row from
-        // it would read false forever, so only the model count may hide the Row.
-        let visibility: Vec<&str> = content
-            .lines()
-            .map(str::trim)
-            .filter(|line| line.starts_with("visible:"))
-            .collect();
-        assert_eq!(visibility, ["visible: iimpBarSlotRepeater.count > 0"]);
+        assert!(content.contains("ids: Config.options.iimp?.enabledBar ?? []\n"));
+        assert!(content.contains("pagesJson: Config.options.iimp?.barPagesJson ?? \"{}\"\n"));
+        assert!(content.contains("barHovered: barRightSideMouseArea.hovered\n"));
+        assert!(content.contains("Layout.preferredWidth: implicitWidth\n"));
+        // No visibility binding in the patch: the asset decides from its
+        // model count, never from a module's effective visibility.
+        assert!(!content.contains("visible:"));
         assert_eq!(content.matches('{').count(), content.matches('}').count());
+        // P7 brings the host type into BarContent.
+        let (_, p7) = patches
+            .iter()
+            .find(|(file, p)| *file == "modules/ii/bar/BarContent.qml" && p.index == 7)
+            .expect("P7 present");
+        assert_eq!(p7.content, "import qs.mod.iimp\n");
+        // Config projection declares the page map.
+        let (_, p2) = patches
+            .iter()
+            .find(|(file, p)| *file == "modules/common/Config.qml" && p.index == 2)
+            .expect("P2 present");
+        assert!(p2
+            .content
+            .contains("property string barPagesJson: \"{}\"\n"));
+    }
+
+    #[test]
+    fn bar_slot_asset_keeps_pages_instantiated_and_collapses_hidden_modules() {
+        let slot = include_str!("../assets/BarSlot.qml");
+        // Same collapse rule as before: width, never Loader.visible, follows
+        // item.visible; the root hides only from the model count.
+        assert!(slot.contains("readonly property bool shown: item !== null && item.visible"));
+        assert!(slot.contains("width: shown ? item.implicitWidth : 0"));
+        assert!(slot.contains("visible: (root.ids ?? []).length > 0"));
+        // Non-current pages stay visible (effective visibility!) and fade.
+        assert!(slot.contains("opacity: current ? 1 : 0"));
+        assert!(slot.contains("enabled: current"));
+        assert!(!slot.contains("visible: current"));
+        // Reserved width of the widest page keeps neighbours still.
+        assert!(slot.contains("width: root.pagesWidth"));
+        assert!(slot.contains("widest = Math.max(widest, page.implicitWidth);"));
+        // Paging: cycle, malformed JSON -> main page, auto return.
+        assert!(slot.contains(
+            "root.pageIndex = root.pageCount > 0 ? (root.pageIndex + 1) % root.pageCount : 0;"
+        ));
+        assert!(slot.contains("return Number.isInteger(page) && page > 0 ? page : 0;"));
+        assert!(slot.contains("interval: 5000"));
+        // No FINAL anchor-line names on the Item root.
+        for name in [
+            "property bool bottom",
+            "property bool top",
+            "property var left",
+            "property var right",
+        ] {
+            assert!(!slot.contains(name), "{name}");
+        }
+        assert_eq!(slot.matches('{').count(), slot.matches('}').count());
     }
 
     #[test]

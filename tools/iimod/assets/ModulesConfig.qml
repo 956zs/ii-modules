@@ -116,6 +116,35 @@ ContentPage {
         const hasWindow = items.indexOf("window") !== -1;
         return hasBar && hasWindow ? "both" : hasBar ? "bar" : "window";
     }
+
+    // Page map for the horizontal bar, JSON-encoded like barPlacementsJson.
+    // Page 0 is the main page and is stored by omission; junk input yields
+    // an empty map rather than throwing inside a binding.
+    function parsePageMap(json) {
+        try {
+            const parsed = JSON.parse(typeof json === "string" && json.length > 0 ? json : "{}");
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function pageOf(json, id) {
+        const page = Number(parsePageMap(json)[id]);
+        return Number.isInteger(page) && page > 0 ? page : 0;
+    }
+
+    function setPageEntry(json, id, page) {
+        const pages = parsePageMap(json);
+        const next = Number(page);
+        if (typeof id !== "string" || id.length === 0)
+            return JSON.stringify(pages);
+        if (Number.isInteger(next) && next > 0)
+            pages[id] = next;
+        else
+            delete pages[id];
+        return JSON.stringify(pages);
+    }
     // PURE_LOGIC_END
 
     function slotIcon(module) {
@@ -186,6 +215,14 @@ ContentPage {
         }
         next[id] = value;
         Config.options.iimp.barPlacementsJson = JSON.stringify(next);
+    }
+
+    function barPage(id) {
+        return pageOf(Config.options.iimp?.barPagesJson ?? "{}", id);
+    }
+
+    function setBarPage(id, page) {
+        Config.options.iimp.barPagesJson = setPageEntry(Config.options.iimp?.barPagesJson ?? "{}", id, page);
     }
 
     onFilteredModsChanged: Qt.callLater(reconcileSelection)
@@ -824,6 +861,28 @@ ContentPage {
                                     { displayName: Translation.tr("Top"), icon: "vertical_align_top", value: "top" },
                                     { displayName: Translation.tr("Above tray"), icon: "vertical_align_bottom", value: "bottom" },
                                 ]
+                            }
+                            ConfigSpinBox {
+                                id: barPageSpin
+                                Layout.fillWidth: true
+                                Layout.topMargin: 4
+                                icon: "auto_awesome_motion"
+                                text: Translation.tr("Horizontal bar page")
+                                from: 1
+                                to: 9
+                                stepSize: 1
+                                value: root.barPage(root.selectedId) + 1
+                                onValueChanged: {
+                                    if (root.hasSelection && value - 1 !== root.barPage(root.selectedId))
+                                        root.setBarPage(root.selectedId, value - 1);
+                                }
+                            }
+                            StyledText {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: Translation.tr("The bar shows one page of modules at a time. A page switch appears next to the modules when more than one page is in use; the bar returns to page 1 a few seconds after the pointer leaves it.")
+                                color: Appearance.colors.colOnSurfaceVariant
+                                font.pixelSize: Appearance.font.pixelSize.smaller
                             }
                         }
 
