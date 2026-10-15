@@ -28,11 +28,12 @@ Tier A bar 模組，在水平或垂直 bar 顯示 osu!lazer 現在是開著放�
 | 項目 | 說明 |
 |---|---|
 | Tier | A，零 stock 修改 |
-| 系統 | `osu-state` daemon 在跑並寫入 `$XDG_RUNTIME_DIR/osu-state.json` |
+| 系統 | 選用：`osu-state` daemon 在跑並寫入 `$XDG_RUNTIME_DIR/osu-state.json`；安裝時不檢查 |
 | 相容性 | dots-hyprland `446504ad42`、Quickshell `0.2.1` 測試通過 |
 | Capabilities | 無 |
 
-狀態檔不存在、daemon 沒跑、或內容不合約定時，膠囊視為 `off` 而隱藏。
+狀態檔不存在、daemon 沒跑、或內容不合約定時，膠囊視為 `off` 而隱藏。1.0.1 起
+`module.json` 不再把 `osu-state` 列為硬性系統相依，沒有 daemon 的機器也能安裝。
 
 ## 安裝
 
