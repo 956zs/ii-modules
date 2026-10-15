@@ -1,3 +1,30 @@
+## 2026-10-15 osu_indicator bar module (plan section 4)
+
+Owner (Discord): asked for the osu! indicator, "想要美美的". Built
+`modules/osu_indicator` 1.0.0, Tier A bar module, on branch feat/bar-shelf.
+
+- ✅ Visual: hit-circle glyph (ring + centre dot), approach circle shrinking
+  onto it while `playing`, dot breathing in `cooldown`, dim ring for
+  `idle`, dim ring + dot for `menu`, hidden when `off`; elapsed play time /
+  cooldown countdown with tabular digits; accent = theme primary or osu!
+  pink (`accent` setting); colour transitions via elementMoveFast.
+- ✅ Data: reads only `$XDG_RUNTIME_DIR/osu-state.json` (FileView
+  watchChanges + 5 s fallback reload + 1 s ticker only while a timer is on
+  screen). Pure `OsuStateLogic.js` with 5 node tests (parse, visibility,
+  timing, bar text, beatmap split).
+- ✅ Popup (StyledPopup): state label, duration, cooldown countdown, map
+  title / difficulty · mapper, note that heavy builds wait.
+- ✅ i18n by independent subagent: zh_TW + zh_CN exact, deny-orphans clean;
+  "For:" confirmed as time-in-state.
+- ✅ validate / check / install clean, `iimod verify` all intact, ConfigLoader
+  drift check 0 deviations.
+- ✅ Live: real daemon reported `off` (osu closed) -> pill hidden. Daemon
+  stopped and states simulated by writing the state file: idle, menu,
+  playing ("1:53" + approach ring), cooldown ("1:07"), popup; screenshots
+  OK; daemon restarted afterwards.
+- Note: on this palette the theme primary is near-white, so "theme" accent
+  reads white; osu! pink is one switch away in Settings > Modules.
+
 ## 2026-10-15 bar pages (Bartender-style in-place paging of bar modules)
 
 Owner (via Discord bridge): the bar is out of room. First asked to verify the
