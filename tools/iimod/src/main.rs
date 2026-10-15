@@ -104,6 +104,12 @@ enum Command {
     Enable { id: String },
     /// Disable a module (auto-disables its dependents)
     Disable { id: String },
+    /// Put a bar module on a page of the horizontal bar (1 = main page)
+    Page {
+        id: String,
+        #[arg(value_parser = clap::value_parser!(u32).range(1..=99))]
+        page: u32,
+    },
     /// List installed modules and their states
     List,
     /// Show full registry record for one module
@@ -221,6 +227,7 @@ fn run() -> anyhow::Result<()> {
         Command::Uninstall { id, cascade } => commands::cmd_uninstall(&id, cascade),
         Command::Enable { id } => commands::cmd_set_state(&id, true),
         Command::Disable { id } => commands::cmd_set_state(&id, false),
+        Command::Page { id, page } => commands::cmd_page(&id, page),
         Command::List => commands::cmd_list(),
         Command::Info { id } => commands::cmd_info(&id),
         Command::Pack {

@@ -377,7 +377,13 @@ pub(crate) fn project_enabled(registry: &Registry) -> Result<()> {
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or_else(|| serde_json::json!({}));
-    root["iimp"] = serde_json::json!({ "enabledBar": bar, "enabledWindow": window });
+    // Merge into the existing block: the host also stores user placement
+    // choices here (barPlacementsJson, barPagesJson) that must survive a sync.
+    if !root["iimp"].is_object() {
+        root["iimp"] = serde_json::json!({});
+    }
+    root["iimp"]["enabledBar"] = serde_json::json!(bar);
+    root["iimp"]["enabledWindow"] = serde_json::json!(window);
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)?;
     }

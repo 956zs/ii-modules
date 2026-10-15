@@ -267,6 +267,56 @@ fn rollback_uninstall(
     }
 }
 
+/// A module's bar page is a placement choice, not a lifecycle state: no
+/// registry mutation, no host preflight. The shell applies it over IPC when
+/// running; otherwise config.json is edited directly, preserving every other
+/// key. `page` is 1-based on the command line (page 1 = main page).
+pub fn cmd_page(id: &str, page: u32) -> Result<()> {
+    let registry = registry::load()?;
+    let Some(module) = registry.get(id) else {
+        return Err(bail(exit::USAGE, format!("module {id:?} is not installed")));
+    };
+    if !module.manifest.slots.contains(&crate::manifest::Slot::Bar) {
+        return Err(bail(
+            exit::USAGE,
+            format!("module {id:?} has no bar slot; only bar modules have a bar page"),
+        ));
+    }
+    let index = page - 1;
+    if qs::ping() && qs::set_page(id, index) {
+        println!("{id}: bar page {page}");
+        return Ok(());
+    }
+    let config_path = paths::shell_config_root().join("config.json");
+    let mut root: serde_json::Value = std::fs::read(&config_path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !root["iimp"].is_object() {
+        root["iimp"] = serde_json::json!({});
+    }
+    let mut pages: serde_json::Map<String, serde_json::Value> = root["iimp"]["barPagesJson"]
+        .as_str()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    if index > 0 {
+        pages.insert(id.to_string(), serde_json::json!(index));
+    } else {
+        pages.remove(id);
+    }
+    root["iimp"]["barPagesJson"] =
+        serde_json::Value::String(serde_json::to_string(&serde_json::Value::Object(pages))?);
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = config_path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&root)? + "\n")?;
+    std::fs::rename(&tmp, &config_path)?;
+    println!("{id}: bar page {page} (config.json edited; shell not running)");
+    Ok(())
+}
+
 pub fn cmd_set_state(id: &str, enable: bool) -> Result<()> {
     let mutation = hoststate::mutation_preflight(MutationMode::Normal)?;
     let mut registry = registry::load()?;

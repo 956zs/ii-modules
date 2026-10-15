@@ -61,6 +61,11 @@ pub fn set_enabled(id: &str, slot: &str, on: bool) -> bool {
     .is_some()
 }
 
+/// Set a bar module's horizontal-bar page (0 = main page).
+pub fn set_page(id: &str, page: u32) -> bool {
+    ipc_call(&["iimp", "setPage", id, &page.to_string()]).is_some()
+}
+
 /// Best-effort reload. Order: host IPC reload → byte-identical shell.qml rewrite
 /// (close-write fires the file watcher regardless of content). Never an error:
 /// Quickshell keeps the previous config alive on reload failure.
