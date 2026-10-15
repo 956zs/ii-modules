@@ -19,27 +19,19 @@ protocol cannot check for you.
   `main.qml` loads exactly once. Any accounting or otherwise stateful owner
   must live in the window slot, or it double-counts on multi-monitor setups.
 - QML FINAL property collisions fail the whole module at load with
-  `Cannot override FINAL property`. Known traps: `property var top` on an
-  `Item`, `property string icon` on a Controls `Button`. Pick non-builtin
-  names (`topProcs`, `iconName`).
-- Inside a `LazyLoader { component: ... }`, a binding whose property name
-  equals an outer id (`mem: mem`) resolves to the property itself and stays
-  permanently undefined, even though the same pattern works for direct
-  children. Give ids different names from the properties they feed
-  (`memInfo`, `procTop`).
-- Never declare `property var` inside a `JsonAdapter`/`JsonObject`:
-  Quickshell's deserializer segfaults writing a JSON object into it.
-  Represent maps as a JSON string property and `JSON.parse` at the reader.
-- `StyledPopup` content loads lazily on first hover, so QML errors inside it
-  never appear at module load. Always hover-open every popup once after
-  editing its content.
-- Quickshell 0.2.1 emits `runningChanged` but no `exited` on
-  `QProcess::FailedToStart`. A fallback chain that waits for `exited` hangs;
-  guard with a zero-delay check on the failed-to-start path (see
-  `modules/network_traffic`).
-- Material Symbols coverage varies by installed font build. Verify a glyph
-  name exists (for example with fontTools against the installed variable
-  font) before shipping an icon name; missing glyphs render as tofu.
+  `Cannot override FINAL property`. Known traps: `property var top` and
+  `property bool bottom` on an `Item` (every anchor line name: `top`,
+  `bottom`, `left`, `right`, `horizontalCenter`, `verticalCenter`,
+  `baseline`), `property string icon` on a Controls `Button`. Pick
+  non-builtin names (`topProcs`, `barAtBottom`, `iconName`). A host asset
+  failing this way breaks the whole shell reload, not just one module.
+- Bar pages (`iimp.barPagesJson`, host generation 4) keep every page's
+  modules instantiated; a module on a non-current page is fully visible in
+  QML terms but has `opacity: 0` and `enabled: false` on its page row. Do
+  not key behaviour on `visible` to detect "my page is shown"; hover and
+  click simply do not arrive while the page is away. The slot reserves the
+  width of the widest page, so a module that grows on page 2 widens the slot
+  on page 1 as well.
 
 ## IIMP / iimod workflow
 

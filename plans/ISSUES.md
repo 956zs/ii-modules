@@ -63,3 +63,20 @@
   still version 1.2.0, says "在狀態列中顯示百分比" (same version, different
   content), so every install warns about conflicting contributors. Release a
   patch version and reinstall.
+
+## Bar pages follow-ups (2026-10-15)
+
+- 🟢 P3 iimod host dev loop: a changed asset at the same HOST_GENERATION is a
+  content collision (fails closed by design), so iterating on an unreleased
+  generation requires hand-editing `~/.local/share/iimp/host/`. Consider a
+  `doctor --drop-generation <n>` guarded to generations newer than the last
+  released one.
+- 🟢 P3 `ensure_host` writes host assets but never prunes files no longer in
+  the bundle; a renamed asset leaves the old file in `$II/mod/iimp/`.
+- 🟢 P3 bar pages reserve the widest page's width; a module that only grows
+  on a secondary page also widens the main page. Acceptable for now; a
+  per-page width with animated resize would need adaptive_bar to tolerate
+  the churn.
+- 🟢 P3 adaptive_bar could page modules automatically when the right section
+  overflows (would write `barPagesJson`, churning config.json); deferred,
+  explicit pages only for now.

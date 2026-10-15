@@ -1,3 +1,51 @@
+## 2026-10-15 bar pages (Bartender-style in-place paging of bar modules)
+
+Owner (via Discord bridge): the bar is out of room. First asked to verify the
+macOS "second row" tools; a shelf (second row under the bar) was built and
+installed, then rejected: the owner wants Bartender's default behaviour, the
+module row replaced in place by the next page, unbounded pages.
+
+Design decision: host-level (iimod 1.5.0, host generation 4), not a module.
+Module patches cannot target host-injected QML (anchors resolve against
+stripped stock text), and the host already owns bar-module placement
+(`barPlacementsJson` for the vertical bar).
+
+Delivered (branch feat/bar-shelf, on top of feat/adaptive-bar-layout):
+- ✅ Config P2 `iimp.barPagesJson` (id -> page index, 0 = main, stored by
+  omission); P3 is now a single `BarSlot {}` instance; new P7
+  `import qs.mod.iimp` in BarContent.
+- ✅ New host asset `assets/BarSlot.qml` owns the module Loaders: every page
+  instantiated once per bar, stacked in place, cross-fade + 6 px rise
+  (elementMoveFast), non-current pages `opacity: 0` + `enabled: false`
+  (never `visible: false`, effective-visibility trap), slot width reserved
+  for the widest page so the "1/2" button, tray and indicators never move
+  on a switch (owner feedback: "切換的按鈕盡量不要位移"), 5 s after the
+  pointer leaves `barRightSideMouseArea` it returns to page 1.
+  bundle/manifest/verify carry the third asset; legacy gen-3 bundles still
+  hash identically.
+- ✅ ModulesConfig "Horizontal bar page" spin box (1-9); ModuleHost IPC
+  `setPage`; CLI `iimod page <id> <n>` (IPC, config.json fallback).
+- ✅ Fixed `project_enabled` fallback overwriting the whole `iimp` block
+  (dropped barPlacementsJson when the shell was down).
+- ✅ Tests: 67 unit + 18 i18n + 39 integration + 12 node; clippy/fmt clean.
+  Fixture BarContent gained the import anchor line P7 needs.
+- ✅ Live (eDP-1 at layout x=3840): reapply to gen 4, verify intact,
+  `iimod page network_traffic 2`; screenshots confirm the "1/2" button at
+  the same x on both pages, tray untouched, network_traffic shows live
+  rates immediately on page 2 (state kept), 6.5 s after leaving the bar it
+  is back on page 1. First iteration (Repeater model swap, no reserved
+  width) made the tray/button jump and reset module state; replaced.
+- Gotchas hit: `property bool bottom` on an Item root collided with the
+  FINAL anchor line and broke the whole shell reload (documented). Changing
+  an asset at the same HOST_GENERATION is a content collision, so each dev
+  iteration dropped the persisted gen-4 bundle by hand
+  (`~/.local/share/iimp/host/current.json` back to gen 3 + remove the gen-4
+  dir); four times this session, final live bundle is the committed
+  content. `ensure_host` does not prune stale host-dir files; the dev-only
+  `BarShelf.qml`/`BarPager.qml` were removed by hand.
+- ⏳ Not covered live: bar.bottom, multi-monitor, vertical bar (pages are
+  ignored there by design), settings-page spin box interaction.
+
 ## 2026-10-15 osu! play-state daemon (plans/osu-playing-indicator.md)
 
 Owner decided to implement sections 3 and 5 of the plan now (service + CLI +
