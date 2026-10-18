@@ -1,3 +1,10 @@
+## 2026-10-18 Modules page redesign (v2 layout)
+
+- ✅ `ModulesConfig.qml` now uses a scope rail (status and slot), a card grid, and a detail pane. Narrow windows show chips and replace the grid with the detail pane. Iimod logic (enable/disable via `iimod`, index reload, snap-back, bar placement/page/order) is unchanged.
+- ✅ Added pure `matchesSlot` with contracts; updated layout, selection, and flip contracts. `node --test tools/iimod/tests/modules-config-ui.test.mjs`: 16/16.
+- ✅ Bumped `HOST_GENERATION` 4 → 5 (asset changed after `iimod/v1.5.0`); `CURRENT_HOST_GENERATION` in integration tests follows. `cargo test` for iimod: 70 unit, 18 i18n CLI, 40 integration pass; `cargo fmt --check` passes.
+- ⚠️ Not verified: no `qmlformat`/`qmllint` pass (both exit silently on the original file too), and no live visual check. Live check needs `iimod reapply` on the running shell, which is a mutation the owner must approve.
+
 ## 2026-10-16 osu-state quit grace
 
 Owner: quitting a map midway left the indicator/hook "busy" for the full
