@@ -15,7 +15,7 @@ use crate::patch::{self, PatchInstance};
 use crate::paths;
 use crate::registry::{self, Lock};
 
-pub const HOST_GENERATION: u32 = 4;
+pub const HOST_GENERATION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
