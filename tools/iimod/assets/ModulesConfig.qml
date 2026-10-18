@@ -369,9 +369,9 @@ ContentPage {
         Layout.fillWidth: true
         spacing: 12
 
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
-            spacing: 16
+            spacing: 10
 
             ColumnLayout {
                 Layout.fillWidth: true
@@ -393,8 +393,7 @@ ContentPage {
 
             Item {
                 Layout.fillWidth: true
-                Layout.maximumWidth: 320
-                implicitHeight: 44
+                implicitHeight: 48
 
                 MaterialTextField {
                     anchors.fill: parent
