@@ -11,7 +11,7 @@ function loadPureLogic() {
 
   const context = vm.createContext({})
   vm.runInContext(
-    `${match[1]}\nglobalThis.api = { isFlippable, needsAttention, filterModules, reconcileSelectedId, slotKind, parsePageMap, pageOf, setPageEntry, parseOrderList, orderedBarIds, moveOrderEntry }`,
+    `${match[1]}\nglobalThis.api = { isFlippable, needsAttention, filterModules, reconcileSelectedId, slotKind, matchesSlot, parsePageMap, pageOf, setPageEntry, parseOrderList, orderedBarIds, moveOrderEntry }`,
     context,
   )
   return context.api
@@ -57,6 +57,24 @@ test('selection preserves a visible id and falls back at result boundaries', () 
   assert.equal(logic.reconcileSelectedId([null, {}, { id: 'valid' }], ''), 'valid')
 })
 
+test('slot filter keeps modules that declare the slot and ignores unknown values', () => {
+  const logic = loadPureLogic()
+  const bar = { id: 'bar_only', slots: ['bar'] }
+  const window = { id: 'window_only', slots: ['window'] }
+  const both = { id: 'both', slots: ['bar', 'window'] }
+
+  assert.equal(logic.matchesSlot(bar, 'bar'), true)
+  assert.equal(logic.matchesSlot(bar, 'window'), false)
+  assert.equal(logic.matchesSlot(window, 'window'), true)
+  assert.equal(logic.matchesSlot(window, 'bar'), false)
+  assert.equal(logic.matchesSlot(both, 'bar'), true)
+  assert.equal(logic.matchesSlot(both, 'window'), true)
+  assert.equal(logic.matchesSlot(bar, 'all'), true)
+  assert.equal(logic.matchesSlot(bar, undefined), true)
+  assert.equal(logic.matchesSlot(null, 'all'), false)
+  assert.equal(logic.matchesSlot('not a module', 'bar'), false)
+})
+
 test('state and slot helpers handle normal and malformed modules', () => {
   const logic = loadPureLogic()
   assert.equal(logic.isFlippable({ state: 'enabled' }), true)
@@ -72,14 +90,31 @@ test('state and slot helpers handle normal and malformed modules', () => {
   assert.equal(logic.slotKind(null), 'window')
 })
 
-test('module manager uses responsive list and detail navigation', () => {
+test('module manager uses a scope rail, card grid, and responsive detail pane', () => {
   assert.match(source, /baseWidth:\s*Math\.max\(320, width - 40\)/)
   assert.match(source, /readonly property bool wideLayout:\s*baseWidth >= 760/)
-  assert.match(source, /id:\s*workspace[\s\S]*id:\s*listPane[\s\S]*id:\s*detailPane/)
-  assert.match(source, /visible:\s*root\.wideLayout \|\| !root\.narrowDetailOpen/)
-  assert.match(source, /visible:\s*root\.wideLayout \|\| root\.narrowDetailOpen/)
-  assert.match(source, /text:\s*"arrow_back"/)
-  assert.match(source, /onClicked:\s*root\.narrowDetailOpen = false/)
+  assert.match(source, /id:\s*workspace[\s\S]*id:\s*railColumn[\s\S]*id:\s*contentColumn[\s\S]*id:\s*detailPane/)
+  assert.match(source, /id:\s*railColumn[\s\S]*?visible:\s*root\.wideLayout/)
+  assert.match(source, /id:\s*contentColumn[\s\S]*?visible:\s*root\.wideLayout \|\| !root\.detailOpen/)
+  assert.match(source, /id:\s*detailPane[\s\S]*?visible:\s*root\.detailOpen && root\.hasSelection/)
+  assert.match(source, /Layout\.preferredWidth:\s*root\.wideLayout \? 340 : -1/)
+  assert.match(source, /text:\s*root\.wideLayout \? "close" : "arrow_back"/)
+  assert.match(source, /onClicked:\s*root\.closeDetail\(\)/)
+  assert.doesNotMatch(source, /narrowDetailOpen|listPane/)
+})
+
+test('card grid derives columns from width and keeps the slot filter wired', () => {
+  assert.match(source, /readonly property int columns:\s*Math\.max\(1, Math\.floor\(\(width \+ spacing\) \/ \(240 \+ spacing\)\)\)/)
+  assert.match(source, /readonly property real cardWidth:\s*Math\.floor\(\(width - spacing \* \(columns - 1\)\) \/ columns\)/)
+  assert.match(source, /\)\.filter\(module => matchesSlot\(module, slotFilter\)\)/)
+  assert.match(source, /readonly property var slotOptions:/)
+  assert.match(source, /root\.slotFilter = modelData\.value/)
+  assert.match(source, /slotFilter = "all"/)
+})
+
+test('detail pane closes when the open module leaves the filtered result', () => {
+  assert.match(source, /function reconcileSelection\(\)[\s\S]*?const stillVisible = root\.filteredMods\.some\(module => module\.id === root\.selectedId\)[\s\S]*?if \(!stillVisible\)\s*root\.detailOpen = false/)
+  assert.match(source, /function selectModule\(id\)\s*{\s*root\.selectedId = id;\s*root\.detailOpen = true;/)
 })
 
 test('QML searches localized name, id, and description without an undeployed asset', () => {
@@ -105,10 +140,10 @@ test('selected filter chip uses the end-4 primary foreground color', () => {
 
 test('selection does not expand settings inside list rows', () => {
   assert.match(source, /onFilteredModsChanged:\s*Qt\.callLater\(reconcileSelection\)/)
-  assert.match(source, /onClicked:\s*root\.selectModule\(moduleRow\.modelData\.id\)/)
+  assert.match(source, /onClicked:\s*root\.selectModule\(card\.modelData\.id\)/)
   assert.doesNotMatch(source, /showSettings|settingsEverOpened|settingsRevealer|Revealer\s*{/)
 
-  const delegateStart = source.indexOf('delegate: Rectangle {\n                        id: moduleRow')
+  const delegateStart = source.indexOf('id: card\n')
   const detailStart = source.indexOf('id: detailPane')
   assert.ok(delegateStart >= 0 && detailStart > delegateStart)
   assert.doesNotMatch(source.slice(delegateStart, detailStart), /Loader\s*{/)
@@ -118,7 +153,7 @@ test('enable transitions retain iimod authority, fallback, reload, and safe erro
   assert.match(source, /command -v iimod \|\| echo "\$HOME\/\.local\/bin\/iimod"/)
   assert.match(source, /exec "\$bin" "\$1" "\$2"/)
   assert.match(source, /indexFile\.reload\(\)/)
-  assert.match(source, /checked:\s*moduleRow\.moduleOn/)
+  assert.match(source, /checked:\s*card\.moduleOn/)
   assert.match(source, /checked:\s*root\.selectedModule\?\.state === "enabled"/)
   assert.match(source, /Module operation failed\./)
   assert.doesNotMatch(source, /text:\s*flipProc\.lastError|text:\s*flipStderr\.text/)

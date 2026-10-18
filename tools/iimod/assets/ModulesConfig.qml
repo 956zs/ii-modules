@@ -11,6 +11,10 @@ import qs.modules.common.widgets
  * Installed-only module manager. iimod remains the enable/disable authority;
  * this page requests a transition and reloads the index projection. Switches
  * stay bound to projected state, so failed operations snap back naturally.
+ *
+ * Wide: scope rail beside a card grid, with the selected module's detail pane
+ * on the right. Narrow: filter chips above the grid, and the detail pane
+ * replaces the grid while a module is open.
  */
 ContentPage {
     id: root
@@ -24,8 +28,9 @@ ContentPage {
     property string indexError: ""
     property string searchText: ""
     property string statusFilter: "all"
+    property string slotFilter: "all"
     property string selectedId: ""
-    property bool narrowDetailOpen: false
+    property bool detailOpen: false
     property var operationStates: ({})
 
     readonly property bool wideLayout: baseWidth >= 760
@@ -39,17 +44,22 @@ ContentPage {
             localized(module.description, ""),
         ].join(" "),
         id => operationFor(id).error.length > 0
-    )
+    ).filter(module => matchesSlot(module, slotFilter))
     readonly property var selectedModule: moduleById(selectedId)
     readonly property bool hasSelection: selectedModule !== null
     readonly property int enabledCount: mods.filter(module => module.state === "enabled").length
     readonly property int enabledBarCount: (Config.options.iimp?.enabledBar ?? []).length
     readonly property int attentionCount: mods.filter(module => needsAttention(module)).length
-    readonly property var filterOptions: [
+    readonly property var statusOptions: [
         { value: "all", label: Translation.tr("All"), count: mods.length },
         { value: "enabled", label: Translation.tr("Enabled"), count: enabledCount },
         { value: "disabled", label: Translation.tr("Disabled"), count: mods.filter(module => module.state === "disabled").length },
         { value: "attention", label: Translation.tr("Needs attention"), count: attentionCount },
+    ]
+    readonly property var slotOptions: [
+        { value: "all", label: Translation.tr("All slots"), count: mods.length },
+        { value: "bar", label: Translation.tr("Bar"), count: mods.filter(module => slotKind(module.slots) !== "window").length },
+        { value: "window", label: Translation.tr("Window"), count: mods.filter(module => slotKind(module.slots) !== "bar").length },
     ]
 
     function localized(dict, fallback) {
@@ -116,6 +126,17 @@ ContentPage {
         const hasBar = items.indexOf("bar") !== -1;
         const hasWindow = items.indexOf("window") !== -1;
         return hasBar && hasWindow ? "both" : hasBar ? "bar" : "window";
+    }
+
+    // Slot filter: "bar" or "window" keep modules that declare that slot
+    // (a "both" module appears under either); any other value keeps all.
+    function matchesSlot(module, slot) {
+        if (!module || typeof module !== "object")
+            return false;
+        if (slot !== "bar" && slot !== "window")
+            return true;
+        const kind = slotKind(module.slots);
+        return kind === "both" || kind === slot;
     }
 
     // Page map for the horizontal bar, JSON-encoded like barPlacementsJson.
@@ -205,21 +226,28 @@ ContentPage {
         return Translation.tr("Blocked by dependency");
     }
 
+    // Keeps the selection on a visible module; the detail pane closes when the
+    // open module leaves the filtered result so it never shows a hidden one.
     function reconcileSelection() {
+        const stillVisible = root.filteredMods.some(module => module.id === root.selectedId);
         root.selectedId = reconcileSelectedId(root.filteredMods, root.selectedId);
-        if (root.selectedId.length === 0 && !root.wideLayout)
-            root.narrowDetailOpen = false;
+        if (!stillVisible)
+            root.detailOpen = false;
     }
 
     function selectModule(id) {
         root.selectedId = id;
-        if (!root.wideLayout)
-            root.narrowDetailOpen = true;
+        root.detailOpen = true;
+    }
+
+    function closeDetail() {
+        root.detailOpen = false;
     }
 
     function clearFilters() {
         root.searchText = "";
         root.statusFilter = "all";
+        root.slotFilter = "all";
     }
 
     function flip(id, on) {
@@ -278,7 +306,6 @@ ContentPage {
     }
 
     onFilteredModsChanged: Qt.callLater(reconcileSelection)
-    onWideLayoutChanged: if (wideLayout) narrowDetailOpen = false
 
     Keys.onPressed: event => {
         if (event.key !== Qt.Key_Escape)
@@ -286,8 +313,8 @@ ContentPage {
         if (root.searchText.length > 0) {
             root.searchText = "";
             event.accepted = true;
-        } else if (!root.wideLayout && root.narrowDetailOpen) {
-            root.narrowDetailOpen = false;
+        } else if (root.detailOpen) {
+            root.detailOpen = false;
             event.accepted = true;
         }
     }
@@ -340,78 +367,84 @@ ContentPage {
 
     ColumnLayout {
         Layout.fillWidth: true
-        spacing: 10
+        spacing: 12
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: 16
 
-            StyledText {
+            ColumnLayout {
                 Layout.fillWidth: true
-                color: Appearance.colors.colOnLayer0
-                text: Translation.tr("Modules")
-                font.family: Appearance.font.family.title
-                font.pixelSize: Appearance.font.pixelSize.title + 6
-                font.variableAxes: Appearance.font.variableAxes.title
+                spacing: 0
+                StyledText {
+                    Layout.fillWidth: true
+                    color: Appearance.colors.colOnLayer0
+                    text: Translation.tr("Modules")
+                    font.family: Appearance.font.family.title
+                    font.pixelSize: Appearance.font.pixelSize.title + 6
+                    font.variableAxes: Appearance.font.variableAxes.title
+                }
+                StyledText {
+                    color: Appearance.colors.colOnSurfaceVariant
+                    text: Translation.tr("%1 installed · %2 enabled").arg(root.mods.length).arg(root.enabledCount)
+                    font.pixelSize: Appearance.font.pixelSize.smaller
+                }
             }
-            StyledText {
-                color: Appearance.colors.colOnSurfaceVariant
-                text: Translation.tr("%1 installed · %2 enabled").arg(root.mods.length).arg(root.enabledCount)
-                font.pixelSize: Appearance.font.pixelSize.smaller
-            }
-        }
 
-        Item {
-            Layout.fillWidth: true
-            implicitHeight: 48
+            Item {
+                Layout.fillWidth: true
+                Layout.maximumWidth: 320
+                implicitHeight: 44
 
-            MaterialTextField {
-                anchors.fill: parent
-                leftPadding: 44
-                rightPadding: root.searchText.length > 0 ? 44 : 14
-                placeholderText: Translation.tr("Search modules…")
-                text: root.searchText
-                wrapMode: TextEdit.NoWrap
-                verticalAlignment: TextInput.AlignVCenter
-                onTextChanged: root.searchText = text
-                Accessible.name: Translation.tr("Search modules")
-            }
-            MaterialSymbol {
-                anchors.left: parent.left
-                anchors.leftMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                text: "search"
-                iconSize: Appearance.font.pixelSize.larger
-                color: Appearance.colors.colOnSurfaceVariant
-            }
-            RippleButton {
-                visible: root.searchText.length > 0
-                anchors.right: parent.right
-                anchors.rightMargin: 4
-                anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: 40
-                implicitHeight: 40
-                buttonRadius: Appearance.rounding.full
-                onClicked: root.searchText = ""
-                Accessible.name: Translation.tr("Clear search")
-                contentItem: MaterialSymbol {
-                    horizontalAlignment: Text.AlignHCenter
-                    text: "close"
+                MaterialTextField {
+                    anchors.fill: parent
+                    leftPadding: 44
+                    rightPadding: root.searchText.length > 0 ? 44 : 14
+                    placeholderText: Translation.tr("Search modules…")
+                    text: root.searchText
+                    wrapMode: TextEdit.NoWrap
+                    verticalAlignment: TextInput.AlignVCenter
+                    onTextChanged: root.searchText = text
+                    Accessible.name: Translation.tr("Search modules")
+                }
+                MaterialSymbol {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "search"
                     iconSize: Appearance.font.pixelSize.larger
                     color: Appearance.colors.colOnSurfaceVariant
                 }
-                StyledToolTip { text: Translation.tr("Clear search") }
+                RippleButton {
+                    visible: root.searchText.length > 0
+                    anchors.right: parent.right
+                    anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: 36
+                    implicitHeight: 36
+                    buttonRadius: Appearance.rounding.full
+                    onClicked: root.searchText = ""
+                    Accessible.name: Translation.tr("Clear search")
+                    contentItem: MaterialSymbol {
+                        horizontalAlignment: Text.AlignHCenter
+                        text: "close"
+                        iconSize: Appearance.font.pixelSize.larger
+                        color: Appearance.colors.colOnSurfaceVariant
+                    }
+                    StyledToolTip { text: Translation.tr("Clear search") }
+                }
             }
         }
 
         Flow {
             Layout.fillWidth: true
+            visible: !root.wideLayout
             spacing: 6
             Repeater {
-                model: root.filterOptions
+                model: root.statusOptions
                 delegate: RippleButton {
                     required property var modelData
-                    implicitHeight: 38
+                    implicitHeight: 36
                     horizontalPadding: 12
                     buttonRadius: Appearance.rounding.full
                     toggled: root.statusFilter === modelData.value
@@ -431,175 +464,310 @@ ContentPage {
                     }
                 }
             }
+            Repeater {
+                model: root.slotOptions
+                delegate: RippleButton {
+                    required property var modelData
+                    implicitHeight: 36
+                    horizontalPadding: 12
+                    buttonRadius: Appearance.rounding.full
+                    toggled: root.slotFilter === modelData.value
+                    onClicked: root.slotFilter = modelData.value
+                    Accessible.name: modelData.label + " " + modelData.count
+                    contentItem: StyledText {
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        text: modelData.label + "  " + modelData.count
+                        color: root.slotFilter === modelData.value
+                            ? Appearance.colors.colOnPrimary
+                            : Appearance.colors.colOnLayer1
+                        font.pixelSize: Appearance.font.pixelSize.small
+                        Behavior on color {
+                            animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this)
+                        }
+                    }
+                }
+            }
         }
 
         RowLayout {
             id: workspace
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.max(360, root.height - 195)
-            spacing: 12
+            spacing: 16
 
-            Rectangle {
-                id: listPane
-                visible: root.wideLayout || !root.narrowDetailOpen
-                Layout.fillWidth: !root.wideLayout
-                Layout.fillHeight: true
-                Layout.preferredWidth: root.wideLayout ? Math.max(280, workspace.width * 0.38) : workspace.width
-                Layout.maximumWidth: root.wideLayout ? Math.max(280, workspace.width * 0.38) : workspace.width
-                radius: Appearance.rounding.small
-                color: Appearance.colors.colLayer1
-                clip: true
+            ColumnLayout {
+                id: railColumn
+                visible: root.wideLayout
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredWidth: 180
+                Layout.minimumWidth: 180
+                spacing: 4
 
-                ListView {
-                    id: moduleList
-                    anchors.fill: parent
-                    anchors.margins: 6
-                    visible: root.filteredMods.length > 0
-                    model: root.filteredMods
-                    spacing: 2
-                    clip: true
-                    reuseItems: true
-                    boundsBehavior: Flickable.StopAtBounds
-
-                    delegate: Rectangle {
-                        id: moduleRow
+                StyledText {
+                    Layout.leftMargin: 10
+                    Layout.bottomMargin: 2
+                    text: Translation.tr("Status")
+                    color: Appearance.colors.colOnSurfaceVariant
+                    font.pixelSize: Appearance.font.pixelSize.smallest
+                    font.weight: Font.Medium
+                }
+                Repeater {
+                    model: root.statusOptions
+                    delegate: RippleButton {
                         required property var modelData
-                        readonly property bool moduleOn: modelData.state === "enabled"
-                        readonly property bool flippable: root.isFlippable(modelData)
-                        readonly property var operation: root.operationFor(modelData.id)
-                        width: moduleList.width
-                        height: root.wideLayout ? 76 : 88
-                        radius: Appearance.rounding.small
-                        color: root.selectedId === modelData.id ? Appearance.colors.colSecondaryContainer : "transparent"
-                        Behavior on color { animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this) }
-
-                        RippleButton {
+                        Layout.fillWidth: true
+                        implicitHeight: 40
+                        buttonRadius: Appearance.rounding.small
+                        toggled: root.statusFilter === modelData.value
+                        onClicked: root.statusFilter = modelData.value
+                        Accessible.name: modelData.label + " " + modelData.count
+                        contentItem: RowLayout {
                             anchors.fill: parent
-                            buttonRadius: Appearance.rounding.small
-                            colBackground: "transparent"
-                            colBackgroundHover: Appearance.colors.colLayer1Hover
-                            colRipple: Appearance.colors.colLayer1Active
-                            onClicked: root.selectModule(moduleRow.modelData.id)
-                            Accessible.name: root.localized(moduleRow.modelData.name, moduleRow.modelData.id)
-
-                            contentItem: RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 62
-                                spacing: 10
-
-                                MaterialSymbol {
-                                    Layout.alignment: Qt.AlignTop
-                                    Layout.topMargin: 3
-                                    text: root.slotIcon(moduleRow.modelData)
-                                    iconSize: Appearance.font.pixelSize.huge
-                                    color: root.selectedId === moduleRow.modelData.id
-                                        ? Appearance.colors.colOnSecondaryContainer
-                                        : Appearance.colors.colOnSurfaceVariant
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            spacing: 8
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: modelData.label
+                                elide: Text.ElideRight
+                                color: root.statusFilter === modelData.value
+                                    ? Appearance.colors.colOnPrimary
+                                    : Appearance.colors.colOnLayer1
+                                font.pixelSize: Appearance.font.pixelSize.small
+                                Behavior on color {
+                                    animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this)
                                 }
-                                ColumnLayout {
+                            }
+                            StyledText {
+                                text: modelData.count
+                                color: root.statusFilter === modelData.value
+                                    ? Appearance.colors.colOnPrimary
+                                    : Appearance.colors.colOnSurfaceVariant
+                                font.pixelSize: Appearance.font.pixelSize.smaller
+                            }
+                        }
+                    }
+                }
+
+                StyledText {
+                    Layout.topMargin: 14
+                    Layout.leftMargin: 10
+                    Layout.bottomMargin: 2
+                    text: Translation.tr("Slot")
+                    color: Appearance.colors.colOnSurfaceVariant
+                    font.pixelSize: Appearance.font.pixelSize.smallest
+                    font.weight: Font.Medium
+                }
+                Repeater {
+                    model: root.slotOptions
+                    delegate: RippleButton {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        implicitHeight: 40
+                        buttonRadius: Appearance.rounding.small
+                        toggled: root.slotFilter === modelData.value
+                        onClicked: root.slotFilter = modelData.value
+                        Accessible.name: modelData.label + " " + modelData.count
+                        contentItem: RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            spacing: 8
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: modelData.label
+                                elide: Text.ElideRight
+                                color: root.slotFilter === modelData.value
+                                    ? Appearance.colors.colOnPrimary
+                                    : Appearance.colors.colOnLayer1
+                                font.pixelSize: Appearance.font.pixelSize.small
+                                Behavior on color {
+                                    animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this)
+                                }
+                            }
+                            StyledText {
+                                text: modelData.count
+                                color: root.slotFilter === modelData.value
+                                    ? Appearance.colors.colOnPrimary
+                                    : Appearance.colors.colOnSurfaceVariant
+                                font.pixelSize: Appearance.font.pixelSize.smaller
+                            }
+                        }
+                    }
+                }
+            }
+
+            ColumnLayout {
+                id: contentColumn
+                visible: root.wideLayout || !root.detailOpen
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
+                spacing: 12
+
+                Flow {
+                    id: cardFlow
+                    Layout.fillWidth: true
+                    spacing: 12
+                    readonly property int columns: Math.max(1, Math.floor((width + spacing) / (240 + spacing)))
+                    readonly property real cardWidth: Math.floor((width - spacing * (columns - 1)) / columns)
+                    visible: root.filteredMods.length > 0
+
+                    Repeater {
+                        model: root.filteredMods
+                        delegate: Rectangle {
+                            id: card
+                            required property var modelData
+                            readonly property bool moduleOn: modelData.state === "enabled"
+                            readonly property bool flippable: root.isFlippable(modelData)
+                            readonly property var operation: root.operationFor(modelData.id)
+                            readonly property bool selected: root.detailOpen && root.selectedId === modelData.id
+                            width: cardFlow.cardWidth
+                            height: cardContent.implicitHeight + 28
+                            radius: Appearance.rounding.normal
+                            color: card.selected ? Appearance.colors.colSecondaryContainer : Appearance.colors.colLayer1
+                            Behavior on color { animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this) }
+
+                            RippleButton {
+                                anchors.fill: parent
+                                buttonRadius: card.radius
+                                colBackground: "transparent"
+                                colBackgroundHover: Appearance.colors.colLayer1Hover
+                                colRipple: Appearance.colors.colLayer1Active
+                                onClicked: root.selectModule(card.modelData.id)
+                                Accessible.name: root.localized(card.modelData.name, card.modelData.id)
+                            }
+
+                            ColumnLayout {
+                                id: cardContent
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 14
+                                spacing: 8
+
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: 1
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 5
-                                        StyledText {
-                                            Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                            text: root.localized(moduleRow.modelData.name, moduleRow.modelData.id)
-                                            font.weight: Font.DemiBold
-                                            font.pixelSize: Appearance.font.pixelSize.normal
-                                            color: root.selectedId === moduleRow.modelData.id
+                                    spacing: 10
+
+                                    Rectangle {
+                                        Layout.alignment: Qt.AlignTop
+                                        implicitWidth: 40
+                                        implicitHeight: 40
+                                        radius: Appearance.rounding.small
+                                        color: Appearance.colors.colLayer0
+                                        MaterialSymbol {
+                                            anchors.centerIn: parent
+                                            text: root.slotIcon(card.modelData)
+                                            iconSize: Appearance.font.pixelSize.huge
+                                            color: card.selected
                                                 ? Appearance.colors.colOnSecondaryContainer
                                                 : Appearance.colors.colOnLayer1
                                         }
-                                        MaterialSymbol {
-                                            visible: moduleRow.modelData.tierB === true
-                                            text: "warning"
-                                            iconSize: Appearance.font.pixelSize.small
-                                            color: Appearance.m3colors.m3error
-                                        }
-                                        StyledText {
-                                            visible: moduleRow.modelData.tierB === true
-                                            text: Translation.tr("Patched")
-                                            font.pixelSize: Appearance.font.pixelSize.smallest
-                                            color: Appearance.m3colors.m3error
-                                        }
                                     }
-                                    StyledText {
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        visible: text.length > 0
-                                        text: root.localized(moduleRow.modelData.description, "")
-                                        color: Appearance.colors.colOnSurfaceVariant
-                                        font.pixelSize: Appearance.font.pixelSize.smaller
-                                        elide: Text.ElideRight
-                                        wrapMode: Text.WordWrap
-                                        maximumLineCount: root.wideLayout ? 1 : 2
-                                    }
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 4
+                                        Layout.rightMargin: 52
+                                        spacing: 1
                                         StyledText {
                                             Layout.fillWidth: true
                                             elide: Text.ElideRight
-                                            text: "v" + moduleRow.modelData.version + " · "
-                                                + root.slotLabel(moduleRow.modelData) + " · "
-                                                + root.stateLabel(moduleRow.modelData)
-                                            color: moduleRow.flippable
-                                                ? Appearance.colors.colOnLayer1Inactive
-                                                : Appearance.m3colors.m3error
-                                            font.pixelSize: Appearance.font.pixelSize.smallest
-                                        }
-                                        MaterialSymbol {
-                                            visible: !moduleRow.flippable || moduleRow.operation.error.length > 0
-                                            text: "error"
-                                            iconSize: Appearance.font.pixelSize.small
-                                            color: Appearance.m3colors.m3error
+                                            text: root.localized(card.modelData.name, card.modelData.id)
+                                            font.weight: Font.DemiBold
+                                            font.pixelSize: Appearance.font.pixelSize.normal
+                                            color: card.selected
+                                                ? Appearance.colors.colOnSecondaryContainer
+                                                : Appearance.colors.colOnLayer1
                                         }
                                         StyledText {
-                                            visible: !moduleRow.flippable
-                                            text: root.stateLabel(moduleRow.modelData)
-                                            color: Appearance.m3colors.m3error
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                            text: "v" + card.modelData.version + " · " + root.slotLabel(card.modelData)
+                                            color: Appearance.colors.colOnSurfaceVariant
                                             font.pixelSize: Appearance.font.pixelSize.smallest
                                         }
                                     }
                                 }
-                            }
-                        }
 
-                        Item {
-                            anchors.right: parent.right
-                            anchors.rightMargin: 6
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 50
-                            height: 44
-                            z: 2
-                            StyledSwitch {
-                                anchors.centerIn: parent
-                                scale: 0.85
-                                enabled: moduleRow.flippable && !moduleRow.operation.busy && !flipProc.running
-                                checked: moduleRow.moduleOn
+                                StyledText {
+                                    Layout.fillWidth: true
+                                    visible: text.length > 0
+                                    text: root.localized(card.modelData.description, "")
+                                    color: Appearance.colors.colOnSurfaceVariant
+                                    font.pixelSize: Appearance.font.pixelSize.smaller
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+                                    MaterialSymbol {
+                                        visible: !card.flippable || card.operation.error.length > 0
+                                        text: "error"
+                                        iconSize: Appearance.font.pixelSize.small
+                                        color: Appearance.m3colors.m3error
+                                    }
+                                    StyledText {
+                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight
+                                        text: root.stateLabel(card.modelData)
+                                        color: card.flippable
+                                            ? Appearance.colors.colOnLayer1Inactive
+                                            : Appearance.m3colors.m3error
+                                        font.pixelSize: Appearance.font.pixelSize.smallest
+                                        font.weight: Font.Medium
+                                    }
+                                    MaterialSymbol {
+                                        visible: card.modelData.tierB === true
+                                        text: "warning"
+                                        iconSize: Appearance.font.pixelSize.small
+                                        color: Appearance.m3colors.m3error
+                                    }
+                                    StyledText {
+                                        visible: card.modelData.tierB === true
+                                        text: Translation.tr("Patched")
+                                        font.pixelSize: Appearance.font.pixelSize.smallest
+                                        color: Appearance.m3colors.m3error
+                                    }
+                                }
                             }
-                            MouseArea {
-                                anchors.fill: parent
-                                enabled: moduleRow.flippable && !moduleRow.operation.busy && !flipProc.running
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: root.flip(moduleRow.modelData.id, !moduleRow.moduleOn)
-                                Accessible.role: Accessible.CheckBox
-                                Accessible.name: Translation.tr("Enable %1").arg(root.localized(moduleRow.modelData.name, moduleRow.modelData.id))
-                            }
-                            MaterialSymbol {
-                                anchors.centerIn: parent
-                                visible: moduleRow.operation.busy
-                                text: "progress_activity"
-                                iconSize: Appearance.font.pixelSize.larger
-                                color: Appearance.colors.colOnSurfaceVariant
-                                RotationAnimation on rotation {
-                                    running: moduleRow.operation.busy
-                                    loops: Animation.Infinite
-                                    from: 0
-                                    to: 360
-                                    duration: 900
+
+                            Item {
+                                anchors.top: parent.top
+                                anchors.right: parent.right
+                                anchors.topMargin: 10
+                                anchors.rightMargin: 10
+                                width: 52
+                                height: 44
+                                z: 2
+                                StyledSwitch {
+                                    anchors.centerIn: parent
+                                    scale: 0.85
+                                    enabled: card.flippable && !card.operation.busy && !flipProc.running
+                                    checked: card.moduleOn
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: card.flippable && !card.operation.busy && !flipProc.running
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.flip(card.modelData.id, !card.moduleOn)
+                                    Accessible.role: Accessible.CheckBox
+                                    Accessible.name: Translation.tr("Enable %1").arg(root.localized(card.modelData.name, card.modelData.id))
+                                }
+                                MaterialSymbol {
+                                    anchors.centerIn: parent
+                                    visible: card.operation.busy
+                                    text: "progress_activity"
+                                    iconSize: Appearance.font.pixelSize.larger
+                                    color: Appearance.colors.colOnSurfaceVariant
+                                    RotationAnimation on rotation {
+                                        running: card.operation.busy
+                                        loops: Animation.Infinite
+                                        from: 0
+                                        to: 360
+                                        duration: 900
+                                    }
                                 }
                             }
                         }
@@ -607,8 +775,8 @@ ContentPage {
                 }
 
                 ColumnLayout {
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width - 32, 340)
+                    Layout.fillWidth: true
+                    Layout.topMargin: 40
                     visible: root.filteredMods.length === 0
                     spacing: 8
                     MaterialSymbol {
@@ -632,7 +800,7 @@ ContentPage {
                         wrapMode: Text.WordWrap
                         text: root.indexError.length > 0 ? root.indexError
                             : root.mods.length === 0 ? Translation.tr("Install with: iimod install <package>")
-                            : Translation.tr("Try another search or reset the status filter.")
+                            : Translation.tr("Try another search or reset the filters.")
                         font.pixelSize: Appearance.font.pixelSize.smaller
                         font.family: root.mods.length === 0 && root.indexError.length === 0
                             ? Appearance.font.family.monospace : Appearance.font.family.main
@@ -640,6 +808,7 @@ ContentPage {
                     }
                     RippleButton {
                         Layout.alignment: Qt.AlignHCenter
+                        Layout.topMargin: 4
                         visible: root.mods.length > 0
                         implicitHeight: 40
                         buttonText: Translation.tr("Clear search and filters")
@@ -650,413 +819,388 @@ ContentPage {
 
             Rectangle {
                 id: detailPane
-                visible: root.wideLayout || root.narrowDetailOpen
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: Appearance.rounding.small
+                visible: root.detailOpen && root.hasSelection
+                Layout.alignment: Qt.AlignTop
+                Layout.fillWidth: !root.wideLayout
+                Layout.preferredWidth: root.wideLayout ? 340 : -1
+                Layout.minimumWidth: root.wideLayout ? 340 : 0
+                implicitHeight: detailColumn.implicitHeight + 32
+                radius: Appearance.rounding.normal
                 color: Appearance.colors.colLayer1
-                clip: true
 
                 ColumnLayout {
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width - 32, 300)
-                    visible: !root.hasSelection
-                    spacing: 8
-                    MaterialSymbol {
-                        Layout.alignment: Qt.AlignHCenter
-                        text: "extension"
-                        iconSize: 38
-                        color: Appearance.colors.colOnSurfaceVariant
-                    }
-                    StyledText {
-                        Layout.fillWidth: true
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
-                        text: Translation.tr("Select a module to view details")
-                        color: Appearance.colors.colOnSurfaceVariant
-                    }
-                }
-
-                Flickable {
-                    id: detailFlick
-                    anchors.fill: parent
+                    id: detailColumn
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 16
-                    visible: root.hasSelection
-                    contentWidth: width
-                    contentHeight: detailColumn.implicitHeight
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
+                    spacing: 14
 
-                    ColumnLayout {
-                        id: detailColumn
-                        width: detailFlick.width
-                        spacing: 12
-
-                        RowLayout {
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        RippleButton {
+                            implicitWidth: 40
+                            implicitHeight: 40
+                            buttonRadius: Appearance.rounding.full
+                            onClicked: root.closeDetail()
+                            Accessible.name: root.wideLayout ? Translation.tr("Close details") : Translation.tr("Back to modules")
+                            contentItem: MaterialSymbol {
+                                horizontalAlignment: Text.AlignHCenter
+                                text: root.wideLayout ? "close" : "arrow_back"
+                                iconSize: Appearance.font.pixelSize.larger
+                                color: Appearance.colors.colOnLayer1
+                            }
+                            StyledToolTip { text: root.wideLayout ? Translation.tr("Close details") : Translation.tr("Back to modules") }
+                        }
+                        StyledText {
                             Layout.fillWidth: true
-                            visible: !root.wideLayout
-                            spacing: 6
-                            RippleButton {
-                                implicitWidth: 44
-                                implicitHeight: 44
-                                buttonRadius: Appearance.rounding.full
-                                onClicked: root.narrowDetailOpen = false
-                                Accessible.name: Translation.tr("Back to modules")
-                                contentItem: MaterialSymbol {
-                                    horizontalAlignment: Text.AlignHCenter
-                                    text: "arrow_back"
-                                    iconSize: Appearance.font.pixelSize.huge
-                                    color: Appearance.colors.colOnLayer1
-                                }
-                                StyledToolTip { text: Translation.tr("Back to modules") }
+                            elide: Text.ElideRight
+                            text: Translation.tr("Module details")
+                            color: Appearance.colors.colOnSurfaceVariant
+                            font.pixelSize: Appearance.font.pixelSize.smaller
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+                        MaterialSymbol {
+                            Layout.alignment: Qt.AlignTop
+                            text: root.slotIcon(root.selectedModule)
+                            iconSize: 34
+                            color: Appearance.colors.colPrimary
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 1
+                            StyledText {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: root.localized(root.selectedModule?.name, root.selectedId)
+                                color: Appearance.colors.colOnLayer1
+                                font.family: Appearance.font.family.title
+                                font.pixelSize: Appearance.font.pixelSize.huge
+                                font.variableAxes: Appearance.font.variableAxes.title
                             }
                             StyledText {
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
-                                text: root.localized(root.selectedModule?.name, root.selectedId)
+                                text: "v" + (root.selectedModule?.version ?? "") + " · "
+                                    + root.slotLabel(root.selectedModule) + " · "
+                                    + (root.selectedModule?.tierB === true ? Translation.tr("Patched") : Translation.tr("Safe"))
                                 color: Appearance.colors.colOnSurfaceVariant
                                 font.pixelSize: Appearance.font.pixelSize.smaller
                             }
                         }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 12
+                        Item {
+                            Layout.alignment: Qt.AlignTop
+                            width: 52
+                            height: 44
+                            StyledSwitch {
+                                anchors.centerIn: parent
+                                scale: 0.85
+                                enabled: root.isFlippable(root.selectedModule)
+                                    && !root.operationFor(root.selectedId).busy && !flipProc.running
+                                checked: root.selectedModule?.state === "enabled"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: root.isFlippable(root.selectedModule)
+                                    && !root.operationFor(root.selectedId).busy && !flipProc.running
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: root.flip(root.selectedId, root.selectedModule.state !== "enabled")
+                                Accessible.role: Accessible.CheckBox
+                                Accessible.name: Translation.tr("Enable %1").arg(root.localized(root.selectedModule?.name, root.selectedId))
+                            }
                             MaterialSymbol {
-                                text: root.slotIcon(root.selectedModule)
-                                iconSize: 34
-                                color: Appearance.colors.colPrimary
+                                anchors.centerIn: parent
+                                visible: root.operationFor(root.selectedId).busy
+                                text: "progress_activity"
+                                iconSize: Appearance.font.pixelSize.larger
+                                color: Appearance.colors.colOnSurfaceVariant
+                                RotationAnimation on rotation {
+                                    running: root.operationFor(root.selectedId).busy
+                                    loops: Animation.Infinite
+                                    from: 0
+                                    to: 360
+                                    duration: 900
+                                }
                             }
-                            ColumnLayout {
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        visible: root.hasSelection && !root.isFlippable(root.selectedModule)
+                        implicitHeight: unavailableRow.implicitHeight + 16
+                        radius: Appearance.rounding.small
+                        color: Appearance.colors.colErrorContainer
+                        RowLayout {
+                            id: unavailableRow
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.margins: 10
+                            spacing: 8
+                            MaterialSymbol {
+                                text: "error"
+                                iconSize: Appearance.font.pixelSize.larger
+                                color: Appearance.colors.colOnErrorContainer
+                            }
+                            StyledText {
                                 Layout.fillWidth: true
-                                spacing: 1
-                                StyledText {
-                                    Layout.fillWidth: true
-                                    elide: Text.ElideRight
-                                    text: root.localized(root.selectedModule?.name, root.selectedId)
-                                    color: Appearance.colors.colOnLayer1
-                                    font.family: Appearance.font.family.title
-                                    font.pixelSize: Appearance.font.pixelSize.huge
-                                    font.variableAxes: Appearance.font.variableAxes.title
-                                }
-                                StyledText {
-                                    Layout.fillWidth: true
-                                    elide: Text.ElideRight
-                                    text: "v" + (root.selectedModule?.version ?? "") + " · "
-                                        + root.slotLabel(root.selectedModule) + " · "
-                                        + (root.selectedModule?.tierB === true ? Translation.tr("Patched") : Translation.tr("Safe"))
-                                    color: Appearance.colors.colOnSurfaceVariant
-                                    font.pixelSize: Appearance.font.pixelSize.smaller
-                                }
-                            }
-                            Item {
-                                width: 52
-                                height: 44
-                                StyledSwitch {
-                                    anchors.centerIn: parent
-                                    scale: 0.85
-                                    enabled: root.isFlippable(root.selectedModule)
-                                        && !root.operationFor(root.selectedId).busy && !flipProc.running
-                                    checked: root.selectedModule?.state === "enabled"
-                                }
-                                MouseArea {
-                                    anchors.fill: parent
-                                    enabled: root.isFlippable(root.selectedModule)
-                                        && !root.operationFor(root.selectedId).busy && !flipProc.running
-                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: root.flip(root.selectedId, root.selectedModule.state !== "enabled")
-                                    Accessible.role: Accessible.CheckBox
-                                    Accessible.name: Translation.tr("Enable %1").arg(root.localized(root.selectedModule?.name, root.selectedId))
-                                }
-                                MaterialSymbol {
-                                    anchors.centerIn: parent
-                                    visible: root.operationFor(root.selectedId).busy
-                                    text: "progress_activity"
-                                    iconSize: Appearance.font.pixelSize.larger
-                                    color: Appearance.colors.colOnSurfaceVariant
-                                    RotationAnimation on rotation {
-                                        running: root.operationFor(root.selectedId).busy
-                                        loops: Animation.Infinite
-                                        from: 0
-                                        to: 360
-                                        duration: 900
-                                    }
-                                }
+                                wrapMode: Text.WordWrap
+                                text: root.selectedModule?.state === "incompatible"
+                                    ? Translation.tr("This module is incompatible with the current shell.")
+                                    : Translation.tr("This module is blocked by a dependency.")
+                                color: Appearance.colors.colOnErrorContainer
+                                font.pixelSize: Appearance.font.pixelSize.smaller
                             }
                         }
+                    }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            visible: root.hasSelection && !root.isFlippable(root.selectedModule)
-                            implicitHeight: unavailableRow.implicitHeight + 16
-                            radius: Appearance.rounding.small
-                            color: Appearance.colors.colErrorContainer
-                            RowLayout {
-                                id: unavailableRow
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.margins: 10
-                                spacing: 8
-                                MaterialSymbol {
-                                    text: "error"
-                                    iconSize: Appearance.font.pixelSize.larger
-                                    color: Appearance.colors.colOnErrorContainer
-                                }
-                                StyledText {
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.WordWrap
-                                    text: root.selectedModule?.state === "incompatible"
-                                        ? Translation.tr("This module is incompatible with the current shell.")
-                                        : Translation.tr("This module is blocked by a dependency.")
-                                    color: Appearance.colors.colOnErrorContainer
-                                    font.pixelSize: Appearance.font.pixelSize.smaller
-                                }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        visible: root.operationFor(root.selectedId).error.length > 0
+                        implicitHeight: operationErrorRow.implicitHeight + 16
+                        radius: Appearance.rounding.small
+                        color: Appearance.colors.colErrorContainer
+                        RowLayout {
+                            id: operationErrorRow
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.margins: 10
+                            spacing: 8
+                            MaterialSymbol {
+                                text: "error"
+                                iconSize: Appearance.font.pixelSize.larger
+                                color: Appearance.colors.colOnErrorContainer
+                            }
+                            StyledText {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: root.operationFor(root.selectedId).error
+                                color: Appearance.colors.colOnErrorContainer
+                                font.pixelSize: Appearance.font.pixelSize.smaller
                             }
                         }
+                    }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            visible: root.operationFor(root.selectedId).error.length > 0
-                            implicitHeight: operationErrorRow.implicitHeight + 16
-                            radius: Appearance.rounding.small
-                            color: Appearance.colors.colErrorContainer
-                            RowLayout {
-                                id: operationErrorRow
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.margins: 10
-                                spacing: 8
-                                MaterialSymbol {
-                                    text: "error"
-                                    iconSize: Appearance.font.pixelSize.larger
-                                    color: Appearance.colors.colOnErrorContainer
-                                }
-                                StyledText {
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.WordWrap
-                                    text: root.operationFor(root.selectedId).error
-                                    color: Appearance.colors.colOnErrorContainer
-                                    font.pixelSize: Appearance.font.pixelSize.smaller
-                                }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        visible: root.selectedModule?.tierB === true
+                        implicitHeight: patchWarningRow.implicitHeight + 16
+                        radius: Appearance.rounding.small
+                        color: Appearance.colors.colSecondaryContainer
+                        RowLayout {
+                            id: patchWarningRow
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.margins: 10
+                            spacing: 8
+                            MaterialSymbol {
+                                text: "warning"
+                                iconSize: Appearance.font.pixelSize.larger
+                                color: Appearance.colors.colOnSecondaryContainer
+                            }
+                            StyledText {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: Translation.tr("This module modifies stock shell files. iimod recomposes those changes when the module is enabled or disabled.")
+                                color: Appearance.colors.colOnSecondaryContainer
+                                font.pixelSize: Appearance.font.pixelSize.smaller
                             }
                         }
+                    }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            visible: root.selectedModule?.tierB === true
-                            implicitHeight: patchWarningRow.implicitHeight + 16
-                            radius: Appearance.rounding.small
-                            color: Appearance.colors.colSecondaryContainer
-                            RowLayout {
-                                id: patchWarningRow
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.margins: 10
-                                spacing: 8
-                                MaterialSymbol {
-                                    text: "warning"
-                                    iconSize: Appearance.font.pixelSize.larger
-                                    color: Appearance.colors.colOnSecondaryContainer
-                                }
-                                StyledText {
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.WordWrap
-                                    text: Translation.tr("This module modifies stock shell files. iimod recomposes those changes when the module is enabled or disabled.")
-                                    color: Appearance.colors.colOnSecondaryContainer
-                                    font.pixelSize: Appearance.font.pixelSize.smaller
-                                }
-                            }
-                        }
+                    StyledText {
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        wrapMode: Text.WordWrap
+                        text: root.localized(root.selectedModule?.description, "")
+                        color: Appearance.colors.colOnSurfaceVariant
+                    }
 
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: (root.selectedModule?.slots ?? []).indexOf("bar") !== -1
+                        spacing: 6
                         StyledText {
-                            Layout.fillWidth: true
-                            visible: text.length > 0
-                            wrapMode: Text.WordWrap
-                            text: root.localized(root.selectedModule?.description, "")
-                            color: Appearance.colors.colOnSurfaceVariant
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            visible: (root.selectedModule?.slots ?? []).indexOf("bar") !== -1
-                            spacing: 6
-                            StyledText {
-                                text: Translation.tr("Bar placement")
-                                color: Appearance.colors.colOnLayer1
-                                font.weight: Font.DemiBold
-                                font.pixelSize: Appearance.font.pixelSize.normal
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-                                MaterialSymbol {
-                                    text: "swap_vert"
-                                    iconSize: Appearance.font.pixelSize.large
-                                    color: Appearance.colors.colOnSurfaceVariant
-                                }
-                                StyledText {
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.WordWrap
-                                    text: Translation.tr("Vertical bar position")
-                                    color: Appearance.colors.colOnSurfaceVariant
-                                    font.pixelSize: Appearance.font.pixelSize.smaller
-                                }
-                            }
-                            ConfigSelectionArray {
-                                Layout.fillWidth: true
-                                currentValue: root.barPlacement(root.selectedId)
-                                onSelected: newValue => root.setBarPlacement(root.selectedId, newValue)
-                                options: [
-                                    { displayName: Translation.tr("Top"), icon: "vertical_align_top", value: "top" },
-                                    { displayName: Translation.tr("Above tray"), icon: "vertical_align_bottom", value: "bottom" },
-                                ]
-                            }
-                            ConfigSpinBox {
-                                id: barPageSpin
-                                Layout.fillWidth: true
-                                Layout.topMargin: 4
-                                icon: "auto_awesome_motion"
-                                text: Translation.tr("Horizontal bar page")
-                                from: 1
-                                to: 9
-                                stepSize: 1
-                                value: root.barPage(root.selectedId) + 1
-                                onValueChanged: {
-                                    if (root.hasSelection && value - 1 !== root.barPage(root.selectedId))
-                                        root.setBarPage(root.selectedId, value - 1);
-                                }
-                            }
-                            StyledText {
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                                text: Translation.tr("The bar shows one page of modules at a time. A page switch appears next to the modules when more than one page is in use; the bar returns to page 1 a few seconds after the pointer leaves it.")
-                                color: Appearance.colors.colOnSurfaceVariant
-                                font.pixelSize: Appearance.font.pixelSize.smaller
-                            }
-                            RowLayout {
-                                id: barOrderRow
-                                Layout.fillWidth: true
-                                Layout.topMargin: 4
-                                spacing: 8
-                                readonly property int position: root.barPosition(root.selectedId)
-                                readonly property bool vertical: Config.options.bar?.vertical ?? false
-                                MaterialSymbol {
-                                    text: barOrderRow.vertical ? "swap_vert" : "swap_horiz"
-                                    iconSize: Appearance.font.pixelSize.large
-                                    color: Appearance.colors.colOnSurfaceVariant
-                                }
-                                StyledText {
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.WordWrap
-                                    text: barOrderRow.position > 0
-                                        ? Translation.tr("Bar order: %1 of %2").arg(barOrderRow.position).arg(root.enabledBarCount)
-                                        : Translation.tr("Bar order: enable the module to arrange it")
-                                    color: Appearance.colors.colOnSurfaceVariant
-                                    font.pixelSize: Appearance.font.pixelSize.smaller
-                                }
-                                RippleButton {
-                                    implicitWidth: 36
-                                    implicitHeight: 36
-                                    buttonRadius: Appearance.rounding.full
-                                    enabled: barOrderRow.position > 1
-                                    opacity: enabled ? 1 : 0.4
-                                    onClicked: root.moveBar(root.selectedId, -1)
-                                    Accessible.name: barOrderRow.vertical ? Translation.tr("Move up") : Translation.tr("Move right")
-                                    contentItem: MaterialSymbol {
-                                        horizontalAlignment: Text.AlignHCenter
-                                        text: barOrderRow.vertical ? "arrow_upward" : "arrow_forward"
-                                        iconSize: Appearance.font.pixelSize.larger
-                                        color: Appearance.colors.colOnLayer1
-                                    }
-                                    StyledToolTip { text: barOrderRow.vertical ? Translation.tr("Move up") : Translation.tr("Move right") }
-                                }
-                                RippleButton {
-                                    implicitWidth: 36
-                                    implicitHeight: 36
-                                    buttonRadius: Appearance.rounding.full
-                                    enabled: barOrderRow.position > 0 && barOrderRow.position < root.enabledBarCount
-                                    opacity: enabled ? 1 : 0.4
-                                    onClicked: root.moveBar(root.selectedId, 1)
-                                    Accessible.name: barOrderRow.vertical ? Translation.tr("Move down") : Translation.tr("Move left")
-                                    contentItem: MaterialSymbol {
-                                        horizontalAlignment: Text.AlignHCenter
-                                        text: barOrderRow.vertical ? "arrow_downward" : "arrow_back"
-                                        iconSize: Appearance.font.pixelSize.larger
-                                        color: Appearance.colors.colOnLayer1
-                                    }
-                                    StyledToolTip { text: barOrderRow.vertical ? Translation.tr("Move down") : Translation.tr("Move left") }
-                                }
-                            }
-                            StyledText {
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                                text: Translation.tr("Position 1 is next to the system tray (rightmost in the horizontal bar, topmost in the vertical bar). Newly enabled modules are added at the far end.")
-                                color: Appearance.colors.colOnSurfaceVariant
-                                font.pixelSize: Appearance.font.pixelSize.smaller
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 6
-                            StyledText {
-                                text: Translation.tr("Settings")
-                                color: Appearance.colors.colOnLayer1
-                                font.weight: Font.DemiBold
-                                font.pixelSize: Appearance.font.pixelSize.normal
-                            }
-                            Loader {
-                                id: moduleSettingsLoader
-                                Layout.fillWidth: true
-                                active: root.hasSelection && !!root.selectedModule.settings
-                                source: active
-                                    ? Quickshell.shellPath(`mod/${root.selectedModule.id}/${root.selectedModule.settings}`)
-                                    : ""
-                                onStatusChanged: if (status === Loader.Error)
-                                    console.warn(`[iimp] settings fragment failed: ${root.selectedId}`)
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                visible: !root.selectedModule?.settings
-                                spacing: 8
-                                MaterialSymbol {
-                                    text: "tune"
-                                    iconSize: Appearance.font.pixelSize.large
-                                    color: Appearance.colors.colOnLayer1Inactive
-                                }
-                                StyledText {
-                                    text: Translation.tr("No configurable options")
-                                    color: Appearance.colors.colOnLayer1Inactive
-                                    font.pixelSize: Appearance.font.pixelSize.smaller
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            implicitHeight: 1
-                            color: Appearance.m3colors.m3outlineVariant
+                            text: Translation.tr("Bar placement")
+                            color: Appearance.colors.colOnLayer1
+                            font.weight: Font.DemiBold
+                            font.pixelSize: Appearance.font.pixelSize.normal
                         }
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
+                            MaterialSymbol {
+                                text: "swap_vert"
+                                iconSize: Appearance.font.pixelSize.large
+                                color: Appearance.colors.colOnSurfaceVariant
+                            }
                             StyledText {
                                 Layout.fillWidth: true
-                                elide: Text.ElideRight
-                                text: Translation.tr("Module ID") + "  " + root.selectedId
-                                color: Appearance.colors.colOnLayer1Inactive
-                                font.pixelSize: Appearance.font.pixelSize.smallest
-                                font.family: Appearance.font.family.monospace
+                                wrapMode: Text.WordWrap
+                                text: Translation.tr("Vertical bar position")
+                                color: Appearance.colors.colOnSurfaceVariant
+                                font.pixelSize: Appearance.font.pixelSize.smaller
+                            }
+                        }
+                        ConfigSelectionArray {
+                            Layout.fillWidth: true
+                            currentValue: root.barPlacement(root.selectedId)
+                            onSelected: newValue => root.setBarPlacement(root.selectedId, newValue)
+                            options: [
+                                { displayName: Translation.tr("Top"), icon: "vertical_align_top", value: "top" },
+                                { displayName: Translation.tr("Above tray"), icon: "vertical_align_bottom", value: "bottom" },
+                            ]
+                        }
+                        ConfigSpinBox {
+                            id: barPageSpin
+                            Layout.fillWidth: true
+                            Layout.topMargin: 4
+                            icon: "auto_awesome_motion"
+                            text: Translation.tr("Horizontal bar page")
+                            from: 1
+                            to: 9
+                            stepSize: 1
+                            value: root.barPage(root.selectedId) + 1
+                            onValueChanged: {
+                                if (root.hasSelection && value - 1 !== root.barPage(root.selectedId))
+                                    root.setBarPage(root.selectedId, value - 1);
+                            }
+                        }
+                        StyledText {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            text: Translation.tr("The bar shows one page of modules at a time. A page switch appears next to the modules when more than one page is in use; the bar returns to page 1 a few seconds after the pointer leaves it.")
+                            color: Appearance.colors.colOnSurfaceVariant
+                            font.pixelSize: Appearance.font.pixelSize.smaller
+                        }
+                        RowLayout {
+                            id: barOrderRow
+                            Layout.fillWidth: true
+                            Layout.topMargin: 4
+                            spacing: 8
+                            readonly property int position: root.barPosition(root.selectedId)
+                            readonly property bool vertical: Config.options.bar?.vertical ?? false
+                            MaterialSymbol {
+                                text: barOrderRow.vertical ? "swap_vert" : "swap_horiz"
+                                iconSize: Appearance.font.pixelSize.large
+                                color: Appearance.colors.colOnSurfaceVariant
                             }
                             StyledText {
-                                text: root.stateLabel(root.selectedModule)
-                                color: root.isFlippable(root.selectedModule)
-                                    ? Appearance.colors.colOnLayer1Inactive : Appearance.m3colors.m3error
-                                font.pixelSize: Appearance.font.pixelSize.smallest
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: barOrderRow.position > 0
+                                    ? Translation.tr("Bar order: %1 of %2").arg(barOrderRow.position).arg(root.enabledBarCount)
+                                    : Translation.tr("Bar order: enable the module to arrange it")
+                                color: Appearance.colors.colOnSurfaceVariant
+                                font.pixelSize: Appearance.font.pixelSize.smaller
                             }
+                            RippleButton {
+                                implicitWidth: 36
+                                implicitHeight: 36
+                                buttonRadius: Appearance.rounding.full
+                                enabled: barOrderRow.position > 1
+                                opacity: enabled ? 1 : 0.4
+                                onClicked: root.moveBar(root.selectedId, -1)
+                                Accessible.name: barOrderRow.vertical ? Translation.tr("Move up") : Translation.tr("Move right")
+                                contentItem: MaterialSymbol {
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: barOrderRow.vertical ? "arrow_upward" : "arrow_forward"
+                                    iconSize: Appearance.font.pixelSize.larger
+                                    color: Appearance.colors.colOnLayer1
+                                }
+                                StyledToolTip { text: barOrderRow.vertical ? Translation.tr("Move up") : Translation.tr("Move right") }
+                            }
+                            RippleButton {
+                                implicitWidth: 36
+                                implicitHeight: 36
+                                buttonRadius: Appearance.rounding.full
+                                enabled: barOrderRow.position > 0 && barOrderRow.position < root.enabledBarCount
+                                opacity: enabled ? 1 : 0.4
+                                onClicked: root.moveBar(root.selectedId, 1)
+                                Accessible.name: barOrderRow.vertical ? Translation.tr("Move down") : Translation.tr("Move left")
+                                contentItem: MaterialSymbol {
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: barOrderRow.vertical ? "arrow_downward" : "arrow_back"
+                                    iconSize: Appearance.font.pixelSize.larger
+                                    color: Appearance.colors.colOnLayer1
+                                }
+                                StyledToolTip { text: barOrderRow.vertical ? Translation.tr("Move down") : Translation.tr("Move left") }
+                            }
+                        }
+                        StyledText {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            text: Translation.tr("Position 1 is next to the system tray (rightmost in the horizontal bar, topmost in the vertical bar). Newly enabled modules are added at the far end.")
+                            color: Appearance.colors.colOnSurfaceVariant
+                            font.pixelSize: Appearance.font.pixelSize.smaller
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        StyledText {
+                            text: Translation.tr("Settings")
+                            color: Appearance.colors.colOnLayer1
+                            font.weight: Font.DemiBold
+                            font.pixelSize: Appearance.font.pixelSize.normal
+                        }
+                        Loader {
+                            id: moduleSettingsLoader
+                            Layout.fillWidth: true
+                            active: root.hasSelection && !!root.selectedModule.settings
+                            source: active
+                                ? Quickshell.shellPath(`mod/${root.selectedModule.id}/${root.selectedModule.settings}`)
+                                : ""
+                            onStatusChanged: if (status === Loader.Error)
+                                console.warn(`[iimp] settings fragment failed: ${root.selectedId}`)
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            visible: !root.selectedModule?.settings
+                            spacing: 8
+                            MaterialSymbol {
+                                text: "tune"
+                                iconSize: Appearance.font.pixelSize.large
+                                color: Appearance.colors.colOnLayer1Inactive
+                            }
+                            StyledText {
+                                text: Translation.tr("No configurable options")
+                                color: Appearance.colors.colOnLayer1Inactive
+                                font.pixelSize: Appearance.font.pixelSize.smaller
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 1
+                        color: Appearance.m3colors.m3outlineVariant
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        StyledText {
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                            text: Translation.tr("Module ID") + "  " + root.selectedId
+                            color: Appearance.colors.colOnLayer1Inactive
+                            font.pixelSize: Appearance.font.pixelSize.smallest
+                            font.family: Appearance.font.family.monospace
+                        }
+                        StyledText {
+                            text: root.stateLabel(root.selectedModule)
+                            color: root.isFlippable(root.selectedModule)
+                                ? Appearance.colors.colOnLayer1Inactive : Appearance.m3colors.m3error
+                            font.pixelSize: Appearance.font.pixelSize.smallest
                         }
                     }
                 }

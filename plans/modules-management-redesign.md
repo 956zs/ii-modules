@@ -2,7 +2,12 @@
 
 ## Status
 
-Requirements and design gate. Product implementation has not started.
+Implemented in `tools/iimod/assets/ModulesConfig.qml` on branch
+`feat/iimod-modules-page-redesign`. The layout follows the approved v2 direction
+(scope rail, card grid, and a detail pane) rather than the list/detail layout
+described below. Host generation is 5 because the asset changed after
+generation 4 shipped in `iimod/v1.5.0`. Live visual checks at wide and minimum
+sizes are still pending because they require `iimod reapply` on the live shell.
 
 ## Confirmed Direction
 
