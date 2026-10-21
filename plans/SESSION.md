@@ -1,3 +1,26 @@
+## 2026-10-22 idle_modes three-state Keep awake tile
+
+Owner (Discord): after a reboot the sidebar "Keep awake" tile resets, so
+they had to click it again; asked for three modes that persist: 全關 (sleeps),
+半開 (lock + screen off, no suspend), 全開 (no lock/screen off/suspend).
+Built `modules/idle_modes` 1.0.0, Tier B, on branch feat/idle-modes.
+
+- ✅ Patches: `services/Idle.qml` (mode state, setIdleMode/cycleIdleMode,
+  toggleInhibit routed through the mode) and `IdleInhibitorToggle.qml`
+  (four gated Bindings: toggled, icon, statusText, tooltipText).
+- ✅ Window entry persists `mode` via ConfigLoader in
+  `modules/idle_modes.json`; restores it at every shell start.
+- ✅ hypridle: `$suspend_cmd` -> `~/.config/hypr/custom/scripts/idle-mode-gate.sh
+  suspend` (shipped in the payload); suspends only in "off". Dry-run tested
+  for off/half/full/invalid/missing. Seeded live mode "half" (matches the
+  no-suspend state the owner already had).
+- ✅ validate, check, i18n check (zh_TW + zh_CN exact), pack, composed-file
+  qmlformat parse.
+- 🔄 Live install deferred: the session was locked (lock-screen PAM retries
+  in the journal) and installing rewrites `$II` files, which hot-reloads the
+  shell and would reset `GlobalStates.screenLocked`. Install after unlock:
+  `iimod install modules/idle_modes --allow-patches`, then cycle the tile.
+
 ## 2026-10-16 osu-state quit grace
 
 Owner: quitting a map midway left the indicator/hook "busy" for the full

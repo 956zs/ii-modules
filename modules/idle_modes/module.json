@@ -1,0 +1,58 @@
+{
+  "protocolVersion": 1,
+  "id": "idle_modes",
+  "name": {
+    "en_US": "Idle Modes",
+    "zh_TW": "三段閒置模式",
+    "zh_CN": "三段闲置模式"
+  },
+  "description": {
+    "en_US": "Turns the sidebar \"Keep awake\" tile into a three-state idle mode that survives reboots: off (lock, screen off and suspend when idle), half (lock and screen off, never suspend) and full (no idle action at all). The mode is stored in the module's config file; a small hypridle gate script reads it so the suspend listener only fires in off mode.",
+    "zh_TW": "把側欄「保持喚醒」磁貼改成三段式閒置模式，重開機後會記住：全關（閒置時鎖屏、關螢幕並休眠）、半開（鎖屏、關螢幕，但不休眠）、全開（完全不做閒置動作）。模式存在模塊設定檔；hypridle 的休眠監聽透過一支小腳本讀取它，只有全關時才會休眠。",
+    "zh_CN": "把侧栏「保持唤醒」磁贴改成三段式闲置模式，重启后会记住：全关（闲置时锁屏、关屏幕并休眠）、半开（锁屏、关屏幕，但不休眠）、全开（完全不做闲置动作）。模式存在模块配置文件；hypridle 的休眠监听通过一个小脚本读取它，只有全关时才会休眠。"
+  },
+  "version": "1.0.0",
+  "authors": [
+    "nlcat"
+  ],
+  "license": "MIT",
+  "slots": [
+    "window"
+  ],
+  "entries": {
+    "window": "main.qml"
+  },
+  "compat": {
+    "probes": [
+      {"type": "file-contains", "path": "services/Idle.qml", "pattern": "inhibit: false", "reason": "patch anchor for the idle mode state and functions"},
+      {"type": "file-contains", "path": "services/Idle.qml", "pattern": "function toggleInhibit(active = null) {", "reason": "patch anchor that routes toggles through the idle mode"},
+      {"type": "file-contains", "path": "services/Idle.qml", "pattern": "Persistent.states.idle.inhibit", "reason": "the mode keeps the stock persisted inhibit flag in sync"},
+      {"type": "file-contains", "path": "modules/common/models/quickToggles/IdleInhibitorToggle.qml", "pattern": "QuickToggleModel {", "reason": "patch anchor for the three-state tile bindings"}
+    ],
+    "testedOn": {
+      "dotsCommit": "446504ad42",
+      "qsVersion": "0.2.1"
+    }
+  },
+  "capabilities": [],
+  "patches": [
+    {
+      "file": "services/Idle.qml",
+      "op": "insert-after",
+      "anchor": "inhibit: false",
+      "content": "\n    // idle_modes: three-state idle mode. \"off\" locks, turns the screen off\n    // and suspends when idle; \"half\" locks and turns the screen off but never\n    // suspends (the hypridle suspend listener reads the module config);\n    // \"full\" inhibits idle entirely. The idle_modes window entry restores the\n    // mode from its config file at every shell start.\n    property string idleMode: \"off\"\n    property bool idleModesActive: false\n\n    function setIdleMode(mode) {\n        const next = [\"off\", \"half\", \"full\"].includes(mode) ? mode : \"off\";\n        root.idleMode = next;\n        root.inhibit = next === \"full\";\n        Persistent.states.idle.inhibit = root.inhibit;\n    }\n\n    function cycleIdleMode() {\n        root.setIdleMode(root.idleMode === \"off\" ? \"half\" : root.idleMode === \"half\" ? \"full\" : \"off\");\n    }\n"
+    },
+    {
+      "file": "services/Idle.qml",
+      "op": "insert-after",
+      "anchor": "function toggleInhibit(active = null) {",
+      "content": "        // idle_modes: a plain toggle cycles the mode; an explicit request\n        // (lock screen \"unlock and keep awake\") maps to full or off.\n        if (root.idleModesActive) {\n            if (active === null)\n                root.cycleIdleMode();\n            else\n                root.setIdleMode(active ? \"full\" : \"off\");\n            return;\n        }\n"
+    },
+    {
+      "file": "modules/common/models/quickToggles/IdleInhibitorToggle.qml",
+      "op": "insert-after",
+      "anchor": "QuickToggleModel {",
+      "content": "    id: idleModesToggle\n\n    // idle_modes: show the three-state idle mode on the tile.\n    Binding {\n        target: idleModesToggle\n        when: Idle.idleModesActive\n        property: \"toggled\"\n        value: Idle.idleMode !== \"off\"\n    }\n    Binding {\n        target: idleModesToggle\n        when: Idle.idleModesActive\n        property: \"icon\"\n        value: Idle.idleMode === \"half\" ? \"bedtime_off\" : \"coffee\"\n    }\n    Binding {\n        target: idleModesToggle\n        when: Idle.idleModesActive\n        property: \"statusText\"\n        value: Idle.idleMode === \"full\" ? Translation.tr(\"Always on\") : Idle.idleMode === \"half\" ? Translation.tr(\"Screen off only\") : Translation.tr(\"Sleeps when idle\")\n    }\n    Binding {\n        target: idleModesToggle\n        when: Idle.idleModesActive\n        property: \"tooltipText\"\n        value: Translation.tr(\"Click to cycle: sleeps when idle, screen off only, always on\")\n    }\n"
+    }
+  ]
+}
