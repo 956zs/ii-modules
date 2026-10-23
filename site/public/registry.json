@@ -137,6 +137,33 @@
       }
     },
     {
+      "id": "idle_modes",
+      "name": {
+        "en_US": "Idle Modes",
+        "zh_TW": "三段閒置模式",
+        "zh_CN": "三段闲置模式"
+      },
+      "description": {
+        "en_US": "Turns the sidebar \"Keep awake\" tile into a three-state idle mode that survives reboots: off (lock, screen off and suspend when idle), half (lock and screen off, never suspend) and full (no idle action at all). The mode is stored in the module's config file; a small hypridle gate script reads it so the suspend listener only fires in off mode.",
+        "zh_TW": "把側欄「保持喚醒」磁貼改成三段式閒置模式，重開機後會記住：全關（閒置時鎖屏、關螢幕並休眠）、半開（鎖屏、關螢幕，但不休眠）、全開（完全不做閒置動作）。模式存在模塊設定檔；hypridle 的休眠監聽透過一支小腳本讀取它，只有全關時才會休眠。",
+        "zh_CN": "把侧栏「保持唤醒」磁贴改成三段式闲置模式，重启后会记住：全关（闲置时锁屏、关屏幕并休眠）、半开（锁屏、关屏幕，但不休眠）、全开（完全不做闲置动作）。模式存在模块配置文件；hypridle 的休眠监听通过一个小脚本读取它，只有全关时才会休眠。"
+      },
+      "sourceVersion": "1.0.1",
+      "authors": [
+        "nlcat"
+      ],
+      "license": "MIT",
+      "capabilities": [],
+      "requires": {},
+      "tierB": true,
+      "origin": "https://ii.n1cat.xyz/index.json",
+      "repo": "https://github.com/956zs/ii-modules/tree/main/modules/idle_modes",
+      "docs": {
+        "zh_TW": "/docs/modules/idle_modes",
+        "en_US": "/docs/en/modules/idle_modes"
+      }
+    },
+    {
       "id": "indicator_tools",
       "name": {
         "en_US": "Indicator Applet Menus",

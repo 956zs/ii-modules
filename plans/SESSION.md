@@ -1,3 +1,30 @@
+## 2026-10-23 idle_modes 1.0.1 restart inhibitor fix
+
+Owner: long ago, restarting the ii shell dropped the "keep awake" state and
+the machine suspended unexpectedly. Diagnosed with a compositor-level probe
+(`tools/idle-inhibit-probe`: two Quickshell `IdleMonitor`s, with and without
+`respectInhibitors`).
+
+- ✅ Repro: mode "full", `qs -c ii kill` + relaunch -> config and Persistent
+  still say inhibit, compositor says NOT_INHIBITED for 150 s+. Hot reload is
+  unaffected (window reused). Minimal repro without ii: an `IdleInhibitor`
+  enabled at startup never inhibits; enabled 1 s later it does.
+- ✅ Root cause: `WAYLAND_DEBUG` shows `create_inhibitor` before the layer
+  surface's first configure/buffer; Hyprland 0.56.2 only rechecks inhibitor
+  visibility on create/destroy and focus/window/fullscreen events, so it stays
+  ineffective until the next focus change (opening a window healed it).
+- ✅ Fix: third `Idle.qml` patch re-creates the inhibitor 3 s after
+  `backingWindowVisible` turns true. First attempt bound `Timer.running`
+  through `idleInhibitor.window` and looped every 3 s (toggling `enabled`
+  re-emits `windowChanged`); now started from the visibility signal.
+- ✅ Verified: restart with fix -> INHIBITED (single re-arm in instrumented
+  log); control with re-arm disabled -> NOT_INHIBITED after 152 s; final
+  clean-tree restart -> INHIBITED. Contract tests 2/2, validate/check/i18n
+  clean. Debug lines removed from live, pristine and two backups.
+- Live mode restored to the owner's "half". Shipped via PR #33 (not
+  released). The ~50 s shell restart was GeoClue stuck on GLib #4078, worked
+  around with a geoclue drop-in (plans/ISSUES.md).
+
 ## 2026-10-23 clock_popup_slim 3.0.1 gap fix
 
 Owner: after enabling the clock customizer, the right centre group showed
@@ -8,8 +35,30 @@ clock's `Layout.fillWidth`, so Qt Layout spread the spare width across
 cells. 3.0.1 adds `Layout.fillWidth: true` and centres the text like the
 stock `ClockWidget`; the test contract that forbade fillWidth (a v2
 leftover) now requires it. ✅ tests 7/7, validate/check/i18n clean, live
-install verified by screenshot. Branch `fix/clock-bar-fill-width`, not
-pushed or released.
+install verified by screenshot. Merged to main via PR #32 (not released).
+
+## 2026-10-22 idle_modes three-state Keep awake tile
+
+Owner (Discord): after a reboot the sidebar "Keep awake" tile resets, so
+they had to click it again; asked for three modes that persist: 全關 (sleeps),
+半開 (lock + screen off, no suspend), 全開 (no lock/screen off/suspend).
+Built `modules/idle_modes` 1.0.0, Tier B, on branch feat/idle-modes.
+
+- ✅ Patches: `services/Idle.qml` (mode state, setIdleMode/cycleIdleMode,
+  toggleInhibit routed through the mode) and `IdleInhibitorToggle.qml`
+  (four gated Bindings: toggled, icon, statusText, tooltipText).
+- ✅ Window entry persists `mode` via ConfigLoader in
+  `modules/idle_modes.json`; restores it at every shell start.
+- ✅ hypridle: `$suspend_cmd` -> `~/.config/hypr/custom/scripts/idle-mode-gate.sh
+  suspend` (shipped in the payload); suspends only in "off". Dry-run tested
+  for off/half/full/invalid/missing. Seeded live mode "half" (matches the
+  no-suspend state the owner already had).
+- ✅ validate, check, i18n check (zh_TW + zh_CN exact), pack, composed-file
+  qmlformat parse.
+- 🔄 Live install deferred: the session was locked (lock-screen PAM retries
+  in the journal) and installing rewrites `$II` files, which hot-reloads the
+  shell and would reset `GlobalStates.screenLocked`. Install after unlock:
+  `iimod install modules/idle_modes --allow-patches`, then cycle the tile.
 
 ## 2026-10-16 osu-state quit grace
 

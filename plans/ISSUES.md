@@ -75,3 +75,33 @@
 - 🟢 P3 adaptive_bar could page modules automatically when the right section
   overflows (would write `barPagesJson`, churning config.json); deferred,
   explicit pages only for now.
+
+## Idle inhibitor after shell restart (2026-10-23)
+
+- ✅ Fixed in `idle_modes` 1.0.1: after a full shell restart, "full" (stock
+  inhibit restored as true) left hypridle free to lock and suspend. Hyprland
+  0.56.2 checks an inhibitor's surface visibility only on inhibitor
+  create/destroy and focus/window/fullscreen events, not on layer-surface map;
+  Quickshell's `IdleInhibitor` sends `create_inhibitor` before its 0x0 surface
+  maps. Hot reloads reuse the mapped window and were never affected.
+- 🟢 P3 upstream: the same race affects stock ii without `idle_modes` whenever
+  a shell restart restores `Persistent.states.idle.inhibit`. Candidate reports:
+  Hyprland (recheck inhibitors on layer map) or Quickshell (create the
+  inhibitor after the first configure/commit). Not filed; needs owner OK.
+- ✅ Worked around (2026-10-24): a full `qs -c ii` restart stalled ~50 s before `Persistent`
+  and IIMP window modules loaded. Root cause (gdb): the stock `Weather`
+  singleton's `PositionSource` (`bar.weather.enableGPS`, true even with
+  weather disabled) makes a synchronous D-Bus call to GeoClue2 on the main
+  thread, and `geoclue.service` never starts since GLib 2.90.1 (upgraded
+  2026-10-22): GLib issue #4078, a GIO lock-order deadlock between
+  `_g_io_module_get_default` (proxy resolver, on the new netlink
+  `can_reach_async` thread) and `g_vfs_get_default`. Reproduced as a user
+  process; `GIO_USE_PROXY_RESOLVER=dummy` in a geoclue drop-in avoids it
+  (3/3 vs 3/3 hangs). Not a module bug. Owner installed
+  `/etc/systemd/system/geoclue.service.d/glib-4078.conf`; geoclue starts
+  again and the restart takes ~1.9 s. 🟢 P3: delete that drop-in once GLib
+  ships a fix for #4078.
+- 🟢 P3 iimod gotcha: `install --reinstall` and `reapply` re-snapshot the
+  current live stock regions into `$STATE/pristine` and new backups, so
+  out-of-band debug edits to stock files survive recomposition. Strip them
+  from live, pristine and backups by hand, then confirm with a pristine diff.
