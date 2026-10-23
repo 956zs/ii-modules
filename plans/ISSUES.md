@@ -88,10 +88,17 @@
   a shell restart restores `Persistent.states.idle.inhibit`. Candidate reports:
   Hyprland (recheck inhibitors on layer map) or Quickshell (create the
   inhibitor after the first configure/commit). Not filed; needs owner OK.
-- 🟡 P2 open: on this machine a full `qs -c ii` restart takes 10-50 s before
-  `Persistent` and IIMP window modules finish loading (`Idle` is created at
-  +0.1 s with inhibit false; window entries finish at +9 s to +50 s). Root
-  cause not investigated; it delays every restored module state.
+- 🟡 P2 external: a full `qs -c ii` restart stalled ~50 s before `Persistent`
+  and IIMP window modules loaded. Root cause (gdb): the stock `Weather`
+  singleton's `PositionSource` (`bar.weather.enableGPS`, true even with
+  weather disabled) makes a synchronous D-Bus call to GeoClue2 on the main
+  thread, and `geoclue.service` never starts since GLib 2.90.1 (upgraded
+  2026-10-22): GLib issue #4078, a GIO lock-order deadlock between
+  `_g_io_module_get_default` (proxy resolver, on the new netlink
+  `can_reach_async` thread) and `g_vfs_get_default`. Reproduced as a user
+  process; `GIO_USE_PROXY_RESOLVER=dummy` in a geoclue drop-in avoids it
+  (3/3 vs 3/3 hangs). Not a module bug; drop the workaround once GLib ships
+  a fix.
 - 🟢 P3 iimod gotcha: `install --reinstall` and `reapply` re-snapshot the
   current live stock regions into `$STATE/pristine` and new backups, so
   out-of-band debug edits to stock files survive recomposition. Strip them
