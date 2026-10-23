@@ -75,3 +75,24 @@
 - 🟢 P3 adaptive_bar could page modules automatically when the right section
   overflows (would write `barPagesJson`, churning config.json); deferred,
   explicit pages only for now.
+
+## Idle inhibitor after shell restart (2026-10-23)
+
+- ✅ Fixed in `idle_modes` 1.0.1: after a full shell restart, "full" (stock
+  inhibit restored as true) left hypridle free to lock and suspend. Hyprland
+  0.56.2 checks an inhibitor's surface visibility only on inhibitor
+  create/destroy and focus/window/fullscreen events, not on layer-surface map;
+  Quickshell's `IdleInhibitor` sends `create_inhibitor` before its 0x0 surface
+  maps. Hot reloads reuse the mapped window and were never affected.
+- 🟢 P3 upstream: the same race affects stock ii without `idle_modes` whenever
+  a shell restart restores `Persistent.states.idle.inhibit`. Candidate reports:
+  Hyprland (recheck inhibitors on layer map) or Quickshell (create the
+  inhibitor after the first configure/commit). Not filed; needs owner OK.
+- 🟡 P2 open: on this machine a full `qs -c ii` restart takes 10-50 s before
+  `Persistent` and IIMP window modules finish loading (`Idle` is created at
+  +0.1 s with inhibit false; window entries finish at +9 s to +50 s). Root
+  cause not investigated; it delays every restored module state.
+- 🟢 P3 iimod gotcha: `install --reinstall` and `reapply` re-snapshot the
+  current live stock regions into `$STATE/pristine` and new backups, so
+  out-of-band debug edits to stock files survive recomposition. Strip them
+  from live, pristine and backups by hand, then confirm with a pristine diff.

@@ -68,6 +68,9 @@ The tile writes this file on every change, and hand edits apply live.
 - The window entry loads the mode at shell start and calls `Idle.setIdleMode`,
   which also syncs the stock `Persistent.states.idle.inhibit` flag.
 - "full" uses the stock Wayland idle inhibitor, so hypridle sees no idleness.
+  After a full shell restart the inhibitor is re-created about 3 s after its
+  surface shows, because Hyprland does not honour one bound before the
+  surface mapped (see Implementation notes).
 - "half" and "off" leave hypridle running; the gate script suspends only when
   the file says `"off"` (missing, unreadable or invalid also means `"off"`).
 - `idle-mode-gate.sh suspend --dry-run` prints the decision without suspending.
@@ -77,6 +80,8 @@ The tile writes this file on every change, and hand edits apply live.
 - The classic-style quick toggle button is not patched: it cycles the mode
   but only shows the highlighted state for full.
 - Changing the lock or screen-off timeouts still means editing `hypridle.conf`.
+- "full" is not in effect until the shell has finished starting: window
+  modules can take tens of seconds to load, plus the 3 s re-arm delay.
 
 ## Implementation notes
 
@@ -85,3 +90,27 @@ Patches (insert-only): `services/Idle.qml` gets `idleMode`, `idleModesActive`,
 mode while the module is active. `IdleInhibitorToggle.qml` gets an id and four
 `Binding`s (`toggled`, `icon`, `statusText`, `tooltipText`) gated on
 `Idle.idleModesActive`, so the stock look returns if the entry is not loaded.
+
+The third `Idle.qml` patch works around the inhibitor lifecycle. Hyprland
+0.56 checks whether an inhibitor's surface is visible only when the inhibitor
+is created and on focus, window or fullscreen events, not when a layer surface
+maps. At shell start the restored inhibit flag enables the stock inhibitor
+before its 0x0 `PanelWindow` maps, so it stays ineffective until the next
+focus change and hypridle still locks and suspends. A one-shot timer started
+from `backingWindowVisibleChanged` toggles `enabled` off and on 3 s later.
+Toggling `enabled` re-emits `windowChanged`, so the timer must not bind
+`running` through `idleInhibitor.window` or it restarts forever.
+
+## Development
+
+```bash
+node --test modules/idle_modes/tests/*.test.mjs
+iimod validate modules/idle_modes
+iimod check modules/idle_modes
+```
+
+`tools/idle-inhibit-probe/probe.sh` asks the compositor whether an idle
+inhibitor is in effect and prints `INHIBITED`, `NOT_INHIBITED` or
+`INCONCLUSIVE` (input during its 8 s window). To check the restart path, set
+`mode` to `"full"`, restart the shell with `qs -c ii kill` and a new `qs -c ii`
+from Hyprland, wait until the window modules have loaded, then run the probe.
