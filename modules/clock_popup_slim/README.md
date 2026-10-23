@@ -86,7 +86,7 @@ IIMP 會從乾淨基底重組 stock QML。設定檔會保留，重新安裝時�
 | Patch surface | 行為 |
 |---|---|
 | `BarContent.qml` import | 載入模塊元件 |
-| stock `ClockWidget` | 隱藏 stock instance，在相同 layout 位置插入 `ClockBar` |
+| stock `ClockWidget` | 隱藏 stock instance，在相同 layout 位置插入 `ClockBar`，沿用 stock 的填滿剩餘寬度並置中文字 |
 | `ClockWidgetPopup.qml` import/reader | 載入 readonly `ConfigLoader` |
 | Uptime / To Do | 以兩個 visibility patches 跟隨 `slimPopup` |
 

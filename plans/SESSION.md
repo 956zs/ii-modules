@@ -1,3 +1,16 @@
+## 2026-10-23 clock_popup_slim 3.0.1 gap fix
+
+Owner: after enabling the clock customizer, the right centre group showed
+large gaps between the clock, util buttons and battery. Root cause: 3.0.0
+handed centre widths to adaptive_bar (stays at stock 360 px unless the bar
+overflows), but the inserted `ClockBar` still lacked the hidden stock
+clock's `Layout.fillWidth`, so Qt Layout spread the spare width across
+cells. 3.0.1 adds `Layout.fillWidth: true` and centres the text like the
+stock `ClockWidget`; the test contract that forbade fillWidth (a v2
+leftover) now requires it. ✅ tests 7/7, validate/check/i18n clean, live
+install verified by screenshot. Branch `fix/clock-bar-fill-width`, not
+pushed or released.
+
 ## 2026-10-16 osu-state quit grace
 
 Owner: quitting a map midway left the indicator/hook "busy" for the full
