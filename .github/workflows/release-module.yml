@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y blueman nethogs network-manager-gnome policykit-1
+          sudo apt-get install -y blueman nethogs network-manager-gnome pkexec
 
       - name: Prepare Rust
         run: |
