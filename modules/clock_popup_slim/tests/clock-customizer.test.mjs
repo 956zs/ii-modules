@@ -62,7 +62,7 @@ test('manifest upgrades the existing id into a configurable Tier B clock', async
   const manifest = JSON.parse(await read('module.json'))
 
   assert.equal(manifest.id, 'clock_popup_slim')
-  assert.equal(manifest.version, '3.0.0')
+  assert.equal(manifest.version, '3.0.1')
   assert.equal(manifest.name.en_US, 'Bar Clock Customizer (Experimental)')
   assert.match(manifest.name.zh_TW, /實驗性/)
   assert.match(manifest.name.zh_CN, /实验性/)
@@ -89,7 +89,9 @@ test('manifest upgrades the existing id into a configurable Tier B clock', async
   assert.match(barPatch, /ClockCustomizer\.ClockBar/)
   assert.match(barPatch, /visible: false/)
   assert.match(barPatch, /ClockWidgetPopup/)
-  assert.doesNotMatch(barPatch, /Layout\.fillWidth: true/)
+  // The hidden stock clock filled the spare group width; without a filler the
+  // layout spreads it between cells and leaves gaps.
+  assert.match(barPatch, /Layout\.fillWidth: true/)
   // Centre side widths belong to adaptive_bar; two owners would race.
   assert.doesNotMatch(barPatch, /implicitWidth/)
   assert.doesNotMatch(barPatch, /CenterGroup/)
@@ -121,6 +123,7 @@ test('runtime and settings use one module-owned configuration contract', async (
   assert.doesNotMatch(config, /property var\s+/)
 
   assert.match(bar, /implicitWidth: content\.implicitWidth \+ root\.horizontalPadding \* 2/)
+  assert.match(bar, /anchors\.centerIn: parent/)
   assert.match(bar, /precision: ClockFormat\.needsSecondPrecision/)
   assert.match(bar, /Qt\.locale\(\)\.toString\(clock\.date, root\.timeFormat\)/)
   assert.match(settings, /ConfigSwitch\s*{[\s\S]*Show date on the bar/)

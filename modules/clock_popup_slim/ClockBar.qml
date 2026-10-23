@@ -34,11 +34,8 @@ Item {
 
     RowLayout {
         id: content
-        anchors {
-            fill: parent
-            leftMargin: root.horizontalPadding
-            rightMargin: root.horizontalPadding
-        }
+        // Like the stock ClockWidget: fill the spare group width, centre the text.
+        anchors.centerIn: parent
         spacing: root.contentSpacing
 
         StyledText {

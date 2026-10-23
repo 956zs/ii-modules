@@ -121,7 +121,7 @@
         "zh_TW": "實驗性的 Tier B bar 時鐘客製化；若 stock 中央版面改動或有更安全的替代方案，可能棄用。",
         "zh_CN": "实验性的 Tier B bar 时钟自定义；若 stock 中央布局改动或有更安全的替代方案，可能弃用。"
       },
-      "sourceVersion": "3.0.0",
+      "sourceVersion": "3.0.1",
       "authors": [
         "nlcat"
       ],

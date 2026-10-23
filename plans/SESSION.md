@@ -21,8 +21,21 @@ the machine suspended unexpectedly. Diagnosed with a compositor-level probe
   log); control with re-arm disabled -> NOT_INHIBITED after 152 s; final
   clean-tree restart -> INHIBITED. Contract tests 2/2, validate/check/i18n
   clean. Debug lines removed from live, pristine and two backups.
-- Live mode restored to the owner's "half". Branch feat/idle-modes, not
-  pushed. Separate open finding: 10-50 s shell restart (plans/ISSUES.md).
+- Live mode restored to the owner's "half". Shipped via PR #33 (not
+  released). The ~50 s shell restart was GeoClue stuck on GLib #4078, worked
+  around with a geoclue drop-in (plans/ISSUES.md).
+
+## 2026-10-23 clock_popup_slim 3.0.1 gap fix
+
+Owner: after enabling the clock customizer, the right centre group showed
+large gaps between the clock, util buttons and battery. Root cause: 3.0.0
+handed centre widths to adaptive_bar (stays at stock 360 px unless the bar
+overflows), but the inserted `ClockBar` still lacked the hidden stock
+clock's `Layout.fillWidth`, so Qt Layout spread the spare width across
+cells. 3.0.1 adds `Layout.fillWidth: true` and centres the text like the
+stock `ClockWidget`; the test contract that forbade fillWidth (a v2
+leftover) now requires it. ✅ tests 7/7, validate/check/i18n clean, live
+install verified by screenshot. Merged to main via PR #32 (not released).
 
 ## 2026-10-22 idle_modes three-state Keep awake tile
 
