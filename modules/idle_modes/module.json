@@ -11,7 +11,7 @@
     "zh_TW": "把側欄「保持喚醒」磁貼改成三段式閒置模式，重開機後會記住：全關（閒置時鎖屏、關螢幕並休眠）、半開（鎖屏、關螢幕，但不休眠）、全開（完全不做閒置動作）。模式存在模塊設定檔；hypridle 的休眠監聽透過一支小腳本讀取它，只有全關時才會休眠。",
     "zh_CN": "把侧栏「保持唤醒」磁贴改成三段式闲置模式，重启后会记住：全关（闲置时锁屏、关屏幕并休眠）、半开（锁屏、关屏幕，但不休眠）、全开（完全不做闲置动作）。模式存在模块配置文件；hypridle 的休眠监听通过一个小脚本读取它，只有全关时才会休眠。"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "authors": [
     "nlcat"
   ],
@@ -27,6 +27,7 @@
       {"type": "file-contains", "path": "services/Idle.qml", "pattern": "inhibit: false", "reason": "patch anchor for the idle mode state and functions"},
       {"type": "file-contains", "path": "services/Idle.qml", "pattern": "function toggleInhibit(active = null) {", "reason": "patch anchor that routes toggles through the idle mode"},
       {"type": "file-contains", "path": "services/Idle.qml", "pattern": "Persistent.states.idle.inhibit", "reason": "the mode keeps the stock persisted inhibit flag in sync"},
+      {"type": "file-contains", "path": "services/Idle.qml", "pattern": "        id: idleInhibitor", "reason": "patch anchor that re-creates the inhibitor after its surface maps"},
       {"type": "file-contains", "path": "modules/common/models/quickToggles/IdleInhibitorToggle.qml", "pattern": "QuickToggleModel {", "reason": "patch anchor for the three-state tile bindings"}
     ],
     "testedOn": {
@@ -47,6 +48,12 @@
       "op": "insert-after",
       "anchor": "function toggleInhibit(active = null) {",
       "content": "        // idle_modes: a plain toggle cycles the mode; an explicit request\n        // (lock screen \"unlock and keep awake\") maps to full or off.\n        if (root.idleModesActive) {\n            if (active === null)\n                root.cycleIdleMode();\n            else\n                root.setIdleMode(active ? \"full\" : \"off\");\n            return;\n        }\n"
+    },
+    {
+      "file": "services/Idle.qml",
+      "op": "insert-after",
+      "anchor": "        id: idleInhibitor",
+      "content": "        // idle_modes: Hyprland judges an inhibitor's surface visibility only\n        // when the inhibitor is created (and on focus or window events), not\n        // when a layer surface maps. When \"full\" is restored at shell start,\n        // the inhibitor binds before this 0x0 surface maps and stays\n        // ineffective until the next focus change, so hypridle still locks\n        // and suspends. Re-create it once the surface has had time to map.\n        // Toggling enabled re-emits windowChanged, so the timer is started\n        // from the visibility signal rather than bound to the window.\n        property Timer idleModesRearm: Timer {\n            interval: 3000\n            onTriggered: {\n                if (!idleInhibitor.enabled)\n                    return;\n                idleInhibitor.enabled = false;\n                idleInhibitor.enabled = true;\n            }\n        }\n        property Connections idleModesRearmTrigger: Connections {\n            target: idleInhibitor.window\n            function onBackingWindowVisibleChanged() {\n                if (idleInhibitor.window.backingWindowVisible)\n                    idleInhibitor.idleModesRearm.restart();\n            }\n        }\n"
     },
     {
       "file": "modules/common/models/quickToggles/IdleInhibitorToggle.qml",
