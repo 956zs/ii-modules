@@ -1,0 +1,60 @@
+{
+  "protocolVersion": 1,
+  "id": "discord_notifs",
+  "name": {
+    "en_US": "Discord Notifications",
+    "zh_TW": "Discord 通知面板",
+    "zh_CN": "Discord 通知面板"
+  },
+  "description": {
+    "en_US": "A recent-Discord-notifications panel with All, DM, Server and Other tabs, opened over IPC so a hotkey or tablet button can toggle it. Reads the shell's own notification history (live and persisted); it never contacts Discord.",
+    "zh_TW": "顯示近期 Discord 通知的浮動面板，分「全部、私訊、伺服器、其他」四個分頁，透過 IPC 開關，可綁熱鍵或繪圖板按鈕。資料來自 shell 自己的通知歷史（即時加上已保存的），不會連到 Discord。",
+    "zh_CN": "显示近期 Discord 通知的浮动面板，分“全部、私信、服务器、其他”四个标签页，通过 IPC 开关，可绑定热键或数位板按钮。数据来自 shell 自己的通知历史（实时加已保存的），不会连接 Discord。"
+  },
+  "version": "1.0.0",
+  "authors": [
+    "nlcat"
+  ],
+  "license": "MIT",
+  "slots": [
+    "window"
+  ],
+  "entries": {
+    "window": "main.qml"
+  },
+  "compat": {
+    "probes": [
+      {
+        "type": "file-exists",
+        "path": "services/Notifications.qml",
+        "reason": "notification history the panel lists"
+      },
+      {
+        "type": "file-contains",
+        "path": "services/Notifications.qml",
+        "pattern": "property list<Notif> list",
+        "reason": "live notification list read by the panel"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/RippleButton.qml",
+        "reason": "tab buttons"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/StyledListView.qml",
+        "reason": "scrolling notification list"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/StyledRectangularShadow.qml",
+        "reason": "panel drop shadow"
+      }
+    ],
+    "testedOn": {
+      "dotsCommit": "446504ad42",
+      "qsVersion": "0.2.1"
+    }
+  },
+  "capabilities": []
+}
