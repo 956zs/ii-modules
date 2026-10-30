@@ -155,6 +155,12 @@ Scope {
                                 toggled: root.filter === modelData
                                 buttonText: root.filterLabel(modelData) + "  " + (root.view.counts[modelData] ?? 0)
                                 onClicked: root.setFilter(modelData)
+                                // The stock label colour is unreadable on the filled (toggled) background.
+                                contentItem: StyledText {
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: parent.buttonText
+                                    color: parent.toggled ? Appearance.colors.colOnPrimary : Appearance.colors.colOnLayer0
+                                }
                             }
                         }
                     }
