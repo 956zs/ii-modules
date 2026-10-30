@@ -176,6 +176,10 @@ Scope {
                         visible: root.view.items.length > 0
                         clip: true
                         spacing: 6
+                        // The stock add/remove transitions ghost rows over their neighbours when the list refreshes while open.
+                        popin: false
+                        animateAppearance: false
+                        animateMovement: false
                         model: ScriptModel {
                             values: root.view.items
                             objectProp: "id"
@@ -185,6 +189,7 @@ Scope {
                             required property var modelData
                             width: list.width
                             implicitHeight: rowLayout.implicitHeight + 16
+                            height: implicitHeight
                             radius: Appearance.rounding.small
                             color: Appearance.colors.colLayer1
 
