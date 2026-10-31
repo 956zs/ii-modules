@@ -19,6 +19,11 @@ released.
   list change, missing binary backoff, binary fix, reset IPC, linger and
   SIGTERM on hide verified. Settings fragment rendered with no log errors.
   Config restored to defaults (mode playing, binary aulactl).
+- ✅ Owner feedback round: keycap travel redesigned (Keycap.qml): fill from
+  the bottom clipped to the rounded cap, gradient fading in from the fill's
+  top edge, actuation as side notches, 40 ms smoothing, contrast-aware
+  legend, `travelStyle` fill/bar/off. Shots: aula-keys-v2-{idle,half,full,
+  bar-half}.png.
 - ⚠️ Not live-tested: the osu! `playing`/`focused` transitions (would mean
   writing the owner's osu-state file that also gates builds) and the real
   `aulactl feed`, which was still being implemented.
