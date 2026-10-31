@@ -93,7 +93,7 @@ mania 7K（`KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL`）三個快捷按鈕。
   `resetOnSession` 關閉時只有手動重置才歸零。
 - 計數只在記憶體中，不寫檔；shell 重新載入後歸零。
 - IPC：`qs -c ii ipc --any-display call aula_keys reset` 歸零，
-  `... call aula_keys status` 回傳模式、osu! 狀態、是否顯示、feed 狀態與計數的 JSON。
+  `... call aula_keys status` 回傳模式、osu! 狀態、是否顯示、feed 狀態、鍵盤型號、`max_mm` 與計數的 JSON。
 
 ## 限制
 

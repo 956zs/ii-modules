@@ -128,6 +128,8 @@ Scope {
                 osu: osuWatch.state,
                 shown: root.shown,
                 feed: !root.shown ? "stopped" : keyFeed.status === "" ? "live" : keyFeed.status,
+                product: keyFeed.product,
+                maxMm: keyFeed.maxMm,
                 total: keyFeed.total,
                 peak: keyFeed.peak
             });

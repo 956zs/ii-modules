@@ -24,9 +24,15 @@ released.
   top edge, actuation as side notches, 40 ms smoothing, contrast-aware
   legend, `travelStyle` fill/bar/off. Shots: aula-keys-v2-{idle,half,full,
   bar-half}.png.
+- ✅ Real `aulactl feed` pass (mode always, binary aulactl): hello from
+  SI2825KZHEARGB, max_mm 3.4, notches at the board's actuation points; a
+  module reinstall and the switch back to mode playing both left no
+  `aulactl feed` running and `aulactl info` answered (lock released). IPC
+  status now also reports product and maxMm. Shot:
+  aula-keys-v2-real-board.png.
 - ⚠️ Not live-tested: the osu! `playing`/`focused` transitions (would mean
-  writing the owner's osu-state file that also gates builds) and the real
-  `aulactl feed`, which was still being implemented.
+  writing the owner's osu-state file that also gates builds) and real key
+  presses (nobody pressed Z/X during the pass).
 
 ## 2026-10-23 idle_modes 1.0.1 restart inhibitor fix
 
