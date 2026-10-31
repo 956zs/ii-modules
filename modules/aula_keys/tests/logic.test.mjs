@@ -198,3 +198,37 @@ test('the fake feeder speaks the contract', async () => {
   for (const e of presses) L.recordPress(stats, e.key, e.t, 0)
   assert.equal(stats.total, presses.length)
 })
+
+test('keycap colours: gradient, luminance and legend contrast', () => {
+  assert.equal(L.fillAlpha(0, false), L.FILL_ALPHA_TOP)
+  assert.equal(L.fillAlpha(1, false), L.FILL_ALPHA_BOTTOM)
+  assert.ok(L.fillAlpha(1, true) > L.fillAlpha(1, false))
+  assert.ok(L.fillAlpha(1, true) <= 1)
+  assert.equal(L.fillAlpha(-3, false), L.FILL_ALPHA_TOP)
+  assert.equal(L.fillAlpha('x', false), L.FILL_ALPHA_TOP)
+  const black = { r: 0, g: 0, b: 0 }
+  const white = { r: 1, g: 1, b: 1 }
+  assert.equal(L.luminance(black), 0)
+  assert.equal(L.luminance(white), 1)
+  assert.equal(L.luminance(null), 0)
+  assert.ok(Math.abs(L.contrastRatio(black, white) - 21) < 1e-9)
+  const darkCap = { r: 0.12, g: 0.12, b: 0.14 }
+  const lightAccent = { r: 0.95, g: 0.9, b: 1 }
+  // Below half travel the legend sits on the bare cap.
+  assert.deepEqual(plain(L.legendBackdrop(darkCap, lightAccent, 0.4, false)), plain(darkCap))
+  const covered = L.legendBackdrop(darkCap, lightAccent, 1, true)
+  assert.ok(covered.r > darkCap.r && covered.r < lightAccent.r)
+  // Boundary: at exactly half travel the centre is the fill's faint top edge.
+  const edge = L.legendBackdrop(darkCap, lightAccent, 0.5, false)
+  assert.ok(Math.abs(edge.r - (darkCap.r + (lightAccent.r - darkCap.r) * L.FILL_ALPHA_TOP)) < 1e-9)
+  // A light accent over a dark cap keeps the light legend at full travel.
+  const lightText = { r: 0.9, g: 0.9, b: 0.92 }
+  assert.equal(L.pickContrast(covered, lightText, darkCap), 0)
+  assert.deepEqual(plain(L.legendBackdrop(null, lightAccent, 1, true)), plain(black))
+  assert.deepEqual(plain(L.legendBackdrop(darkCap, null, 1, true)), plain(darkCap))
+  assert.equal(L.pickContrast(darkCap, white, black), 0)
+  assert.equal(L.pickContrast(white, white, black), 1)
+  assert.equal(L.normalizeTravelStyle('bar'), 'bar')
+  assert.equal(L.normalizeTravelStyle('fancy'), 'fill')
+  assert.equal(L.normalizeTravelStyle(undefined), 'fill')
+})

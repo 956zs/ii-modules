@@ -8,6 +8,7 @@
 var DEFAULT_KEYS = ["KeyZ", "KeyX"];
 var MAX_KEYS = 16;
 var MODES = ["playing", "focused", "always", "off"];
+var TRAVEL_STYLES = ["fill", "bar", "off"];
 var CORNERS = ["bottomRight", "bottomLeft", "bottomCenter", "topRight", "topLeft", "topCenter"];
 var KPS_WINDOW_MS = 1000;
 var BACKOFF_MIN_MS = 1000;
@@ -39,6 +40,10 @@ function normalizeMode(mode) {
 
 function normalizeCorner(corner) {
     return oneOf(corner, CORNERS, "bottomRight");
+}
+
+function normalizeTravelStyle(style) {
+    return oneOf(style, TRAVEL_STYLES, "fill");
 }
 
 // "KeyZ, KeyX" / "KeyD KeyF KeyJ KeyK" -> ["KeyZ", "KeyX"]. Invalid names
@@ -183,6 +188,60 @@ function travelFraction(mm, maxMm) {
     if (max <= 0)
         return 0;
     return clamp(finite(mm, 0) / max, 0, 1, 0);
+}
+
+// ---- keycap colours -------------------------------------------------------
+
+// Travel fill opacity along the fill itself, 0 = its top edge, 1 = the
+// cap's bottom: the fill fades in from its top edge, so there is no hard
+// line where it ends, and it is brighter while the key is pressed.
+var FILL_ALPHA_TOP = 0.04;
+var FILL_ALPHA_BOTTOM = 0.5;
+var PRESSED_BOOST = 1.3;
+
+function fillAlpha(position, pressed) {
+    var p = clamp(position, 0, 1, 0);
+    var a = FILL_ALPHA_TOP + (FILL_ALPHA_BOTTOM - FILL_ALPHA_TOP) * p;
+    return Math.min(1, pressed ? a * PRESSED_BOOST : a);
+}
+
+// WCAG relative luminance of {r, g, b} in 0..1 (QML colors qualify).
+function luminance(color) {
+    if (!color)
+        return 0;
+    function lin(c) {
+        var v = clamp(c, 0, 1, 0);
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    }
+    return 0.2126 * lin(color.r) + 0.7152 * lin(color.g) + 0.0722 * lin(color.b);
+}
+
+function contrastRatio(a, b) {
+    var la = luminance(a);
+    var lb = luminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+// Colour behind the legend (cap centre): the cap, plus the fill blended in
+// once the fill reaches the centre.
+function legendBackdrop(cap, accent, fraction, pressed) {
+    var f = clamp(fraction, 0, 1, 0);
+    if (!cap)
+        return { r: 0, g: 0, b: 0 };
+    if (!accent || f < 0.5)
+        return { r: cap.r, g: cap.g, b: cap.b };
+    // Where the cap's centre sits inside the fill's own gradient.
+    var a = fillAlpha(1 - 0.5 / f, pressed);
+    return {
+        r: cap.r + (accent.r - cap.r) * a,
+        g: cap.g + (accent.g - cap.g) * a,
+        b: cap.b + (accent.b - cap.b) * a
+    };
+}
+
+// Index (0 or 1) of the candidate that contrasts more with `backdrop`.
+function pickContrast(backdrop, first, second) {
+    return contrastRatio(backdrop, second) > contrastRatio(backdrop, first) ? 1 : 0;
 }
 
 // ---- counters and KPS ----------------------------------------------------

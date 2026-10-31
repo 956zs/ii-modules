@@ -4,6 +4,9 @@
 # passes (`feed --keys KeyZ,KeyX [--depth-hz N]`) and alternates presses
 # across the keys at about FEEDER_KPS presses per second. Exits 0 on
 # SIGTERM/SIGINT like the real feed.
+#
+# FEEDER_HOLD="KeyZ:1.70:press,KeyX:0" freezes the given depths (and
+# presses) after the hello instead of animating, for screenshots.
 set -u
 
 keys="KeyZ,KeyX"
@@ -34,6 +37,19 @@ for code in "${codes[@]}"; do
     list+="${list:+,}{\"code\":\"$code\",\"label\":\"$label\",\"idx\":0,\"x\":0,\"y\":0,\"w\":1,\"mode\":\"rt\",\"point\":1.00,\"press\":0.30,\"release\":0.30}"
 done
 echo "{\"type\":\"hello\",\"product\":\"FAKE\",\"firmware\":\"0.0.0\",\"max_mm\":3.40,\"keys\":[$list]}"
+
+if [ -n "${FEEDER_HOLD:-}" ]; then
+    IFS=',' read -r -a holds <<<"$FEEDER_HOLD"
+    for hold in "${holds[@]}"; do
+        IFS=':' read -r code mm action <<<"$hold"
+        echo "{\"type\":\"depth\",\"t\":$(t),\"key\":\"$code\",\"mm\":$mm}"
+        [ "${action:-}" = "press" ] && echo "{\"type\":\"press\",\"t\":$(t),\"key\":\"$code\"}"
+    done
+    while :; do
+        sleep 1 &
+        wait $!
+    done
+fi
 
 # One press: down in four depth steps, press, up in four steps, release.
 step=$(awk -v k="$kps" 'BEGIN { printf "%.3f", 1 / k / 10 }')
