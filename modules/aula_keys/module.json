@@ -1,0 +1,34 @@
+{
+  "protocolVersion": 1,
+  "id": "aula_keys",
+  "name": {
+    "en_US": "AULA Key Overlay",
+    "zh_TW": "AULA 按鍵疊加層",
+    "zh_CN": "AULA 按键叠加层"
+  },
+  "description": {
+    "en_US": "Rhythm-game key overlay for the AULA WIN 60 HE keyboard: shows the configured keys as keycaps with live travel depth and actuation point, per-key press counts, total, KPS and peak KPS in a click-through corner overlay. Shows while an osu! map is played by default; reads aulactl feed, which runs only while the overlay is visible.",
+    "zh_TW": "AULA WIN 60 HE 鍵盤的音遊按鍵疊加層：在螢幕角落以不攔截點擊的浮層顯示設定的按鍵鍵帽、即時鍵程深度與觸發點、每鍵次數、總數、KPS 與最高 KPS。預設只在打 osu! 圖時出現；資料來自 aulactl feed，只在疊加層顯示時執行。",
+    "zh_CN": "AULA WIN 60 HE 键盘的音游按键叠加层：在屏幕角落以不拦截点击的浮层显示设置的按键键帽、实时键程深度与触发点、每键次数、总数、KPS 与最高 KPS。默认只在打 osu! 图时出现；数据来自 aulactl feed，只在叠加层显示时运行。"
+  },
+  "version": "1.0.0",
+  "authors": ["nlcat"],
+  "license": "MIT",
+  "slots": ["window"],
+  "entries": {
+    "window": "main.qml",
+    "settings": "settings.qml"
+  },
+  "compat": {
+    "probes": [
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSwitch.qml", "reason": "toggle options in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSpinBox.qml", "reason": "numeric options in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSelectionArray.qml", "reason": "mode and corner choices in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/MaterialTextField.qml", "reason": "key list, monitor and binary fields in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/RippleButton.qml", "reason": "key presets and the reset button in the settings fragment"},
+      {"type": "file-contains", "path": "modules/common/Appearance.qml", "pattern": "property color colLayer0Border", "reason": "overlay border colour"}
+    ],
+    "testedOn": {"dotsCommit": "446504ad42", "qsVersion": "0.3.2"}
+  },
+  "capabilities": ["exec"]
+}
