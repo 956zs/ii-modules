@@ -1,3 +1,28 @@
+## 2026-11-01 aula_keys 1.0.0 (AULA WIN 60 HE key overlay)
+
+Branch feat/aula-keys (worktree ../ii-modules-wt-aula-keys), not pushed or
+released.
+
+- ✅ New Tier A window module: click-through layer-shell overlay with keycaps
+  (travel fill = depth / max_mm, actuation tick), per-key counts, KPS (1 s
+  window on the feed's `t`), peak, total. Modes playing (default) / focused
+  / always / off from the osu-state file (OsuStateLogic.js vendored from
+  osu_indicator; a test asserts the copy matches). 3 s linger before hiding.
+- ✅ Runs `aulactl feed --keys ... --depth-hz 60` only while shown; SIGTERM
+  on hide; restart with 1-30 s backoff (reset on hello); key/binary/Hz
+  changes relaunch at once (deferred with Qt.callLater, otherwise the old
+  command started). Status lines map to one dim line, logged on change.
+- ✅ 12 node tests (parse, KPS, counts, visibility machine, backoff, fake
+  feeder contract); zh_TW + zh_CN by an independent i18n subagent.
+- ✅ Live: installed + enabled; with `tests/feeder.sh` and mode always the
+  overlay rendered (screenshots in ~/aula-re/shots/aula-keys-*.png); key
+  list change, missing binary backoff, binary fix, reset IPC, linger and
+  SIGTERM on hide verified. Settings fragment rendered with no log errors.
+  Config restored to defaults (mode playing, binary aulactl).
+- ⚠️ Not live-tested: the osu! `playing`/`focused` transitions (would mean
+  writing the owner's osu-state file that also gates builds) and the real
+  `aulactl feed`, which was still being implemented.
+
 ## 2026-10-23 idle_modes 1.0.1 restart inhibitor fix
 
 Owner: long ago, restarting the ii shell dropped the "keep awake" state and
