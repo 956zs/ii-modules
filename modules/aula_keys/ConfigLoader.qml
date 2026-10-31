@@ -44,6 +44,8 @@ FileView {
             o.mode = "playing";
         if (Logic.normalizeCorner(o.corner) !== o.corner)
             o.corner = "bottomRight";
+        if (Logic.normalizeTravelStyle(o.travelStyle) !== o.travelStyle)
+            o.travelStyle = "fill";
         if (o.scalePercent < 50 || o.scalePercent > 300)
             o.scalePercent = Logic.clamp(o.scalePercent, 50, 300, 100);
         if (o.opacityPercent < 20 || o.opacityPercent > 100)
@@ -89,6 +91,8 @@ FileView {
         property int marginPx: 24
         property int scalePercent: 100
         property int opacityPercent: 90
+        // Key travel inside each keycap: "fill", "bar" (side bar) or "off".
+        property string travelStyle: "fill"
         // Per-key press count under each keycap.
         property bool showCounts: true
         // KPS / peak / total line.

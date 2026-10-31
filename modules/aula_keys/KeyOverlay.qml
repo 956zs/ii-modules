@@ -9,9 +9,8 @@ import qs.mod.aula_keys
 import "AulaKeysLogic.js" as Logic
 
 /*
- * Click-through layer-shell overlay: one keycap per configured key with a
- * live travel fill (depth / max_mm), the actuation point as a tick, the
- * key's press count underneath, and a KPS / peak / total line. Never takes
+ * Click-through layer-shell overlay: one Keycap per configured key (live
+ * travel and actuation notch), the key's press count underneath, and a KPS / peak / total line. Never takes
  * input: the empty mask passes every click to the window below.
  */
 PanelWindow {
@@ -24,6 +23,7 @@ PanelWindow {
     property real contentOpacity: 0.9
     property bool showCounts: true
     property bool showStats: true
+    property string travelStyle: "fill"
 
     readonly property bool atTop: root.corner.startsWith("top")
     readonly property bool atLeft: root.corner.endsWith("Left")
@@ -86,45 +86,17 @@ PanelWindow {
                         required property bool known
                         spacing: 4 * root.uiScale
 
-                        Rectangle {
-                            id: cap
+                        Keycap {
                             width: root.capSize
                             height: root.capSize
-                            radius: Appearance.rounding.small * root.uiScale
-                            clip: true
-                            color: Appearance.colors.colLayer2
-                            border.width: Math.max(1, 2 * root.uiScale)
-                            border.color: keyItem.pressed ? Appearance.colors.colPrimary : Appearance.colors.colOutlineVariant
                             opacity: keyItem.known || root.feed.status !== "" ? 1 : 0.6
-
-                            // Travel fill grows downward with the key.
-                            Rectangle {
-                                anchors.top: parent.top
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                height: parent.height * Logic.travelFraction(keyItem.mm, root.feed.maxMm)
-                                color: Appearance.colors.colPrimary
-                                opacity: keyItem.pressed ? 0.6 : 0.35
-                            }
-
-                            // Actuation point tick.
-                            Rectangle {
-                                visible: keyItem.point > 0 && root.feed.maxMm > 0
-                                x: 0
-                                width: parent.width
-                                height: Math.max(1, 2 * root.uiScale)
-                                y: parent.height * Logic.travelFraction(keyItem.point, root.feed.maxMm) - height / 2
-                                color: Appearance.colors.colTertiary
-                            }
-
-                            StyledText {
-                                anchors.centerIn: parent
-                                text: keyItem.label
-                                textFormat: Text.PlainText
-                                font.pixelSize: Appearance.font.pixelSize.large * root.uiScale
-                                font.weight: Font.DemiBold
-                                color: Appearance.colors.colOnLayer2
-                            }
+                            label: keyItem.label
+                            mm: keyItem.mm
+                            point: keyItem.point
+                            pressed: keyItem.pressed
+                            maxMm: root.feed.maxMm
+                            uiScale: root.uiScale
+                            travelStyle: root.travelStyle
                         }
 
                         StyledText {

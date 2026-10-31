@@ -199,6 +199,40 @@ ColumnLayout {
         }
     }
 
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        Layout.topMargin: 6
+        color: Appearance.colors.colOnLayer1
+        font.weight: Font.DemiBold
+        text: Translation.tr("Key travel")
+    }
+
+    ConfigSelectionArray {
+        Layout.fillWidth: true
+        currentValue: cfg.options.travelStyle
+        onSelected: newValue => {
+            cfg.options.travelStyle = newValue;
+        }
+        options: [
+            {
+                displayName: Translation.tr("Fill"),
+                icon: "water_full",
+                value: "fill"
+            },
+            {
+                displayName: Translation.tr("Side bar"),
+                icon: "vertical_align_bottom",
+                value: "bar"
+            },
+            {
+                displayName: Translation.tr("Off"),
+                icon: "visibility_off",
+                value: "off"
+            }
+        ]
+    }
+
     MaterialTextField {
         Layout.fillWidth: true
         Layout.leftMargin: 8

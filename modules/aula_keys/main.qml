@@ -111,6 +111,7 @@ Scope {
             contentOpacity: cfg.options.opacityPercent / 100
             showCounts: cfg.options.showCounts
             showStats: cfg.options.showStats
+            travelStyle: Logic.normalizeTravelStyle(cfg.options.travelStyle)
         }
     }
 
