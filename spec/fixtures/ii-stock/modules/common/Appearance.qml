@@ -1,6 +1,9 @@
 import QtQuick
 
 QtObject {
+    property QtObject colors: QtObject {
+        property color colLayer0Border: "#44464f"
+    }
     property QtObject animation: QtObject {
         property QtObject elementMove: MotionToken {}
         property QtObject elementMoveSmall: MotionToken {}
