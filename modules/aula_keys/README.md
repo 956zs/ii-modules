@@ -11,8 +11,11 @@ Tier A window 模組，在螢幕角落用不攔截點擊的浮層顯示 AULA WIN
 
 ## 功能
 
-- 每個設定的按鍵一顆鍵帽：鍵帽由上往下填滿代表目前鍵程（`mm / max_mm`），橫線是
-  觸發點，按下時邊框與填色換成主題強調色。
+- 每個設定的按鍵一顆鍵帽，鍵程（`mm / max_mm`）有兩種畫法：預設是由下往上的填色，
+  裁成鍵帽的圓角形狀、用主題強調色的柔和漸層；或是鍵帽右緣的細長條。也可以關掉。
+- 觸發點是鍵帽側邊的短刻痕（長條模式畫在長條旁），低對比、不穿過字。鍵程以約 40 ms
+  的動畫平滑；按下狀態（強調色邊框、鍵帽變亮）則立即切換。字的顏色依背後是鍵帽還是
+  填色自動挑對比較高的主題色。
 - 鍵帽下方是該鍵的按下次數；底部一行顯示目前 KPS（1 秒滑動視窗）、最高 KPS 與總數。
 - feed 的 `waiting`、`lost`、`error` 與重啟狀態以一行淡色小字顯示，狀態改變時才
   寫一行 log。
@@ -65,6 +68,7 @@ iimod install modules/aula_keys/
 | `marginPx` | `24` | 離螢幕邊緣的距離（0–400） |
 | `scalePercent` | `100` | 大小百分比（50–300） |
 | `opacityPercent` | `90` | 不透明度百分比（20–100） |
+| `travelStyle` | `"fill"` | 鍵程畫法：`fill`（填色）、`bar`（右緣長條）、`off` |
 | `monitor` | `""` | 顯示的輸出名稱（例如 `eDP-1`），空字串用第一個螢幕 |
 | `showCounts` | `true` | 鍵帽下方的次數 |
 | `showStats` | `true` | KPS、最高與總數那一行 |
@@ -106,9 +110,10 @@ mania 7K（`KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL`）三個快捷按鈕。
 | `main.qml` | window slot：ConfigLoader owner、顯示狀態機、session 重置、IPC |
 | `KeyFeed.qml` | `aulactl feed` 行程、NDJSON 解析、每鍵 model、計數與退避重啟 |
 | `KeyOverlay.qml` | layer-shell 浮層（Overlay 層、空 mask 讓點擊穿透） |
+| `Keycap.qml` | 單顆鍵帽：鍵程填色或長條、觸發點刻痕、按下狀態、對比字色 |
 | `OsuWatch.qml` | 精簡自 `osu_indicator/OsuState.qml` 的狀態檔讀取 |
 | `OsuStateLogic.js` | `osu_indicator` 的 vendored 副本，只有檔頭不同 |
-| `AulaKeysLogic.js` | 純函式：按鍵清單、行解析、KPS 視窗、顯示狀態機、退避 |
+| `AulaKeysLogic.js` | 純函式：按鍵清單、行解析、KPS 視窗、顯示狀態機、退避、填色漸層與字色對比 |
 | `settings.qml` | 設定頁片段 |
 | `ConfigLoader.qml` | 母本 `lib/ConfigLoader.template.qml` 的副本，含選項修復 |
 | `tests/feeder.sh` | 開發用假 feed，輸出合約格式的行 |
@@ -126,4 +131,8 @@ iimod check modules/aula_keys/
 
 ```bash
 tests/feeder.sh feed --keys KeyZ,KeyX   # 在模組目錄下執行可直接看輸出
+FEEDER_HOLD="KeyZ:1.70:press,KeyX:0" tests/feeder.sh feed --keys KeyZ,KeyX  # 固定深度，方便截圖
 ```
+
+`FEEDER_HOLD` 是假 feed 的環境變數；shell 啟動的行程不會帶上它，要用時另寫一個
+export 後 `exec` 假 feed 的小包裝腳本，把 `binary` 指向它。
