@@ -256,3 +256,98 @@ test('barState covers every mode and feed status', () => {
   assert.equal(L.barState('bogus', true, ''), 'live')
   assert.equal(L.barState(undefined, false, undefined), 'hidden')
 })
+
+test('parseResults reads only an explicit true', () => {
+  assert.equal(L.parseResults('{"state":"cooldown","since":1,"results":true}'), true)
+  assert.equal(L.parseResults('{"state":"cooldown","since":1,"results":false}'), false)
+  assert.equal(L.parseResults('{"state":"cooldown","since":1}'), false)
+  for (const junk of ['', '  ', 'nope', 'null', '[]', '{"results":"true"}', '{"results":1}', undefined, null]) {
+    assert.equal(L.parseResults(junk), false, `junk ${JSON.stringify(junk)}`)
+  }
+  assert.equal(L.normalizeKeepAfterPlay('delay'), 'delay')
+  assert.equal(L.normalizeKeepAfterPlay('forever'), 'results')
+  assert.equal(L.newPlayStarted(0, 'playing', 100), true)
+  assert.equal(L.newPlayStarted(100, 'playing', 100), false)
+  assert.equal(L.newPlayStarted(100, 'cooldown', 200), false)
+})
+
+// Mirrors main.qml: osu-state samples drive wantVisible -> stepVisibility;
+// counters reset when the overlay appears or a new play starts. Each sample
+// is [ms, state, since, results]; the linger timer is stepped at hideAt.
+function simulate(samples, { mode = 'playing', keep = 'results', lingerMs = 3000 } = {}) {
+  let machine = { visible: false, hideAt: 0 }
+  let lastPlaySince = 0
+  const out = []
+  const step = (now, want) => {
+    const wasShown = machine.visible
+    machine = L.stepVisibility(machine, want, now, lingerMs)
+    return !wasShown && machine.visible
+  }
+  let want = false
+  for (let i = 0; i < samples.length; i++) {
+    const [now, state, since, results] = samples[i]
+    // Fire a pending linger deadline that falls before this sample.
+    if (machine.hideAt > 0 && machine.hideAt <= now) step(machine.hideAt, want)
+    want = L.wantVisible(mode, state, results, keep)
+    let reset = step(now, want)
+    if (L.newPlayStarted(lastPlaySince, state, since)) {
+      lastPlaySince = since
+      reset = reset || machine.visible
+    }
+    out.push({ state, visible: machine.visible, reset })
+  }
+  return out
+}
+
+test('results screen keeps the overlay up until it closes', () => {
+  const r = simulate([
+    [0, 'menu', 1, false],
+    [1000, 'playing', 2, false],
+    [60000, 'cooldown', 3, true], // results screen
+    [90000, 'cooldown', 3, true], // still reading results
+    [95000, 'menu', 4, false], // results closed
+    [97000, 'menu', 4, false], // within the 3 s linger
+    [99000, 'menu', 4, false] // past it
+  ])
+  assert.deepEqual(r.map(x => x.visible), [false, true, true, true, true, true, false])
+  assert.deepEqual(r.map(x => x.reset), [false, true, false, false, false, false, false])
+})
+
+test('quitting without results hides after the linger', () => {
+  const r = simulate([
+    [0, 'playing', 1, false],
+    [20000, 'cooldown', 2, false], // quit: short cooldown, no results
+    [22000, 'menu', 3, false],
+    [23001, 'menu', 3, false]
+  ])
+  assert.deepEqual(r.map(x => x.visible), [true, true, true, false])
+})
+
+test('retry from the results screen resets on the new play, not on results', () => {
+  const r = simulate([
+    [0, 'playing', 1, false],
+    [50000, 'cooldown', 2, true],
+    [55000, 'playing', 3, false], // retry
+    [56000, 'playing', 3, false]
+  ])
+  assert.deepEqual(r.map(x => x.visible), [true, true, true, true])
+  assert.deepEqual(r.map(x => x.reset), [true, false, true, false])
+})
+
+test('absent results field and keep=delay both fall back to the linger', () => {
+  const samples = [
+    [0, 'playing', 1, undefined],
+    [50000, 'cooldown', 2, undefined],
+    [52000, 'cooldown', 2, undefined],
+    [54000, 'cooldown', 2, undefined]
+  ]
+  assert.deepEqual(simulate(samples).map(x => x.visible), [true, true, true, false])
+  const withResults = samples.map(([t, s, since], i) => [t, s, since, i > 0])
+  assert.deepEqual(simulate(withResults, { keep: 'delay' }).map(x => x.visible), [true, true, true, false])
+  assert.deepEqual(simulate(withResults).map(x => x.visible), [true, true, true, true])
+  // focused mode already covers cooldown; results also count there.
+  assert.equal(L.wantVisible('focused', 'idle', true, 'results'), true)
+  assert.equal(L.wantVisible('focused', 'idle', true, 'delay'), false)
+  assert.equal(L.wantVisible('always', 'off', false, 'delay'), true)
+  assert.equal(L.wantVisible('off', 'playing', true, 'results'), false)
+})
