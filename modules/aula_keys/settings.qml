@@ -316,6 +316,33 @@ ColumnLayout {
         text: Translation.tr("Feed")
     }
 
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        color: Appearance.colors.colOnSecondaryContainer
+        text: Translation.tr("After a play")
+    }
+
+    ConfigSelectionArray {
+        Layout.fillWidth: true
+        currentValue: Logic.normalizeKeepAfterPlay(cfg.options.keepAfterPlay)
+        onSelected: newValue => {
+            cfg.options.keepAfterPlay = newValue;
+        }
+        options: [
+            {
+                displayName: Translation.tr("Until the results screen closes"),
+                icon: "leaderboard",
+                value: "results"
+            },
+            {
+                displayName: Translation.tr("%1 s after the play").arg(cfg.options.hideDelaySecs),
+                icon: "timer",
+                value: "delay"
+            }
+        ]
+    }
+
     ConfigSpinBox {
         icon: "timer"
         text: Translation.tr("Keep shown after leaving osu! (s)")
