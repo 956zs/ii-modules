@@ -1,3 +1,20 @@
+## 2026-11-01 aula_keys 1.1.0 bar indicator
+
+- ✅ bar.qml: keyboard icon (dim hidden/off, accent live, red tint for
+  waiting/busy/lost/error/retrying), optional KPS (`barShowKps`), hover
+  tooltip (mode, feed, board), click opens QuickPanel in a vendored
+  PanelShell (mode, key presets incl. Custom, travel style, 3 switches,
+  reset, live stats line). Writes the same module config; live state comes
+  from main.qml through the `.pragma library` AulaHub.js.
+- ✅ zh_TW/zh_CN via the i18n subagent; overlay wording unified to 疊加層 /
+  叠加层 (lead decision), README and module.json follow.
+- ✅ Real play while this was installed: osu-state playing -> overlay shown,
+  real feed live (SI2825KZHEARGB), presses counted, hidden at cooldown, no
+  feed process left.
+- ✅ Shots ~/aula-re/shots/aula-keys-bar-{off,hidden,warn,live,live-kps,
+  panel}.png. Hover tooltip not screenshotted (owner at the machine; no
+  pointer automation). The owner's own `keys` value (KeyS,KeyD) was kept.
+
 ## 2026-11-01 aula_keys 1.0.0 (AULA WIN 60 HE key overlay)
 
 Branch feat/aula-keys (worktree ../ii-modules-wt-aula-keys), not pushed or
