@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "OsuStateLogic.js" as OsuLogic
+import "AulaKeysLogic.js" as Logic
 
 /*
  * osu! state reader, trimmed from modules/osu_indicator/OsuState.qml: reads
@@ -25,14 +26,23 @@ Item {
     // Unix seconds the current state began; a new value while playing is a
     // new map.
     readonly property int since: record.since
+    // True while osu!lazer shows a results screen; absent in older daemons.
+    property bool results: false
 
     FileView {
         id: file
         path: root.active ? root.path : ""
         watchChanges: true
         onFileChanged: reload()
-        onLoaded: root.record = OsuLogic.parseState(text())
-        onLoadFailed: root.record = OsuLogic.offState()
+        onLoaded: {
+            const content = text();
+            root.record = OsuLogic.parseState(content);
+            root.results = root.record.valid && Logic.parseResults(content);
+        }
+        onLoadFailed: {
+            root.record = OsuLogic.offState();
+            root.results = false;
+        }
     }
 
     // The daemon replaces the file by rename, which some watchers report

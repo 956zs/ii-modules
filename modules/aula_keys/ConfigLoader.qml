@@ -46,6 +46,8 @@ FileView {
             o.corner = "bottomRight";
         if (Logic.normalizeTravelStyle(o.travelStyle) !== o.travelStyle)
             o.travelStyle = "fill";
+        if (Logic.normalizeKeepAfterPlay(o.keepAfterPlay) !== o.keepAfterPlay)
+            o.keepAfterPlay = "results";
         if (o.scalePercent < 50 || o.scalePercent > 300)
             o.scalePercent = Logic.clamp(o.scalePercent, 50, 300, 100);
         if (o.opacityPercent < 20 || o.opacityPercent > 100)
@@ -102,6 +104,9 @@ FileView {
         // Seconds the overlay stays after osu! leaves the wanted state, so
         // a quick retry does not restart the feed.
         property int hideDelaySecs: 3
+        // After a play: "results" keeps the overlay while osu!'s results
+        // screen is open (then hideDelaySecs), "delay" only hideDelaySecs.
+        property string keepAfterPlay: "results"
         // Zero the counters when the overlay appears or a new map starts.
         property bool resetOnSession: true
         // Bumped by the settings page's reset button; the value is ignored.

@@ -38,7 +38,7 @@ Scope {
     // the configured linger.
     property var machine: ({ visible: false, hideAt: 0 })
     readonly property bool shown: machine.visible
-    readonly property bool wanted: cfg.ready && Logic.wantVisible(root.mode, osuWatch.state)
+    readonly property bool wanted: cfg.ready && Logic.wantVisible(root.mode, osuWatch.state, osuWatch.results, cfg.options.keepAfterPlay)
 
     function step() {
         const next = Logic.stepVisibility(root.machine, root.wanted, Date.now(), cfg.options.hideDelaySecs * 1000);
@@ -64,12 +64,13 @@ Scope {
         onTriggered: root.step()
     }
 
-    // A new map (playing with a new start time) is a new session as well.
+    // A new map (playing with a new start time) is a new session as well;
+    // the results screen opening is not.
     property int lastPlaySince: 0
     Connections {
         target: osuWatch
         function onRecordChanged() {
-            if (osuWatch.state !== "playing" || osuWatch.since === root.lastPlaySince)
+            if (!Logic.newPlayStarted(root.lastPlaySince, osuWatch.state, osuWatch.since))
                 return;
             root.lastPlaySince = osuWatch.since;
             if (root.shown && cfg.options.resetOnSession)

@@ -366,18 +366,48 @@ function recordPress(stats, key, t, wallMs, windowMs) {
 
 // ---- visibility and restart policy ---------------------------------------
 
-// Whether the selected mode wants the overlay for an osu-state value.
-function wantVisible(mode, osuState) {
+var KEEP_AFTER_PLAY = ["results", "delay"];
+
+function normalizeKeepAfterPlay(value) {
+    return oneOf(value, KEEP_AFTER_PLAY, "results");
+}
+
+// The osu-state file's `results` flag: true while a results screen is the
+// top screen in osu!lazer. Older daemons omit it, which reads as false; so
+// does anything that is not exactly `true`. Parsed here rather than in the
+// vendored OsuStateLogic.js, which must stay identical to osu_indicator's.
+function parseResults(text) {
+    if (typeof text !== "string" || text.trim() === "")
+        return false;
+    try {
+        var data = JSON.parse(text);
+        return !!data && typeof data === "object" && data.results === true;
+    } catch (error) {
+        return false;
+    }
+}
+
+// Whether the selected mode wants the overlay for an osu-state value and
+// results flag. `keepAfterPlay` "results" (default) keeps the overlay up
+// while the results screen is open; "delay" leaves only the hide delay.
+function wantVisible(mode, osuState, results, keepAfterPlay) {
+    var onResults = results === true && normalizeKeepAfterPlay(keepAfterPlay) === "results";
     switch (normalizeMode(mode)) {
     case "always":
         return true;
     case "off":
         return false;
     case "focused":
-        return osuState === "menu" || osuState === "playing" || osuState === "cooldown";
+        return osuState === "menu" || osuState === "playing" || osuState === "cooldown" || onResults;
     default:
-        return osuState === "playing";
+        return osuState === "playing" || onResults;
     }
+}
+
+// A new play (session) starts when the state is "playing" with a start
+// time not seen before; opening the results screen never counts.
+function newPlayStarted(lastPlaySince, osuState, since) {
+    return osuState === "playing" && since !== lastPlaySince;
 }
 
 // Show at once, hide only after `lingerMs` of not wanting: a quick retry

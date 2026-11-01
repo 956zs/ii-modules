@@ -1,7 +1,9 @@
 {
   "%1 KPS · peak %2 · total %3": "%1 KPS · 最高 %2 · 總數 %3",
+  "%1 s after the play": "打完後停留 %1 秒",
   "A session starts when the overlay appears or a new osu! map begins.": "疊加層出現或開始打新的 osu! 圖時，就算一個新 session。",
   "AULA key overlay": "AULA 按鍵疊加層",
+  "After a play": "打完一首後",
   "Always": "一律顯示",
   "Board:": "鍵盤：",
   "Bottom centre": "下方置中",
@@ -43,6 +45,7 @@
   "Top left": "左上",
   "Top right": "右上",
   "Travel updates per key (Hz, 0 = feed default)": "每鍵鍵程更新頻率（Hz，0 = feed 預設）",
+  "Until the results screen closes": "直到成績畫面關閉",
   "Waiting for the keyboard": "等待鍵盤中",
   "While osu! is focused": "osu! 在前景時",
   "While playing osu!": "打 osu! 圖時",
