@@ -99,14 +99,17 @@ iimod install modules/aula_keys/
 | `keepAfterPlay` | `"results"` | `results`：成績畫面開著就一直顯示；`delay`：只停留 `hideDelaySecs` 秒 |
 | `depthHz` | `60` | 傳給 feed 的 `--depth-hz`；`0` 用 feed 預設 |
 | `binary` | `"aulactl"` | `aulactl` 指令名稱或絕對路徑 |
+| `record` | `true` | 每次 feed 執行都錄成 session 檔（`--record --label=<beatmap>`），供 replay 報告使用 |
 
 設定頁有 osu! standard（`KeyZ,KeyX`）、mania 4K（`KeyD,KeyF,KeyJ,KeyK`）與
 mania 7K（`KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL`）三個快捷按鈕。
 
 ## 資料與行為
 
-- feed 的命令列是 `<binary> feed --keys <keys> [--depth-hz <n>]`，參數逐一傳遞，
-  不經過 shell。疊加層隱藏時送 SIGTERM；按鍵、`depthHz` 或 `binary` 改變時立即重啟。
+- feed 的命令列是 `<binary> feed --keys <keys> [--depth-hz <n>] [--record [--label=<beatmap>]]`，
+  參數逐一傳遞，不經過 shell。疊加層隱藏時送 SIGTERM；按鍵、`depthHz`、`binary`、
+  `record` 或錄製標籤改變時立即重啟。
+
 - feed 非預期結束時以指數退避重啟；收到 `hello`（鍵盤已連線）後退避歸零。
 - 次數只算 `press` 事件。KPS 用 feed 的 `t`（毫秒）計算 1 秒滑動視窗，事件之間用
   牆上時鐘推進，所以停手後 KPS 會自然歸零；feed 重啟時視窗清空，次數保留。
@@ -117,6 +120,22 @@ mania 7K（`KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL`）三個快捷按鈕。
 - 計數只在記憶體中，不寫檔；shell 重新載入後歸零。
 - IPC：`qs -c ii ipc --any-display call aula_keys reset` 歸零，
   `... call aula_keys status` 回傳模式、osu! 狀態、是否顯示、feed 狀態、鍵盤型號、`max_mm` 與計數的 JSON。
+
+## 錄製與 replay 報告
+
+`record` 開啟（預設）時，feed 帶 `--record`，`aulactl` 把每次執行的原始鍵程資料存成
+`$XDG_DATA_HOME/aulactl/sessions/` 下的 session 檔，stdout 不變（格式與保留規則見 aulactl
+`docs/feed.md`）。標籤是 feed 啟動時 `osu-state` 的 `beatmap`；沒有 beatmap 時不帶
+`--label`。
+
+- 疊加層隱藏時標籤跟著 beatmap 走，所以 feed 一啟動就是正確的圖。
+- 疊加層還在（重打、或停留期間選了下一首）時，beatmap 改變只在「不在打圖中」或「新的一首
+  剛開始」時採用，並重啟 feed 開新檔；打圖途中絕不重啟。
+- 打完後匯出 replay（osu!lazer 的 `.osr`），再執行：
+
+```bash
+aulactl replay report latest --open
+```
 
 ## 限制
 
