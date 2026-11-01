@@ -190,6 +190,44 @@ function travelFraction(mm, maxMm) {
     return clamp(finite(mm, 0) / max, 0, 1, 0);
 }
 
+// ---- bar indicator and quick settings -----------------------------------
+
+// Key presets offered in the settings page and the bar panel.
+var PRESETS = {
+    standard: "KeyZ,KeyX",
+    mania4k: "KeyD,KeyF,KeyJ,KeyK",
+    mania7k: "KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL"
+};
+
+// Which preset a key list setting matches (after parsing, so spacing and
+// separators do not matter), or "custom".
+function presetFor(keysText) {
+    var keys = parseKeyList(keysText).join(",");
+    for (var name in PRESETS) {
+        if (PRESETS.hasOwnProperty(name) && PRESETS[name] === keys)
+            return name;
+    }
+    return "custom";
+}
+
+// Bar icon state at a glance: "off" (mode off or no overlay owner),
+// "hidden" (waiting for osu!), "live", "starting", or "warn" (the feed is
+// up but the board is waiting, busy, lost, or the feed failed).
+function barState(mode, shown, feedStatus) {
+    if (normalizeMode(mode) === "off")
+        return "off";
+    if (!shown)
+        return "hidden";
+    switch (feedStatus) {
+    case "":
+        return "live";
+    case "starting":
+        return "starting";
+    default:
+        return "warn";
+    }
+}
+
 // ---- keycap colours -------------------------------------------------------
 
 // Travel fill opacity along the fill itself, 0 = its top edge, 1 = the

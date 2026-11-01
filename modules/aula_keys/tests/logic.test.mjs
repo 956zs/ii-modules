@@ -232,3 +232,27 @@ test('keycap colours: gradient, luminance and legend contrast', () => {
   assert.equal(L.normalizeTravelStyle('fancy'), 'fill')
   assert.equal(L.normalizeTravelStyle(undefined), 'fill')
 })
+
+test('presetFor recognises presets regardless of separators', () => {
+  assert.equal(L.presetFor('KeyZ,KeyX'), 'standard')
+  assert.equal(L.presetFor(' KeyZ  KeyX '), 'standard')
+  assert.equal(L.presetFor('KeyD;KeyF;KeyJ;KeyK'), 'mania4k')
+  assert.equal(L.presetFor(L.PRESETS.mania7k), 'mania7k')
+  assert.equal(L.presetFor('KeyX,KeyZ'), 'custom')
+  assert.equal(L.presetFor('KeyA,KeyS'), 'custom')
+  // Empty or invalid falls back to the default list, which is the standard preset.
+  assert.equal(L.presetFor(''), 'standard')
+  assert.equal(L.presetFor(undefined), 'standard')
+})
+
+test('barState covers every mode and feed status', () => {
+  assert.equal(L.barState('off', true, ''), 'off')
+  assert.equal(L.barState('playing', false, ''), 'hidden')
+  assert.equal(L.barState('always', true, ''), 'live')
+  assert.equal(L.barState('always', true, 'starting'), 'starting')
+  for (const status of ['waiting', 'busy', 'lost', 'error', 'restarting']) {
+    assert.equal(L.barState('focused', true, status), 'warn', status)
+  }
+  assert.equal(L.barState('bogus', true, ''), 'live')
+  assert.equal(L.barState(undefined, false, undefined), 'hidden')
+})
