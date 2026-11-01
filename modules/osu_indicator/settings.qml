@@ -67,6 +67,49 @@ ColumnLayout {
         Layout.topMargin: 6
         color: Appearance.colors.colOnLayer1
         font.weight: Font.DemiBold
+        text: Translation.tr("Do not disturb while playing")
+    }
+
+    ConfigSelectionArray {
+        Layout.fillWidth: true
+        currentValue: cfg.options.dndMode
+        onSelected: newValue => {
+            cfg.options.dndMode = newValue;
+        }
+        options: [
+            {
+                displayName: Translation.tr("Playing and between maps"),
+                icon: "do_not_disturb_on",
+                value: "playingCooldown"
+            },
+            {
+                displayName: Translation.tr("Only while playing"),
+                icon: "sports_esports",
+                value: "playing"
+            },
+            {
+                displayName: Translation.tr("Off"),
+                icon: "notifications",
+                value: "off"
+            }
+        ]
+    }
+
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        color: Appearance.colors.colOnSurfaceVariant
+        font.pixelSize: Appearance.font.pixelSize.smaller
+        wrapMode: Text.WordWrap
+        text: Translation.tr("Turns on the shell's Do Not Disturb so notification popups stay hidden; notifications are still kept in the list. Your own setting comes back afterwards, and changing Do Not Disturb by hand during a play leaves it to you until the next play.")
+    }
+
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        Layout.topMargin: 6
+        color: Appearance.colors.colOnLayer1
+        font.weight: Font.DemiBold
         text: Translation.tr("Accent colour")
     }
 

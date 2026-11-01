@@ -40,6 +40,8 @@ FileView {
         // MODULE VALIDATION: heal an unknown accent to the default.
         if (adapterItem.accent !== "theme" && adapterItem.accent !== "osu")
             adapterItem.accent = "theme";
+        if (["playingCooldown", "playing", "off"].indexOf(adapterItem.dndMode) === -1)
+            adapterItem.dndMode = "playingCooldown";
         root.materializing = false;
         if (root.owner)
             writeAdapter();
@@ -72,5 +74,11 @@ FileView {
         property bool approachAnimation: true
         // "theme" follows the Material palette; "osu" uses osu! pink.
         property string accent: "theme"
+        // Notifications.silent while osu! is busy: "playingCooldown",
+        // "playing" or "off".
+        property string dndMode: "playingCooldown"
+        // Internal: DND was turned on by this module and is still owed back
+        // to the user (survives a module reload mid-play).
+        property bool dndOwed: false
     }
 }
