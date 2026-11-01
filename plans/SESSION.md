@@ -1,3 +1,56 @@
+## 2026-11-01 aula_keys 1.1.0 bar indicator
+
+- ✅ bar.qml: keyboard icon (dim hidden/off, accent live, red tint for
+  waiting/busy/lost/error/retrying), optional KPS (`barShowKps`), hover
+  tooltip (mode, feed, board), click opens QuickPanel in a vendored
+  PanelShell (mode, key presets incl. Custom, travel style, 3 switches,
+  reset, live stats line). Writes the same module config; live state comes
+  from main.qml through the `.pragma library` AulaHub.js.
+- ✅ zh_TW/zh_CN via the i18n subagent; overlay wording unified to 疊加層 /
+  叠加层 (lead decision), README and module.json follow.
+- ✅ Real play while this was installed: osu-state playing -> overlay shown,
+  real feed live (SI2825KZHEARGB), presses counted, hidden at cooldown, no
+  feed process left.
+- ✅ Shots ~/aula-re/shots/aula-keys-bar-{off,hidden,warn,live,live-kps,
+  panel}.png. Hover tooltip not screenshotted (owner at the machine; no
+  pointer automation). The owner's own `keys` value (KeyS,KeyD) was kept.
+
+## 2026-11-01 aula_keys 1.0.0 (AULA WIN 60 HE key overlay)
+
+Branch feat/aula-keys (worktree ../ii-modules-wt-aula-keys), not pushed or
+released.
+
+- ✅ New Tier A window module: click-through layer-shell overlay with keycaps
+  (travel fill = depth / max_mm, actuation tick), per-key counts, KPS (1 s
+  window on the feed's `t`), peak, total. Modes playing (default) / focused
+  / always / off from the osu-state file (OsuStateLogic.js vendored from
+  osu_indicator; a test asserts the copy matches). 3 s linger before hiding.
+- ✅ Runs `aulactl feed --keys ... --depth-hz 60` only while shown; SIGTERM
+  on hide; restart with 1-30 s backoff (reset on hello); key/binary/Hz
+  changes relaunch at once (deferred with Qt.callLater, otherwise the old
+  command started). Status lines map to one dim line, logged on change.
+- ✅ 12 node tests (parse, KPS, counts, visibility machine, backoff, fake
+  feeder contract); zh_TW + zh_CN by an independent i18n subagent.
+- ✅ Live: installed + enabled; with `tests/feeder.sh` and mode always the
+  overlay rendered (screenshots in ~/aula-re/shots/aula-keys-*.png); key
+  list change, missing binary backoff, binary fix, reset IPC, linger and
+  SIGTERM on hide verified. Settings fragment rendered with no log errors.
+  Config restored to defaults (mode playing, binary aulactl).
+- ✅ Owner feedback round: keycap travel redesigned (Keycap.qml): fill from
+  the bottom clipped to the rounded cap, gradient fading in from the fill's
+  top edge, actuation as side notches, 40 ms smoothing, contrast-aware
+  legend, `travelStyle` fill/bar/off. Shots: aula-keys-v2-{idle,half,full,
+  bar-half}.png.
+- ✅ Real `aulactl feed` pass (mode always, binary aulactl): hello from
+  SI2825KZHEARGB, max_mm 3.4, notches at the board's actuation points; a
+  module reinstall and the switch back to mode playing both left no
+  `aulactl feed` running and `aulactl info` answered (lock released). IPC
+  status now also reports product and maxMm. Shot:
+  aula-keys-v2-real-board.png.
+- ⚠️ Not live-tested: the osu! `playing`/`focused` transitions (would mean
+  writing the owner's osu-state file that also gates builds) and real key
+  presses (nobody pressed Z/X during the pass).
+
 ## 2026-10-23 idle_modes 1.0.1 restart inhibitor fix
 
 Owner: long ago, restarting the ii shell dropped the "keep awake" state and
