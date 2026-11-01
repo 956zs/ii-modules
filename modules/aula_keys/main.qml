@@ -3,12 +3,14 @@ import Quickshell
 import Quickshell.Io
 import qs.mod.aula_keys
 import "AulaKeysLogic.js" as Logic
+import "AulaHub.js" as Hub
 
 /*
  * Window-slot entry, loaded once: owns the config file, the osu! state
  * reader, the visibility state machine, the feed process and the overlay.
  * The feed runs exactly while the overlay is shown, because it holds the
  * keyboard's device lock. IPC: `qs -c ii ipc call aula_keys reset|status`.
+ * Registers itself in AulaHub.js so the bar indicator can show live state.
  */
 Scope {
     id: root
@@ -17,6 +19,12 @@ Scope {
         id: cfg
         owner: true
     }
+
+    // Live state for the bar entries (see AulaHub.js and bar.qml).
+    readonly property KeyFeed feed: keyFeed
+    readonly property string osuState: osuWatch.state
+    Component.onCompleted: Hub.register(root)
+    Component.onDestruction: Hub.unregister(root)
 
     readonly property string mode: Logic.normalizeMode(cfg.options.mode)
     readonly property var keyList: Logic.parseKeyList(cfg.options.keys)

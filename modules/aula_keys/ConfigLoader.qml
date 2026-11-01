@@ -97,6 +97,8 @@ FileView {
         property bool showCounts: true
         // KPS / peak / total line.
         property bool showStats: true
+        // Current KPS beside the bar icon while the feed is live.
+        property bool barShowKps: false
         // Seconds the overlay stays after osu! leaves the wanted state, so
         // a quick retry does not restart the feed.
         property int hideDelaySecs: 3

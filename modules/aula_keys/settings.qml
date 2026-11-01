@@ -4,6 +4,7 @@ import qs.modules.common
 import qs.modules.common.widgets
 import qs.services
 import qs.mod.aula_keys
+import "AulaKeysLogic.js" as Logic
 
 /*
  * Settings fragment rendered inside the Modules page (Item root). Options
@@ -90,15 +91,15 @@ ColumnLayout {
 
         RippleButton {
             buttonText: Translation.tr("osu! standard")
-            onClicked: cfg.options.keys = "KeyZ,KeyX"
+            onClicked: cfg.options.keys = Logic.PRESETS.standard
         }
         RippleButton {
             buttonText: Translation.tr("mania 4K")
-            onClicked: cfg.options.keys = "KeyD,KeyF,KeyJ,KeyK"
+            onClicked: cfg.options.keys = Logic.PRESETS.mania4k
         }
         RippleButton {
             buttonText: Translation.tr("mania 7K")
-            onClicked: cfg.options.keys = "KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL"
+            onClicked: cfg.options.keys = Logic.PRESETS.mania7k
         }
     }
 
@@ -268,6 +269,16 @@ ColumnLayout {
         onCheckedChanged: {
             if (cfg.ready && !cfg.materializing)
                 cfg.options.showStats = checked;
+        }
+    }
+
+    ConfigSwitch {
+        text: Translation.tr("Show KPS beside the bar icon")
+        buttonIcon: "keyboard"
+        checked: cfg.options.barShowKps
+        onCheckedChanged: {
+            if (cfg.ready && !cfg.materializing)
+                cfg.options.barShowKps = checked;
         }
     }
 
