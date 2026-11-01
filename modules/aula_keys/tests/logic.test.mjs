@@ -351,3 +351,33 @@ test('absent results field and keep=delay both fall back to the linger', () => {
   assert.equal(L.wantVisible('always', 'off', false, 'delay'), true)
   assert.equal(L.wantVisible('off', 'playing', true, 'results'), false)
 })
+
+test('feedArgs adds --record and a safe --label', () => {
+  assert.deepEqual(plain(L.feedArgs(['KeyZ'], 60, true, 'A - B (m) [Hard]')),
+    ['feed', '--keys', 'KeyZ', '--depth-hz', '60', '--record', '--label=A - B (m) [Hard]'])
+  assert.deepEqual(plain(L.feedArgs(['KeyZ'], 0, true, '')), ['feed', '--keys', 'KeyZ', '--record'])
+  assert.deepEqual(plain(L.feedArgs(['KeyZ'], 0, true, null)), ['feed', '--keys', 'KeyZ', '--record'])
+  assert.deepEqual(plain(L.feedArgs(['KeyZ'], 0, true, '  ')), ['feed', '--keys', 'KeyZ', '--record'])
+  // A label is never passed without --record.
+  assert.deepEqual(plain(L.feedArgs(['KeyZ'], 0, false, 'map')), ['feed', '--keys', 'KeyZ'])
+  assert.deepEqual(plain(L.feedArgs(['KeyZ'], 0, 'yes', 'map')), ['feed', '--keys', 'KeyZ'])
+  // Leading dashes stay inside the single --label= argument.
+  assert.deepEqual(plain(L.feedArgs(['KeyZ'], 0, true, '--record /tmp')), ['feed', '--keys', 'KeyZ', '--record', '--label=--record /tmp'])
+})
+
+test('nextFeedLabel only switches beatmaps outside a play or as one starts', () => {
+  // Hidden: follow the beatmap (including null -> "").
+  assert.equal(L.nextFeedLabel('old', 'new', 'menu', false, false), 'new')
+  assert.equal(L.nextFeedLabel('old', null, 'off', false, false), '')
+  assert.equal(L.nextFeedLabel('old', '  new  ', 'menu', false, false), 'new')
+  // Shown, same map: unchanged.
+  assert.equal(L.nextFeedLabel('map', 'map', 'playing', true, true), 'map')
+  // Shown, next map picked in the menu or on results: switch now.
+  assert.equal(L.nextFeedLabel('a', 'b', 'menu', true, false), 'b')
+  assert.equal(L.nextFeedLabel('a', 'b', 'cooldown', true, false), 'b')
+  // Shown, a new play starts with another map: switch at the start.
+  assert.equal(L.nextFeedLabel('a', 'b', 'playing', true, true), 'b')
+  // Shown, mid-play change: keep the running label.
+  assert.equal(L.nextFeedLabel('a', 'b', 'playing', true, false), 'a')
+  assert.equal(L.nextFeedLabel(undefined, 'b', 'playing', true, false), '')
+})

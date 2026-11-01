@@ -84,13 +84,37 @@ function keyLabel(code) {
     return code;
 }
 
-// Arguments after the binary: `feed --keys KeyZ,KeyX [--depth-hz N]`.
-function feedArgs(keys, depthHz) {
+// Arguments after the binary:
+// `feed --keys KeyZ,KeyX [--depth-hz N] [--record [--label=TEXT]]`.
+// The label uses the `--label=` form so a beatmap starting with "-" can
+// never be read as a flag, and `--record` gets no directory argument.
+function feedArgs(keys, depthHz, record, label) {
     var args = ["feed", "--keys", keys.join(",")];
     var hz = Math.round(finite(depthHz, 0));
     if (hz > 0)
         args.push("--depth-hz", String(hz));
+    if (record === true) {
+        args.push("--record");
+        var text = typeof label === "string" ? label.trim() : "";
+        if (text !== "")
+            args.push("--label=" + text);
+    }
     return args;
+}
+
+// Label for the feed's recording (the osu-state beatmap). While the overlay
+// is hidden it simply follows the beatmap, so a starting feed is labelled
+// right. While it is shown, a different beatmap is adopted (which restarts
+// the feed) only outside a play or at the moment a new play starts, never
+// in the middle of one.
+function nextFeedLabel(current, beatmap, osuState, shown, playJustStarted) {
+    var map = typeof beatmap === "string" ? beatmap.trim() : "";
+    var now = typeof current === "string" ? current : "";
+    if (!shown || map === now)
+        return map;
+    if (osuState !== "playing" || playJustStarted === true)
+        return map;
+    return now;
 }
 
 function str(value) {
