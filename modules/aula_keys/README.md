@@ -41,13 +41,16 @@ Tier A window + bar 模組，在螢幕角落用不攔截點擊的疊加層顯示
 
 | 顯示模式（`mode`） | 何時顯示並執行 feed |
 |---|---|
-| `playing`（預設） | `osu-state` 回報 `playing` |
-| `focused` | `menu`、`playing` 或 `cooldown`（osu! 在前景，或剛打完一首） |
+| `playing`（預設） | `osu-state` 回報 `playing`，或成績畫面開著（見下） |
+| `focused` | `menu`、`playing` 或 `cooldown`（osu! 在前景，或剛打完一首），或成績畫面開著 |
 | `always` | 一律 |
 | `off` | 永不 |
 
-離開想要的狀態後疊加層會再停留 `hideDelaySecs` 秒，重打一首（退出再開始）不會閃爍，
-也不會重啟 feed。
+打完一首後的行為由 `keepAfterPlay` 決定：預設 `results` 讓疊加層在 osu! 成績畫面
+（`osu-state.json` 的 `results` 為 `true`）開著的期間一直顯示，feed 也繼續跑，次數、
+最高 KPS 與總數留在畫面上，KPS 自然降到 0；`delay` 則不看成績畫面。兩種都在離開想要
+的狀態後再停留 `hideDelaySecs` 秒，重打一首（退出再開始）不會閃爍，也不會重啟 feed。
+舊版 `osu-state` 沒有 `results` 欄位時視為 `false`，行為等同 `delay`。
 
 ## 需求
 
@@ -93,6 +96,7 @@ iimod install modules/aula_keys/
 | `resetOnSession` | `true` | 每個新 session 歸零計數 |
 | `resetRequest` | `0` | 設定頁「Reset counters now」按鈕遞增它；數值本身無意義 |
 | `hideDelaySecs` | `3` | 離開想要的狀態後再停留的秒數（0–60） |
+| `keepAfterPlay` | `"results"` | `results`：成績畫面開著就一直顯示；`delay`：只停留 `hideDelaySecs` 秒 |
 | `depthHz` | `60` | 傳給 feed 的 `--depth-hz`；`0` 用 feed 預設 |
 | `binary` | `"aulactl"` | `aulactl` 指令名稱或絕對路徑 |
 
@@ -108,6 +112,7 @@ mania 7K（`KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL`）三個快捷按鈕。
   牆上時鐘推進，所以停手後 KPS 會自然歸零；feed 重啟時視窗清空，次數保留。
 - 最高 KPS 在每次按下時取樣；視窗內的數量只會在按下時增加，所以這就是精確最大值。
 - session 是「疊加層出現」或「osu! 開始一首新圖」（`playing` 且 `since` 改變）。
+  打開成績畫面不算新 session；從成績畫面重打才歸零。
   `resetOnSession` 關閉時只有手動重置才歸零。
 - 計數只在記憶體中，不寫檔；shell 重新載入後歸零。
 - IPC：`qs -c ii ipc --any-display call aula_keys reset` 歸零，
@@ -137,7 +142,7 @@ mania 7K（`KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL`）三個快捷按鈕。
 | `Keycap.qml` | 單顆鍵帽：鍵程填色或長條、觸發點刻痕、按下狀態、對比字色 |
 | `OsuWatch.qml` | 精簡自 `osu_indicator/OsuState.qml` 的狀態檔讀取 |
 | `OsuStateLogic.js` | `osu_indicator` 的 vendored 副本，只有檔頭不同 |
-| `AulaKeysLogic.js` | 純函式：按鍵清單、行解析、KPS 視窗、顯示狀態機、退避、填色漸層與字色對比 |
+| `AulaKeysLogic.js` | 純函式（含 `results` 欄位解析，避免改動 vendored 的 `OsuStateLogic.js`）：按鍵清單、行解析、KPS 視窗、顯示狀態機、退避、填色漸層與字色對比 |
 | `settings.qml` | 設定頁片段 |
 | `ConfigLoader.qml` | 母本 `lib/ConfigLoader.template.qml` 的副本，含選項修復 |
 | `tests/feeder.sh` | 開發用假 feed，輸出合約格式的行 |
