@@ -31,9 +31,9 @@ BarGroup {
         implicitHeight: root.barVertical ? glyph.implicitHeight + 8 : Appearance.sizes.baseBarHeight
         hoverEnabled: !Config.options.bar.tooltips.clickToShow
 
+        // Read-only here: main.qml (window slot, loaded once) owns writes.
         ConfigLoader {
             id: cfg
-            owner: true
         }
 
         OsuState {
