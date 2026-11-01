@@ -1,8 +1,9 @@
 # aula_keys - AULA WIN 60 HE 音遊按鍵疊加層
 
-Tier A window 模組，在螢幕角落用不攔截點擊的浮層顯示 AULA WIN 60 HE 上設定的按鍵：
-鍵帽、即時鍵程、觸發點、每鍵次數、總數、KPS 與最高 KPS。資料全部來自
-`aulactl feed` 的 NDJSON 輸出；模組不直接碰鍵盤，也只在浮層顯示時執行 feed。
+Tier A window + bar 模組，在螢幕角落用不攔截點擊的疊加層顯示 AULA WIN 60 HE 上設定的
+按鍵：鍵帽、即時鍵程、觸發點、每鍵次數、總數、KPS 與最高 KPS；bar 上的鍵盤圖示顯示
+疊加層狀態，點開是快速設定。資料全部來自 `aulactl feed` 的 NDJSON 輸出；模組不直接碰
+鍵盤，也只在疊加層顯示時執行 feed。
 
 > [!IMPORTANT]
 > `aulactl feed` 執行期間會佔住鍵盤的 travel-test stream，其他 `aulactl` 與
@@ -22,6 +23,22 @@ Tier A window 模組，在螢幕角落用不攔截點擊的浮層顯示 AULA WIN
 - 位置可選六個角落或上下置中，大小、透明度、離邊距離、顯示的螢幕都可調。
 - 顏色與字型跟隨 ii 主題（`Appearance`）。
 
+### Bar 圖示與快速設定
+
+| 圖示顏色 | 意思 |
+|---|---|
+| 淡色 | 模式 `off`、疊加層隱藏（等 osu!），或疊加層部分沒載入 |
+| 強調色（實心） | feed 已連上鍵盤，資料進來中 |
+| 半強調色 | feed 啟動中 |
+| 偏紅 | 鍵盤 waiting、busy、lost，或 feed 出錯、重試中 |
+
+- hover 顯示模式、feed 狀態與鍵盤型號。
+- 點一下打開快速設定面板：顯示模式、按鍵預設（osu! standard、mania 4K、mania 7K；
+  不符合任何預設時標成「Custom」並列出目前按鍵）、鍵程畫法、三個開關、
+  「Reset counters now」，feed 連線時另有一行 KPS／最高／總數。點面板外或按 Esc 關閉。
+- 面板與設定頁寫同一個設定檔，沒有另外的狀態；完整的按鍵編輯與其他選項在設定頁。
+- `barShowKps` 開啟時，feed 連線中圖示旁顯示目前 KPS（水平 bar）。
+
 | 顯示模式（`mode`） | 何時顯示並執行 feed |
 |---|---|
 | `playing`（預設） | `osu-state` 回報 `playing` |
@@ -29,7 +46,7 @@ Tier A window 模組，在螢幕角落用不攔截點擊的浮層顯示 AULA WIN
 | `always` | 一律 |
 | `off` | 永不 |
 
-離開想要的狀態後浮層會再停留 `hideDelaySecs` 秒，重打一首（退出再開始）不會閃爍，
+離開想要的狀態後疊加層會再停留 `hideDelaySecs` 秒，重打一首（退出再開始）不會閃爍，
 也不會重啟 feed。
 
 ## 需求
@@ -42,7 +59,7 @@ Tier A window 模組，在螢幕角落用不攔截點擊的浮層顯示 AULA WIN
 | Capabilities | `exec`：執行 `aulactl feed` |
 
 沒有 `osu-state` 狀態檔時 osu! 視為 `off`，`playing` 與 `focused` 模式不會顯示。
-`aulactl` 不存在或立刻結束時，模組以 1、2、4 … 最多 30 秒的間隔重試，浮層顯示
+`aulactl` 不存在或立刻結束時，模組以 1、2、4 … 最多 30 秒的間隔重試，疊加層顯示
 「Feed stopped, retrying」。
 
 ## 安裝
@@ -72,6 +89,7 @@ iimod install modules/aula_keys/
 | `monitor` | `""` | 顯示的輸出名稱（例如 `eDP-1`），空字串用第一個螢幕 |
 | `showCounts` | `true` | 鍵帽下方的次數 |
 | `showStats` | `true` | KPS、最高與總數那一行 |
+| `barShowKps` | `false` | bar 圖示旁顯示目前 KPS |
 | `resetOnSession` | `true` | 每個新 session 歸零計數 |
 | `resetRequest` | `0` | 設定頁「Reset counters now」按鈕遞增它；數值本身無意義 |
 | `hideDelaySecs` | `3` | 離開想要的狀態後再停留的秒數（0–60） |
@@ -84,12 +102,12 @@ mania 7K（`KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL`）三個快捷按鈕。
 ## 資料與行為
 
 - feed 的命令列是 `<binary> feed --keys <keys> [--depth-hz <n>]`，參數逐一傳遞，
-  不經過 shell。浮層隱藏時送 SIGTERM；按鍵、`depthHz` 或 `binary` 改變時立即重啟。
+  不經過 shell。疊加層隱藏時送 SIGTERM；按鍵、`depthHz` 或 `binary` 改變時立即重啟。
 - feed 非預期結束時以指數退避重啟；收到 `hello`（鍵盤已連線）後退避歸零。
 - 次數只算 `press` 事件。KPS 用 feed 的 `t`（毫秒）計算 1 秒滑動視窗，事件之間用
   牆上時鐘推進，所以停手後 KPS 會自然歸零；feed 重啟時視窗清空，次數保留。
 - 最高 KPS 在每次按下時取樣；視窗內的數量只會在按下時增加，所以這就是精確最大值。
-- session 是「浮層出現」或「osu! 開始一首新圖」（`playing` 且 `since` 改變）。
+- session 是「疊加層出現」或「osu! 開始一首新圖」（`playing` 且 `since` 改變）。
   `resetOnSession` 關閉時只有手動重置才歸零。
 - 計數只在記憶體中，不寫檔；shell 重新載入後歸零。
 - IPC：`qs -c ii ipc --any-display call aula_keys reset` 歸零，
@@ -101,15 +119,21 @@ mania 7K（`KeyS,KeyD,KeyF,Space,KeyJ,KeyK,KeyL`）三個快捷按鈕。
   適合計數與 KPS，不適合判定時間。
 - `focused` 模式在 `cooldown` 期間無法分辨 osu! 是否在前景，一律顯示。
 - 鍵程條的觸發點只取 `hello` 的 `point`；rapid trigger 的 press/release 距離不畫出來。
-- 浮層只出現在一個螢幕上。
+- 疊加層只出現在一個螢幕上。
+- 設定頁沒有直接跳到本模組的方式，快速設定面板因此也沒有「開啟設定」按鈕。
 
 ## 實作說明
 
 | 檔案 | 角色 |
 |---|---|
-| `main.qml` | window slot：ConfigLoader owner、顯示狀態機、session 重置、IPC |
+| `main.qml` | window slot：ConfigLoader owner、顯示狀態機、session 重置、IPC、向 `AulaHub.js` 登記 |
+| `bar.qml` | bar slot：圖示、狀態色、選用 KPS、hover 提示、點擊開面板（IPC `aula_keys_bar toggle`） |
+| `BarPopup.qml` | hover 提示內容 |
+| `QuickPanel.qml` | 快速設定面板內容 |
+| `PanelShell.qml` | `memory_center/PanelShell.qml` 的副本：貼著 bar 的浮動框、點外面或 Esc 關閉 |
+| `AulaHub.js` | `.pragma library` 共享變數：window slot 登記自己，各螢幕的 bar 讀 feed 即時狀態 |
 | `KeyFeed.qml` | `aulactl feed` 行程、NDJSON 解析、每鍵 model、計數與退避重啟 |
-| `KeyOverlay.qml` | layer-shell 浮層（Overlay 層、空 mask 讓點擊穿透） |
+| `KeyOverlay.qml` | layer-shell 疊加層（Overlay 層、空 mask 讓點擊穿透） |
 | `Keycap.qml` | 單顆鍵帽：鍵程填色或長條、觸發點刻痕、按下狀態、對比字色 |
 | `OsuWatch.qml` | 精簡自 `osu_indicator/OsuState.qml` 的狀態檔讀取 |
 | `OsuStateLogic.js` | `osu_indicator` 的 vendored 副本，只有檔頭不同 |
