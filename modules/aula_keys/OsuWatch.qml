@@ -26,6 +26,8 @@ Item {
     // Unix seconds the current state began; a new value while playing is a
     // new map.
     readonly property int since: record.since
+    // Last selected or played beatmap ("" when unknown).
+    readonly property string beatmap: record.beatmap
     // True while osu!lazer shows a results screen; absent in older daemons.
     property bool results: false
 

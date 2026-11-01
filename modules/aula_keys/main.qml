@@ -56,6 +56,17 @@ Scope {
     onShownChanged: {
         if (root.shown && cfg.options.resetOnSession)
             keyFeed.resetCounts();
+        root.updateFeedLabel(false);
+    }
+
+    // Recording label (the beatmap) for the feed. Follows the beatmap while
+    // hidden; while shown it changes, restarting the feed, only outside a
+    // play or as a new play starts, so each recording is labelled right.
+    property string feedLabel: ""
+    function updateFeedLabel(playJustStarted) {
+        const next = Logic.nextFeedLabel(root.feedLabel, osuWatch.beatmap, osuWatch.state, root.shown, playJustStarted);
+        if (next !== root.feedLabel)
+            root.feedLabel = next;
     }
 
     Timer {
@@ -70,11 +81,13 @@ Scope {
     Connections {
         target: osuWatch
         function onRecordChanged() {
-            if (!Logic.newPlayStarted(root.lastPlaySince, osuWatch.state, osuWatch.since))
-                return;
-            root.lastPlaySince = osuWatch.since;
-            if (root.shown && cfg.options.resetOnSession)
-                keyFeed.resetCounts();
+            const started = Logic.newPlayStarted(root.lastPlaySince, osuWatch.state, osuWatch.since);
+            if (started) {
+                root.lastPlaySince = osuWatch.since;
+                if (root.shown && cfg.options.resetOnSession)
+                    keyFeed.resetCounts();
+            }
+            root.updateFeedLabel(started);
         }
     }
 
@@ -102,6 +115,8 @@ Scope {
         binary: cfg.options.binary
         keys: root.keyList
         depthHz: cfg.options.depthHz
+        record: cfg.options.record
+        label: root.feedLabel
     }
 
     LazyLoader {

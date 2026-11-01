@@ -113,6 +113,9 @@ FileView {
         property int resetRequest: 0
         // aulactl executable (name in PATH or absolute path).
         property string binary: "aulactl"
+        // Pass --record --label=<beatmap> so every feed run is saved for
+        // `aulactl replay report`.
+        property bool record: true
         // --depth-hz for the feed; 0 keeps the feed's default.
         property int depthHz: 60
         // Output name (e.g. "eDP-1"); empty uses the first screen.

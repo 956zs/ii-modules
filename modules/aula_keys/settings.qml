@@ -356,6 +356,25 @@ ColumnLayout {
         }
     }
 
+    ConfigSwitch {
+        text: Translation.tr("Record plays for replay reports")
+        buttonIcon: "fiber_manual_record"
+        checked: cfg.options.record
+        onCheckedChanged: {
+            if (cfg.ready && !cfg.materializing)
+                cfg.options.record = checked;
+        }
+    }
+
+    StyledText {
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        color: Appearance.colors.colOnSurfaceVariant
+        font.pixelSize: Appearance.font.pixelSize.smaller
+        wrapMode: Text.WordWrap
+        text: Translation.tr("Each feed run is saved as a session labelled with the beatmap. Compare it with an exported replay using: aulactl replay report latest --open")
+    }
+
     ConfigSpinBox {
         icon: "speed"
         text: Translation.tr("Travel updates per key (Hz, 0 = feed default)")

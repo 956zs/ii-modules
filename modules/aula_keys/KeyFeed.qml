@@ -19,6 +19,9 @@ Item {
     property var keys: Logic.DEFAULT_KEYS
     // Passed as --depth-hz when > 0; 0 keeps the feed's default.
     property int depthHz: 0
+    // --record (session file for `aulactl replay`), labelled with `label`.
+    property bool record: false
+    property string label: ""
 
     // One row per configured key:
     // { code, label, mm, point, pressed, count, known }.
@@ -167,6 +170,8 @@ Item {
     // Deferred so proc.command has re-evaluated before the next start.
     onDepthHzChanged: Qt.callLater(root.relaunch)
     onBinaryChanged: Qt.callLater(root.relaunch)
+    onRecordChanged: Qt.callLater(root.relaunch)
+    onLabelChanged: Qt.callLater(root.relaunch)
     onActiveChanged: {
         if (root.active) {
             root.attempt = 0;
@@ -186,7 +191,7 @@ Item {
 
     Process {
         id: proc
-        command: [root.binary].concat(Logic.feedArgs(root.keys, root.depthHz))
+        command: [root.binary].concat(Logic.feedArgs(root.keys, root.depthHz, root.record, root.label))
         stdout: SplitParser {
             onRead: data => root.handle(data)
         }

@@ -220,6 +220,16 @@ ColumnLayout {
         }
     }
 
+    ConfigSwitch {
+        text: Translation.tr("Record plays for replay reports")
+        buttonIcon: "fiber_manual_record"
+        checked: root.opts.record
+        onCheckedChanged: {
+            if (root.config.ready && !root.config.materializing)
+                root.opts.record = checked;
+        }
+    }
+
     RippleButton {
         Layout.topMargin: 4
         Layout.alignment: Qt.AlignRight
