@@ -638,6 +638,12 @@ Item {
     }
 
     component SysFile: FileView {
+        // Batteries expose either energy_*/power_now or charge_*/current_now,
+        // never both, and readInstant() already falls back between them. Every
+        // BatteryLogic (the bar pill, each hover popup) preloads all of these
+        // paths, so printing the expected misses logged four warnings per
+        // instance. Failures are handled in onLoadFailed / readNum instead.
+        printErrors: false
         property bool missing: false
         onPathChanged: missing = false
         onLoaded: missing = false

@@ -702,3 +702,9 @@ patch; screentime zero-day stats semantics change → minor.
 - ✅ Network Traffic no longer assigns undeclared `pktzStarted`; `reapply` now restores durable host state and every journaled projection after post-preflight failures; same-value unmanaged user translations remain unowned; and scanner regex recognition includes whole-word non-member `typeof`, `void`, and `delete`.
 - ✅ Release fixtures now cover Clock Popup, Battery Trend, Memory Center, and ActiveWindow stock surfaces. ActiveWindow documentation distinguishes read-only `check` reporting from state-changing `reapply` incompatibility handling.
 - ✅ Clean integration verification on CLI 1.3.0: Rust fmt, 63 unit, 18 i18n CLI, 37 integration, and all-target clippy; 97 module contracts; site 47/47 plus TypeScript/Vite/VitePress production build; release contracts 15/15 and publish contracts 13/13; exact repository i18n and all eight module validate/check runs; four fixture-dependent official release dry-runs; catalog, paired skills, shell syntax, diff, secret, and conflict-marker checks. No live mutation, push, tag, or Release was performed.
+
+## 2026-11-10 battery_trend 1.3.1 (branch `fix/battery-trend-quiet-sysfs`)
+
+- ✅ `SysFile` sets `printErrors: false`. Each BatteryLogic instance (bar pill, every hover popup) preloads all energy_*/charge_*/power_now paths, so charge-only batteries (BAT1 on the owner's laptop) logged 4 "File does not exist" warnings per instance, 71x in 13 min of qslog. Misses are already handled by `onLoadFailed`/`readNum`.
+- ✅ Checks: `iimod validate` + `check`, ConfigLoader drift 0, i18n zh_TW/zh_CN `--deny-orphans`. Live upgrade 1.3.0 → 1.3.1, `iimod verify` all intact, zero power_supply warnings after the reload, `battery_trend toggle` IPC opens and closes the panel.
+- Not pushed or released (`tools/release/publish.sh module battery_trend` is pending owner approval).
