@@ -38,6 +38,12 @@ function migrateStatsPeriod(serialized, statsPeriod, statsPeriodSchema) {
     return { statsPeriod: period, statsPeriodSchema: schema }
 }
 
+const APP_ACCT_SCHEMA = 2
+
+function appAccountingSchema() {
+    return APP_ACCT_SCHEMA
+}
+
 function restoreAccounting(serialized, bootId, now) {
     let state = null
     try {
@@ -48,7 +54,10 @@ function restoreAccounting(serialized, bootId, now) {
 
     const currentDay = dayKey(now)
     const currentMonth = monthKey(now)
-    const entries = Array.isArray(state?.apps) ? state.apps : []
+    // Schema 1 (before 1.8.0) baselined every newly seen process and lost its
+    // first sampling interval, undercounting per-app totals by up to half.
+    // Those totals cannot be repaired, so they are discarded, not mixed in.
+    const entries = state?.v === APP_ACCT_SCHEMA && Array.isArray(state?.apps) ? state.apps : []
     const map = {}
     for (const entry of entries) {
         if (!entry || typeof entry.n !== "string" || entry.n === "") continue
@@ -139,28 +148,30 @@ function pruneAccounting(acct, otherKey, maxTrackedApps, now) {
     return next
 }
 
-function drainResolvedPending(pendingDelta, commByPid, activePids) {
-    const active = new Set((activePids ?? []).map(pid => String(pid)))
-    const nextComm = {}
-    for (const pid in (commByPid ?? {})) {
-        if (active.has(String(pid))) nextComm[pid] = commByPid[pid]
-    }
-
+// Settles parked bytes after a ps name query. Resolved PIDs are credited to
+// their name; PIDs the query asked about but ps no longer knows have exited,
+// so their bytes go to the collector-provided fallback (pktz comm) or the
+// unattributed-process bucket. Other parked bytes wait for a later query.
+function drainResolvedPending(pendingDelta, commByPid, queriedPids, unattributedKey) {
+    const fallbackKey = typeof unattributedKey === "string" && unattributedKey !== ""
+        ? unattributedKey : "__unattributed_process"
+    const queried = new Set(Array.from(queriedPids ?? [], pid => String(pid)))
     const nextPending = {}
     const accounting = {}
     for (const entryId in (pendingDelta ?? {})) {
         const parked = pendingDelta[entryId]
+        if (!parked || typeof parked !== "object") continue
         const pid = String(parked.pid)
-        if (!active.has(pid)) continue
-        const name = nextComm[pid]
-        if (name === undefined) {
-            nextPending[entryId] = Object.assign({}, parked)
+        const name = commByPid?.[pid]
+        if (typeof name === "string" && name !== "") {
+            addTraffic(accounting, name, bytes(parked.rx), bytes(parked.tx))
+        } else if (queried.has(pid)) {
+            addTraffic(accounting, parked.fallback || fallbackKey, bytes(parked.rx), bytes(parked.tx))
         } else {
-            addTraffic(accounting, name, parked.rx, parked.tx)
+            nextPending[entryId] = Object.assign({}, parked)
         }
     }
     return {
-        commByPid: nextComm,
         pendingDelta: nextPending,
         accounting: Object.values(accounting)
     }
@@ -177,7 +188,8 @@ function finalizePending(pendingDelta, commByPid, unattributedKey) {
         const tx = bytes(parked.tx)
         if (rx + tx === 0) continue
         const resolved = commByPid?.[String(parked.pid)]
-        const name = typeof resolved === "string" && resolved !== "" ? resolved : fallback
+        const name = typeof resolved === "string" && resolved !== "" ? resolved
+            : typeof parked.fallback === "string" && parked.fallback !== "" ? parked.fallback : fallback
         addTraffic(accounting, name, rx, tx)
     }
     return { pendingDelta: {}, accounting: Object.values(accounting) }
@@ -279,24 +291,59 @@ function parsePktzLine(data) {
     }
 }
 
-function commitPktzBatch(batch, lastCum, connCum, elapsed) {
+// pktz keeps one kernel counter per PID, created at zero when pktz loads and
+// continued for the PID's lifetime (and across PID reuse until LRU eviction).
+// Baselines are therefore keyed by PID and retained while pktz runs: a PID
+// never seen before contributes its full counter, a shrunk counter (evicted
+// and recreated) contributes its new value, and a PID that skipped frames
+// resumes from its retained baseline instead of being counted twice.
+const PKTZ_RETAINED_PIDS = 4096
+
+function commitPktzBatch(batch, lastCum, connCum, elapsed, commByPid, pendingDelta, unattributedKey) {
     const previousCum = lastCum ?? {}
     const previousConnCum = connCum ?? {}
-    const nextCum = {}
+    const fallbackKey = typeof unattributedKey === "string" && unattributedKey !== ""
+        ? unattributedKey : "__unattributed_process"
+    const entries = (batch ?? []).filter(entry => entry && entry.kind !== "conn"
+        && typeof entry.pid === "string" && typeof entry.comm === "string")
+    const entryByPid = new Map(entries.map(entry => [entry.pid, entry]))
+    const presentPids = new Set(entryByPid.keys())
+    const nextCum = Object.keys(previousCum).length + presentPids.size > PKTZ_RETAINED_PIDS
+        ? {} : Object.assign({}, previousCum)
     const nextConnCum = {}
     const accounting = {}
     const rates = {}
 
+    // Names resolve per PID from the full command line; drop a name when the
+    // PID is gone or exec'd into another program (comm changed).
+    const nextComm = {}
+    for (const pid in (commByPid ?? {})) {
+        const previous = previousCum[pid]
+        const entry = entryByPid.get(pid)
+        if (entry && (!previous || previous.comm === entry.comm))
+            nextComm[pid] = commByPid[pid]
+    }
+    const nextPending = {}
+    for (const entryId in (pendingDelta ?? {})) {
+        const parked = pendingDelta[entryId]
+        if (!parked || typeof parked !== "object") continue
+        if (presentPids.has(String(parked.pid))) {
+            nextPending[entryId] = Object.assign({}, parked)
+        } else {
+            addTraffic(accounting, parked.fallback || fallbackKey, bytes(parked.rx), bytes(parked.tx))
+        }
+    }
+
     // Per-process excluded-endpoint byte deltas from conn records. Process
     // counters stay authoritative (conn coverage has gaps upstream); conn
     // deltas only carve the excluded share back out. A first-sighted conn
-    // contributes its full cumulative bytes: within one collector run those
-    // bytes accrued inside the process counters being committed. Conn counter
-    // shrink establishes a fresh baseline without subtracting.
+    // contributes its full cumulative bytes, matching first-sighted process
+    // counters. Conn counter shrink establishes a fresh baseline without
+    // subtracting.
     const excludedDelta = {}
     for (const entry of (batch ?? [])) {
         if (!entry || entry.kind !== "conn") continue
-        const connId = `${entry.pid}/${entry.comm}|${entry.proto}|${entry.src}:${entry.sport}|${entry.dst}:${entry.dport}`
+        const connId = `${entry.pid}|${entry.proto}|${entry.src}:${entry.sport}|${entry.dst}:${entry.dport}`
         const previous = previousConnCum[connId]
         nextConnCum[connId] = { rx: entry.rx, tx: entry.tx }
         if (!excludedTrafficEndpoint(entry.src) && !excludedTrafficEndpoint(entry.dst))
@@ -304,39 +351,57 @@ function commitPktzBatch(batch, lastCum, connCum, elapsed) {
         const drx = previous ? entry.rx - previous.rx : entry.rx
         const dtx = previous ? entry.tx - previous.tx : entry.tx
         if (drx < 0 || dtx < 0) continue
-        const entryId = `${entry.pid}/${entry.comm}`
-        const sum = excludedDelta[entryId] ?? { rx: 0, tx: 0 }
+        const sum = excludedDelta[entry.pid] ?? { rx: 0, tx: 0 }
         sum.rx += drx
         sum.tx += dtx
-        excludedDelta[entryId] = sum
+        excludedDelta[entry.pid] = sum
     }
 
-    for (const entry of (batch ?? [])) {
-        if (!entry || entry.kind === "conn") continue
-        if (typeof entry.pid !== "string" || typeof entry.comm !== "string")
-            continue
-        const entryId = `${entry.pid}/${entry.comm}`
-        const previous = previousCum[entryId]
-        nextCum[entryId] = { rx: entry.rx, tx: entry.tx }
-        if (!previous || entry.rx < previous.rx || entry.tx < previous.tx)
-            continue
-
-        const excluded = excludedDelta[entryId] ?? { rx: 0, tx: 0 }
-        const drx = Math.max(0, entry.rx - previous.rx - excluded.rx)
-        const dtx = Math.max(0, entry.tx - previous.tx - excluded.tx)
+    const unresolved = new Set()
+    for (const entry of entries) {
+        const previous = previousCum[entry.pid]
+        nextCum[entry.pid] = { rx: entry.rx, tx: entry.tx, comm: entry.comm }
+        const reset = !previous || entry.rx < previous.rx || entry.tx < previous.tx
+        const baseRx = reset ? 0 : previous.rx
+        const baseTx = reset ? 0 : previous.tx
+        const excluded = excludedDelta[entry.pid] ?? { rx: 0, tx: 0 }
+        const drx = Math.max(0, entry.rx - baseRx - excluded.rx)
+        const dtx = Math.max(0, entry.tx - baseTx - excluded.tx)
+        const name = nextComm[entry.pid]
+        if (name === undefined) unresolved.add(entry.pid)
         if (drx + dtx === 0) continue
-        addTraffic(accounting, entry.comm, drx, dtx)
+        if (name === undefined) {
+            const parked = nextPending[entry.pid] ?? { pid: entry.pid, rx: 0, tx: 0, fallback: entry.comm }
+            parked.rx += drx
+            parked.tx += dtx
+            parked.fallback = entry.comm
+            nextPending[entry.pid] = parked
+        } else {
+            addTraffic(accounting, name, drx, dtx)
+        }
         if (elapsed > 0) {
-            const rate = rates[entry.comm] ?? { name: entry.comm, down: 0, up: 0 }
+            const label = name ?? entry.comm
+            const rate = rates[label] ?? { name: label, down: 0, up: 0 }
             rate.down += drx / elapsed
             rate.up += dtx / elapsed
-            rates[entry.comm] = rate
+            rates[label] = rate
+        }
+    }
+    for (const entryId in nextPending) {
+        const parked = nextPending[entryId]
+        const name = nextComm[String(parked.pid)]
+        if (name !== undefined) {
+            addTraffic(accounting, name, parked.rx, parked.tx)
+            delete nextPending[entryId]
         }
     }
     return {
         lastCum: nextCum,
         connCum: nextConnCum,
+        commByPid: nextComm,
+        pendingDelta: nextPending,
         accounting: Object.values(accounting),
+        unresolvedPids: [...unresolved],
         rates: Object.values(rates)
             .filter(app => app.down + app.up >= 1)
             .sort((left, right) => (right.down + right.up) - (left.down + left.up))
@@ -357,33 +422,69 @@ function ssAddress(token) {
 // address:port and users:(...); the following info line carries cumulative
 // bytes_received/bytes_sent. Sockets on excluded endpoints (loopback,
 // tailscale ranges) are skipped so the fallback matches the meter's scope.
-function parseSsTotals(text) {
-    const totals = {}
-    let name = null
-    let excluded = false
+// Keyed per socket (owner + 4-tuple): summing per name would let a socket
+// closing between polls cancel out bytes of a socket opened in the meantime.
+function parseSsSockets(text) {
+    const sockets = {}
+    let socket = null
     for (const line of (text ?? "").split("\n")) {
-        const pm = line.match(/users:\(\("([^"]+)",pid=\d+/)
+        const pm = line.match(/users:\(\("([^"]+)",pid=(\d+)/)
         if (pm) {
-            name = pm[1]
             const tokens = line.trim().split(/\s+/)
             const local = ssAddress(tokens[3])
             const peer = ssAddress(tokens[4])
-            excluded = excludedTrafficEndpoint(local) || excludedTrafficEndpoint(peer)
+            socket = excludedTrafficEndpoint(local) || excludedTrafficEndpoint(peer)
+                ? { excluded: true }
+                : { key: `${pm[2]}|${tokens[3]}|${tokens[4]}`, name: pm[1] }
             continue
         }
-        if (name === null) continue
+        if (socket === null) continue
         const rx = line.match(/bytes_received:(\d+)/)
         const tx = line.match(/bytes_sent:(\d+)/)
         if (rx || tx) {
-            if (!excluded) {
-                totals[name] = totals[name] ?? { rx: 0, tx: 0 }
-                totals[name].rx += rx ? parseInt(rx[1]) : 0
-                totals[name].tx += tx ? parseInt(tx[1]) : 0
+            if (!socket.excluded) {
+                sockets[socket.key] = {
+                    name: socket.name,
+                    rx: rx ? parseInt(rx[1]) : 0,
+                    tx: tx ? parseInt(tx[1]) : 0
+                }
             }
-            name = null
+            socket = null
         }
     }
-    return totals
+    return sockets
+}
+
+// The first sample only establishes baselines: sockets alive then carry bytes
+// from before monitoring started. Afterwards a new socket opened since the
+// previous poll contributes all its bytes; bytes moved by a socket after the
+// previous poll and before it closed are not observable.
+function commitSsSample(previousSockets, sockets, elapsed) {
+    const accounting = {}
+    const rates = {}
+    if (previousSockets === null || previousSockets === undefined)
+        return { accounting: [], rates: [] }
+    for (const key in (sockets ?? {})) {
+        const socket = sockets[key]
+        const previous = previousSockets[key]
+        const reset = !previous || socket.rx < previous.rx || socket.tx < previous.tx
+        const drx = reset ? socket.rx : socket.rx - previous.rx
+        const dtx = reset ? socket.tx : socket.tx - previous.tx
+        if (drx + dtx === 0) continue
+        addTraffic(accounting, socket.name, drx, dtx)
+        if (elapsed > 0) {
+            const rate = rates[socket.name] ?? { name: socket.name, down: 0, up: 0 }
+            rate.down += drx / elapsed
+            rate.up += dtx / elapsed
+            rates[socket.name] = rate
+        }
+    }
+    return {
+        accounting: Object.values(accounting),
+        rates: Object.values(rates)
+            .filter(app => app.down + app.up >= 1)
+            .sort((left, right) => (right.down + right.up) - (left.down + left.up))
+    }
 }
 
 function nethogsCommand(seconds) {
@@ -413,11 +514,105 @@ function parseNethogsLine(data) {
     return { cmdline: match[1], pid: match[2], rx, tx }
 }
 
-function prettyName(cmdline, pid, commByPid) {
-    const exe = cmdline.split(" ")[0]
-    const base = exe.substring(exe.lastIndexOf("/") + 1)
-    if (base === "exe" || base === "") return commByPid[pid] ?? null
+// Interpreters and launchers run many unrelated programs; the program they
+// run, not the interpreter, is the app. Generic entry-point names (index.js,
+// /opt/komari/agent) are replaced by the nearest meaningful directory.
+const INTERPRETER = /^(python[0-9.]*|pypy[0-9.]*|node|nodejs|bun|deno|ruby[0-9.]*|perl[0-9.]*|php[0-9.]*|java|lua[0-9.]*|sh|bash|zsh|dash|fish|tsx|ts-node)$/
+const LAUNCHER = /^(npm|npx|pnpm|pnpx|yarn|bunx|uv|uvx|pipx)$/
+const LAUNCHER_VERBS = new Set(["exec", "run", "x", "dlx", "tool", "start"])
+// Flags whose next argument is a value, not the program.
+const VALUE_FLAGS = new Set(["-W", "-X", "-Q", "-r", "--require", "--import", "--loader",
+    "-cp", "-classpath", "--class-path", "-p", "--package", "--from", "--with", "--python"])
+// Flags after which the program is inline code: keep the interpreter name.
+const INLINE_FLAGS = new Set(["-c", "-e", "--eval", "-p", "--print"])
+const GENERIC_BASE = new Set(["agent", "app", "cli", "client", "daemon", "index", "main",
+    "__main__", "run", "server", "service", "start", "worker"])
+const SKIP_DIR = new Set(["bin", "sbin", "lib", "lib64", "libexec", "dist", "build", "out",
+    "src", "target", "release", "debug", "demos", "node_modules", "current", "usr", "local",
+    "opt", "share", "scripts", "cjs", "esm", "mjs"])
+const SCRIPT_EXT = /\.(py|pyw|js|mjs|cjs|ts|mts|jar|sh|bash|rb|pl|php|lua|exe)$/i
+
+function pathParts(path) {
+    return path.split(/[\\/]+/).filter(part => part !== "")
+}
+
+// Name of the program at `path`: basename without script extension; a generic
+// basename falls back to the closest non-structural parent directory.
+function programName(path) {
+    const parts = pathParts(path)
+    if (parts.length === 0) return ""
+    let base = parts[parts.length - 1]
+    // npm package specs: @scope/pkg@1.2.3 -> pkg
+    if (base.indexOf("@", 1) > 0) base = base.substring(0, base.indexOf("@", 1))
+    base = base.replace(SCRIPT_EXT, "")
+    if (!GENERIC_BASE.has(base.toLowerCase())) return base
+    for (let index = parts.length - 2; index >= 0; index--) {
+        const dir = parts[index]
+        if (!SKIP_DIR.has(dir.toLowerCase()) && !dir.startsWith(".") && !dir.startsWith("@"))
+            return dir
+    }
     return base
+}
+
+// Display name for a process command line (argv joined by spaces, as nethogs
+// and `ps -o args` print it). Null when argv[0] cannot identify the program
+// (`/proc/self/exe`, `exe`), so the caller resolves it another way.
+function appName(cmdline) {
+    if (typeof cmdline !== "string") return null
+    const argv = cmdline.trim().split(/\s+/).filter(arg => arg !== "")
+    if (argv.length === 0) return null
+    const exe = argv[0].replace(/^-/, "")
+    const parts = pathParts(exe)
+    const base = parts.length > 0 ? parts[parts.length - 1] : ""
+    if (base === "" || base === "exe") return null
+    const interpreter = base.replace(SCRIPT_EXT, "")
+    const isInterpreter = INTERPRETER.test(interpreter)
+    const isLauncher = LAUNCHER.test(interpreter)
+    if (!isInterpreter && !isLauncher) return programName(exe)
+
+    for (let index = 1; index < argv.length; index++) {
+        const arg = argv[index]
+        if (INLINE_FLAGS.has(arg) && !(isLauncher && arg === "-p")) return interpreter
+        if (arg === "-m" || arg === "-jar") {
+            const target = argv[index + 1]
+            return target ? programName(arg === "-m" ? target.split(".")[0] : target) : interpreter
+        }
+        if (VALUE_FLAGS.has(arg)) { index++; continue }
+        if (arg.startsWith("-")) continue
+        if (isLauncher && LAUNCHER_VERBS.has(arg)) continue
+        // java: a main class, not a path -> its simple name
+        if (interpreter === "java" && !arg.includes("/")) {
+            const segments = arg.split(".")
+            return segments[segments.length - 1] || interpreter
+        }
+        return programName(arg) || interpreter
+    }
+    return interpreter
+}
+
+// `ps -o pid=,comm=` then a `--` line then `ps -ww -o pid=,args=` for the
+// same PIDs. comm (15 chars) is only the fallback when args cannot name the
+// program, e.g. Electron's argv[0] of /proc/self/exe.
+function parsePsNames(text) {
+    const comm = {}
+    const args = {}
+    let target = comm
+    for (const line of (text ?? "").split("\n")) {
+        if (line.trim() === "--") { target = args; continue }
+        const match = line.trim().match(/^(\d+)\s+(.+)$/)
+        if (match) target[match[1]] = match[2]
+    }
+    const names = {}
+    for (const pid in comm) {
+        const name = appName(args[pid]) ?? comm[pid].trim()
+        if (name !== "") names[pid] = name
+    }
+    return names
+}
+
+function psNamesCommand(pids) {
+    const list = Array.from(pids ?? [], pid => String(pid)).filter(pid => /^\d+$/.test(pid)).join(",")
+    return ["sh", "-c", 'ps -o pid=,comm= -p "$1"; echo --; ps -ww -o pid=,args= -p "$1"', "sh", list]
 }
 
 function addTraffic(map, name, rx, tx) {
@@ -458,7 +653,7 @@ function commitNethogsBatch(batch, lastCum, elapsed, commByPid, pendingDelta) {
                 && !discontinuousPids.has(String(parked.pid))) {
             nextPending[entryId] = Object.assign({}, parked)
         } else {
-            addTraffic(accounting, "__unattributed_process", parked.rx, parked.tx)
+            addTraffic(accounting, parked.fallback || "__unattributed_process", parked.rx, parked.tx)
         }
     }
 
@@ -466,13 +661,17 @@ function commitNethogsBatch(batch, lastCum, elapsed, commByPid, pendingDelta) {
         const entryId = `${entry.cmdline}/${entry.pid}`
         const previous = previousCum[entryId]
         nextCum[entryId] = { rx: entry.rx, tx: entry.tx }
-        if (!previous || entry.rx < previous.rx || entry.tx < previous.tx) continue
-
-        const drx = entry.rx - previous.rx
-        const dtx = entry.tx - previous.tx
+        // nethogs counters start at zero when nethogs starts tracking a
+        // process and never shrink while it does (closed-connection bytes are
+        // kept). A row that is new, or shrank, was (re)created after nethogs
+        // dropped it for idling: every byte it reports is new traffic.
+        const reset = !previous || entry.rx < previous.rx || entry.tx < previous.tx
+        const drx = reset ? entry.rx : entry.rx - previous.rx
+        const dtx = reset ? entry.tx : entry.tx - previous.tx
         if (drx === 0 && dtx === 0) continue
 
-        const name = prettyName(entry.cmdline, entry.pid, nextComm)
+        const name = entry.cmdline.startsWith("__unattributed_")
+            ? entry.cmdline : (appName(entry.cmdline) ?? nextComm[entry.pid] ?? null)
         if (name === null) {
             const parked = nextPending[entryId] ?? { pid: entry.pid, rx: 0, tx: 0 }
             parked.rx += drx
