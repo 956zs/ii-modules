@@ -1,0 +1,33 @@
+{
+  "protocolVersion": 1,
+  "id": "discord_presence",
+  "name": {
+    "en_US": "Discord Presence",
+    "zh_TW": "Discord 動態",
+    "zh_CN": "Discord 动态"
+  },
+  "description": {
+    "en_US": "Shows the discord-rpc-proxy Rich Presence daemon on the bar: the detected game, whether it is shown on Discord, and paused, away or not-connected states. Left click pauses or resumes presence; the hover popup shows elapsed and total play time. Follows the daemon through discord-rpc-proxy watch; nothing is detected by the module itself.",
+    "zh_TW": "在 bar 上顯示 discord-rpc-proxy Rich Presence daemon 的狀態：偵測到的遊戲、是否顯示在 Discord，以及暫停、離開或未連線。左鍵暫停或恢復顯示；hover 彈窗顯示已玩時間與累計遊玩時數。透過 discord-rpc-proxy watch 跟隨 daemon，模組本身不做任何偵測。",
+    "zh_CN": "在 bar 上显示 discord-rpc-proxy Rich Presence daemon 的状态：检测到的游戏、是否显示在 Discord，以及暂停、离开或未连接。左键暂停或恢复显示；悬停弹窗显示已玩时间与累计游玩时长。通过 discord-rpc-proxy watch 跟随 daemon，模块本身不做任何检测。"
+  },
+  "version": "1.0.0",
+  "authors": ["nlcat"],
+  "license": "MIT",
+  "slots": ["bar"],
+  "entries": {
+    "bar": "bar.qml",
+    "settings": "settings.qml"
+  },
+  "compat": {
+    "probes": [
+      {"type": "file-exists", "path": "modules/ii/bar/BarGroup.qml", "reason": "bar group container for the pill look"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopup.qml", "reason": "hover popup component"},
+      {"type": "file-exists", "path": "modules/ii/bar/StyledPopupValueRow.qml", "reason": "label/value rows in the popup"},
+      {"type": "file-exists", "path": "modules/common/widgets/ConfigSwitch.qml", "reason": "hide-when-idle toggle in the settings fragment"},
+      {"type": "file-exists", "path": "modules/common/widgets/MaterialTextField.qml", "reason": "binary field in the settings fragment"},
+      {"type": "file-contains", "path": "modules/common/Appearance.qml", "pattern": "property QtObject elementMoveFast", "reason": "colour and opacity transitions use the stock fast preset"}
+    ]
+  },
+  "capabilities": ["exec"]
+}
