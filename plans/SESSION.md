@@ -1,3 +1,31 @@
+## 2026-11-12 discord_presence 1.0.0 (discord-rpc-proxy pill)
+
+Branch `feat/discord-presence-module` (worktree
+`../ii-modules-wt-discord-presence`), not pushed, not installed live.
+
+- ✅ New Tier A bar module: game icon + name from `discord-rpc-proxy watch`;
+  paused shows `visibility_off` with a dim, struck-through name; a corner
+  dot marks Discord not connected (colError) or away (colTertiary); the
+  daemon being down shows a faint icon. Left click runs `toggle` (or retries
+  the stream at once while down). Popup: game, shown on Discord, running
+  time, total play time (extrapolated from the line's arrival while not
+  away), you active/away, Discord connection. Settings: `hideWhenIdle`
+  (default false, also hides `down`), `binary` (PATH name or path, `~/`
+  expanded).
+- ✅ `watch` is retried 1 s after a working stream ends, else every 10 s;
+  only the first failure is logged. One watch process per bar instance.
+- ✅ 10 node tests (contract, junk lines, odd fields, kinds/markers,
+  extrapolation, formats, ticker, retry, binary). A live
+  `status --json` line from the running daemon parses as `playing`.
+- ✅ Qt 6 qmlformat parses all QML; `iimod validate`/`check` (live tree and
+  `spec/fixtures/ii-stock`), pack + package validate/check, exact zh_TW +
+  zh_CN i18n check (independent i18n subagent), `i18n check --all`,
+  ConfigLoader drift, all 193 module tests.
+- ⏸ Not installed or hover-tested in the live shell (owner installs);
+  popup errors only show on first hover. `testedOn` left out until then.
+  `tools/release/publish.sh` dry-run not run (needs python3 and a cargo
+  release build).
+
 ## 2026-11-01 aula_keys 1.1.0 bar indicator
 
 - ✅ bar.qml: keyboard icon (dim hidden/off, accent live, red tint for

@@ -105,3 +105,12 @@
   current live stock regions into `$STATE/pristine` and new backups, so
   out-of-band debug edits to stock files survive recomposition. Strip them
   from live, pristine and backups by hand, then confirm with a pristine diff.
+
+## discord_presence 1.0.0 follow-ups (2026-11-12)
+
+- 🟡 P2: not yet installed live. Hover the popup once after install (lazy
+  content), check the shell log for `discord_presence` errors, then add
+  `compat.testedOn`.
+- 🟢 P3: `site/public/registry.json` is already stale on `main` (no
+  `aula_keys`); `discord_presence` is not added either. Regenerate with
+  `node site/scripts/module-catalog.mjs` in a separate `chore(site)` commit.
