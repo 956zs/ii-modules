@@ -42,6 +42,29 @@ test('the placeholder comes from the app, else the fallback', () => {
   assert.equal(L.placeholder(null, 'Reply…'), 'Reply…')
 })
 
+test('the app-supplied placeholder can never carry markup', () => {
+  // A sender could put HTML in its reply-action label; Qt would load the
+  // image if the label were rendered as rich text.
+  const label = L.placeholder(liveNotification({ inlineReplyPlaceholder: '<img src=http://198.51.100.7/x.png>Reply' }), 'Reply…')
+  assert.equal(label, '‹img src=http://198.51.100.7/x.png›Reply')
+  assert.doesNotMatch(label, /[<>]/)
+  // The field draws it itself as plain text, never through the style's
+  // placeholder (an AutoText item without a textFormat).
+  assert.doesNotMatch(field, /placeholderText\s*:/)
+  assert.match(field, /textFormat: Text\.PlainText\n\s+elide: Text\.ElideRight\n\s+maximumLineCount: 1\n\s+text: root\.hint/)
+  assert.match(field, /Accessible\.name: root\.hint/)
+})
+
+test('the reply limit is explicit and a cut paste is reported', () => {
+  assert.equal(L.MAX_REPLY_LENGTH, 32767)
+  assert.match(field, /maximumLength: Logic\.MAX_REPLY_LENGTH/)
+  assert.match(field, /visible: field\.length >= field\.maximumLength/)
+})
+
+test('losing focus ends composing so the popup gives the keyboard back', () => {
+  assert.match(field, /\} else if \(root\.composing\) \{[\s\S]*?if \(!field\.activeFocus && root\.composing\)\n\s+root\.stopComposing\(\);/)
+})
+
 test('only non-blank text is sent, trimmed', () => {
   assert.equal(L.replyText('  on my way  '), 'on my way')
   assert.equal(L.replyText('ok'), 'ok')

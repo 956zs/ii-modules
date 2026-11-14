@@ -9,6 +9,10 @@
 // Qt.Key_* codes: Tab, Backtab, Up, Down, PageUp, PageDown.
 var CONTAINED_KEYS = [0x01000001, 0x01000002, 0x01000013, 0x01000015, 0x01000016, 0x01000017];
 
+// Longest reply the field holds (Qt's own TextInput maximum, made explicit
+// so the field can say when a paste was cut).
+var MAX_REPLY_LENGTH = 32767;
+
 // A reply can be sent only through a live Quickshell Notification that
 // advertises an inline-reply action. Restored (persisted) entries have no
 // live object, and older Quickshell builds lack the API.
@@ -16,9 +20,14 @@ function canReply(live) {
     return !!live && live.hasInlineReply === true && typeof live.sendInlineReply === "function";
 }
 
-// Placeholder text: the sender's label for its reply action, else `fallback`.
+// Placeholder text: the sender's label for its reply action, else
+// `fallback`. The label comes from the sending app, so it is flattened to
+// one line and angle brackets become ‹ › (no markup can survive even if a
+// Qt text item renders it as rich text); the field also draws it as plain
+// text.
 function placeholder(live, fallback) {
-    var text = live && typeof live.inlineReplyPlaceholder === "string" ? live.inlineReplyPlaceholder.replace(/\s+/g, " ").trim() : "";
+    var text = live && typeof live.inlineReplyPlaceholder === "string"
+        ? live.inlineReplyPlaceholder.replace(/</g, "‹").replace(/>/g, "›").replace(/\s+/g, " ").trim() : "";
     return text !== "" ? text : fallback;
 }
 

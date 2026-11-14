@@ -16,9 +16,10 @@ Tier B 模組，讓 ii 的通知彈窗和側欄通知列表可以直接回覆訊
 | 點回覆欄 | 開始輸入；在彈窗裡會暫時接管鍵盤 |
 | Enter 或送出按鈕 | 送出回覆；空白內容不會送出 |
 | Esc | 清空回覆欄並交還鍵盤 |
-| 點彈窗外面 | 交還鍵盤，回覆欄保留已輸入的文字 |
+| 點彈窗外面，或點彈窗裡其他地方讓回覆欄失去焦點 | 交還鍵盤，回覆欄保留已輸入的文字 |
 
 - 回覆欄的提示文字用 App 提供的標籤（例如「Reply to Amy」），沒有時顯示「回覆…」。
+- 回覆欄最多 32767 個字元；貼上的內容超過時會被截斷，欄位下方會顯示「已截斷為 32767 個字元。」。
 - 送出後，一般通知會由 Quickshell 關閉；常駐通知（`resident`）會留著，送出按鈕短暫顯示
   勾號。
 - 彈窗在回覆欄正在輸入或還有文字時不會自動消失；交還後回到 stock 行為（指標不在通知
@@ -59,7 +60,11 @@ inline reply 的 stock 狀態。
 ## 資料與行為
 
 - 回覆內容只經過 session D-Bus 的 `NotificationReplied` 訊號送給 App，模組不寫檔、
-  不寫任何 log。
+  不寫任何 log。這個訊號是 session bus 上的廣播，同一個使用者的其他程式都能收到；這是
+  通知規格本身的設計，和 KDE、swaync 相同。
+- App 提供的提示文字會先把 `<` `>` 換成 `‹` `›` 並壓成一行，再由回覆欄自己以純文字
+  畫出，不經過 Qt Controls 會把文字當成 rich text 的 placeholder，所以標籤裡的 HTML
+  （例如 `<img src=…>`）不會被解讀，也不會連線。
 - 只有 Quickshell 的 live `Notification` 物件還在、而且 `hasInlineReply` 為 true 時才
   顯示回覆欄。ii 從檔案還原的舊通知、或 App 已經關掉的通知，都不會出現回覆欄。
 - 開啟 inline reply 後，Quickshell 會把 `inline-reply` action 從一般 action 按鈕列表移除，
@@ -71,6 +76,8 @@ inline reply 的 stock 狀態。
 - 收合的通知不會顯示回覆欄，要先展開；這和 stock action 按鈕的行為一致。
 - 在彈窗輸入時打開右側欄或媒體控制，stock 會收起所有彈窗，未送出的文字會一起消失。
 - 正在輸入時，Hyprland 的全域快捷鍵照常生效。
+- 模組只處理自己畫的回覆欄。stock 通知元件顯示的標題、內文、App 名稱和 action 按鈕
+  文字仍由 ii 原樣處理（標題與按鈕是 AutoText），要靠送出通知的 App 自己過濾 HTML。
 
 ## 實作說明
 
@@ -93,7 +100,13 @@ inline reply 的 stock 狀態。
 
 回覆欄用 `ReplyLogic.hostGroup()` 往上找 stock `NotificationGroup`，以它的 `popup`
 屬性區分彈窗與側欄；只有彈窗裡的回覆欄會設定 `iimpReplyHold` 與
-`iimpReplyComposer`。
+`iimpReplyComposer`。回覆欄被銷毀（例如右側欄打開時 stock `timeoutAll()` 收起彈窗）
+時會清掉這兩個值，下一個彈窗不會繼承鍵盤。
+
+補丁 5 的錨點 `                Item {` 是以子字串比對；目前只有 action 列那一行符合，
+並有 probe 確認它就是 `StyledFlickable { // Notification actions` 的外層。上游若新增
+同樣縮排的 `Item {`，錨點會變成不唯一，`iimod` 會拒絕套用（fail closed），不會插錯
+位置。
 
 ## 開發
 
