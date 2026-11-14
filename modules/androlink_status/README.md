@@ -27,7 +27,8 @@ Tier A bar 模組，在 bar 上用一個膠囊顯示 androlink 連結的手機�
 - 攝影機使用中時，最上方有一列紅色提示和「停止」按鈕。
 - 詳細資料：電量、連線方式（區網 / Tailscale / 其他）、背景助手、未讀通知。
 - 動作：讓手機響（響鈴中變成停止響鈴）、傳送剪貼簿、開啟 DeX、打開 androlink。
-- 有多支手機時，上方的晶片可切換要看哪一支；動作會帶上該手機的 id。
+- 有多支手機時，上方的晶片可切換要看哪一支；動作會帶上該手機的 id。選擇跟著手機走，
+  面板開著時有手機連線或離線也不會跳到別支。id 無法安全傳給 CLI 的手機，動作按鈕會停用。
 - 動作失敗時，下方顯示原因（androlink 未執行、找不到手機、逾時等）。
 
 ## 需求
@@ -53,8 +54,8 @@ iimod install modules/androlink_status/
 
 ## 設定
 
-設定檔位於 `~/.config/illogical-impulse/modules/androlink_status.json`；前四項也可在
-**Settings > Modules > 手機狀態（androlink）** 調整。
+設定檔位於 `~/.config/illogical-impulse/modules/androlink_status.json`；前四項與
+`reminderMinIntervalMins` 也可在 **Settings > Modules > 手機狀態（androlink）** 調整。
 
 | Key | 預設 | 說明 |
 |---|---|---|
@@ -66,6 +67,8 @@ iimod install modules/androlink_status/
 | `heartbeatSecs` | `30` | androlink 的心跳秒數；超過 3 倍沒更新即視為沒有回應（5–3600） |
 | `pollSecs` | `10` | 狀態檔的備援重讀間隔（2–300） |
 | `actionTimeoutSecs` | `15` | 面板動作超過這個秒數就停止並回報逾時（3–120） |
+| `reminderMinIntervalMins` | `30` | 同一支手機兩次提醒的最短間隔，分鐘（0–1440，0 為不限制） |
+| `reminderState` | `""` | 由 window slot 寫入的提醒狀態（JSON 字串），不需要手動修改 |
 
 超出範圍的值會在讀取時修正為最近的合法值。狀態檔自己帶有 `heartbeat_s` 時以檔案為準。
 
@@ -73,19 +76,27 @@ iimod install modules/androlink_status/
 
 - 狀態檔只含數字與狀態，不含通知內容、訊息或位址。模組不寫任何檔案，設定檔由
   ConfigLoader 維護。
-- 解析規則：檔案不存在、不是合法 JSON、`version` 不是 1 以上的整數、或沒有 `updated`
-  時，一律視為 androlink 未執行；`running` 不是 `true` 也一樣。手機欄位逐項檢查，
-  不合約定的值改為未知。
+- 解析規則：檔案不存在、不是合法 JSON、`version` 不是 `1`、或沒有 `updated` 時，
+  一律視為 androlink 未執行；`running` 不是 `true` 也一樣。`updated` 比現在早超過
+  3 次心跳、或晚超過 1 次心跳（時鐘倒退）時視為沒有回應，和 androlink 自己的判斷相同。
+  `XDG_RUNTIME_DIR` 不是絕對路徑時不讀任何檔案。
+- 手機欄位逐項檢查，不合約定的值改為未知。手機名稱會去掉控制字元、零寬與雙向控制字元，
+  `<` `>` 換成 `‹` `›`，並以字元（code point）為單位截到 64 個字。
 - 動作一律用固定 argv，不經過 shell。只有在列出多支手機時才把手機 id 當成最後一個參數；
   id 超過 64 字元（CLI 的上限）、以 `-` 開頭或含控制字元時，不執行該手機的動作。
 - 「打開 androlink」以 detached 方式執行，可能直接啟動 App；其他動作只轉送給執行中的
   androlink，結束代碼決定面板顯示的訊息。
-- 低電量提醒在 window slot 只有一份，透過 `notify-send -a Shell` 送出；只有狀態為
-  最新、手機已連線、未充電時才會觸發或重新啟用，狀態放在記憶體裡。
+- 低電量提醒在 window slot 只有一份，argv 固定為
+  `notify-send -a Shell -i phone -- <標題> <內文>`，`--` 之後的文字不會被當成選項。
+  只有狀態為最新、手機已連線、未充電時才會觸發或重新啟用；同一支手機在
+  `reminderMinIntervalMins` 內不會再提醒（充電器接觸不良或電量在門檻附近跳動時也一樣）。
+- 提醒狀態（哪些手機已提醒、上次提醒時間）存在設定檔的 `reminderState`，重新載入或
+  重開 shell 都不會重複提醒。關閉提醒時狀態保持不變，再開啟時若手機仍偏低會提醒一次。
 
 ## 限制
 
-- 重新載入 shell 會重置提醒狀態；電量已偏低時，重新載入後會再提醒一次。
+- 設定頁與 window slot 共用同一個設定檔；在提醒狀態剛寫入的同時改設定，最壞情況是
+  多提醒或少提醒一次。
 - 面板固定在 bar 的右端（垂直 bar 時在側邊），和其他模組的面板相同，不會對齊膠囊位置。
 - 垂直 bar 不顯示「未執行」文字與充電閃電。
 

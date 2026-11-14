@@ -67,6 +67,19 @@ ColumnLayout {
         }
     }
 
+    ConfigSpinBox {
+        enabled: cfg.options.lowBatteryReminder
+        icon: "timer"
+        text: Translation.tr("Shortest gap between reminders (minutes)")
+        value: cfg.options.reminderMinIntervalMins
+        from: 0
+        to: 1440
+        stepSize: 5
+        onValueChanged: {
+            cfg.options.reminderMinIntervalMins = value;
+        }
+    }
+
     StyledText {
         Layout.fillWidth: true
         Layout.leftMargin: 8

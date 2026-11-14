@@ -29,13 +29,20 @@ ColumnLayout {
     readonly property var phones: root.record.phones
     readonly property bool appRunning: Logic.appRunning(root.record)
     readonly property bool stale: root.record.state === "stale"
-    // Index into `phones` the user picked; -1 follows the primary phone.
-    property int picked: -1
-    readonly property int selectedIndex: root.picked >= 0 && root.picked < root.phones.length ? root.picked : Logic.primaryIndex(root.record)
+    // StatusLogic.phoneKey of the phone the user picked ("" follows the
+    // primary phone). A key, not an index, so phones connecting or leaving
+    // while the panel is open never move the pick to another phone.
+    property string pickedKey: ""
+    readonly property int selectedIndex: {
+        const picked = Logic.indexOfKey(root.record, root.pickedKey);
+        return picked >= 0 ? picked : Logic.primaryIndex(root.record);
+    }
     // Always null or a phone of the current record, never undefined.
     readonly property var phone: root.phones[root.selectedIndex] ?? null
-    // Device actions need a live record and a connected phone.
+    // Device actions need a live record, a connected phone, and a phone the
+    // CLI can be told (with several phones, a safe id).
     readonly property bool deviceActionsReady: root.appRunning && !root.stale && root.phone !== null && root.phone.connected
+        && Logic.canTarget(root.phone, root.phones.length)
 
     spacing: 10
 
@@ -45,7 +52,12 @@ ColumnLayout {
 
     // Back to the primary phone and no stale message each time it opens.
     function reset() {
-        root.picked = -1;
+        root.pickedKey = "";
+        root.message = "";
+    }
+
+    function pick(index) {
+        root.pickedKey = Logic.phoneKey(root.phones[index] ?? null, index);
         root.message = "";
     }
 
@@ -241,10 +253,7 @@ ColumnLayout {
                 colBackground: Appearance.colors.colSurfaceContainerHighest
                 colBackgroundHover: Appearance.colors.colSurfaceContainerHighestHover
                 colRipple: Appearance.colors.colSurfaceContainerHighestActive
-                onClicked: {
-                    root.picked = chip.index;
-                    root.message = "";
-                }
+                onClicked: root.pick(chip.index)
                 contentItem: StyledText {
                     text: root.phoneLabel(chip.chipPhone)
                     textFormat: Text.PlainText

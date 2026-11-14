@@ -48,6 +48,7 @@ FileView {
         adapterItem.heartbeatSecs = root.clamp(adapterItem.heartbeatSecs, 5, 3600, 30);
         adapterItem.pollSecs = root.clamp(adapterItem.pollSecs, 2, 300, 10);
         adapterItem.actionTimeoutSecs = root.clamp(adapterItem.actionTimeoutSecs, 3, 120, 15);
+        adapterItem.reminderMinIntervalMins = root.clamp(adapterItem.reminderMinIntervalMins, 0, 1440, 30);
         root.materializing = false;
         if (root.owner)
             writeAdapter();
@@ -86,5 +87,11 @@ FileView {
         property int pollSecs: 10
         // A panel action still running after this many seconds is stopped.
         property int actionTimeoutSecs: 15
+        // Least time between two reminders for the same phone (0 = no limit).
+        property int reminderMinIntervalMins: 30
+        // Reminder state written by the window slot (StatusLogic
+        // serializeReminderState): which phones are armed and when each was
+        // last reminded. A JSON string, never a var (see MODULE SCHEMA).
+        property string reminderState: ""
     }
 }

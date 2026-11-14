@@ -21,6 +21,9 @@ var DEVICE_FLAGS = ["--ring", "--ring-stop", "--send-clipboard", "--dex"];
 var GLOBAL_FLAGS = ["--webcam-stop"];
 
 var CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
+// Invisible or reordering characters dropped from display names: zero-width
+// and directional marks, embeddings/overrides, isolates, and the BOM.
+var INVISIBLE_CHARS = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
 
 function finite(value, fallback) {
     var n = Number(value);
@@ -48,11 +51,17 @@ function validId(value) {
         && value.trim() === value && !CONTROL_CHARS.test(value) && value.charAt(0) !== "-";
 }
 
+// A phone name safe to show anywhere, including text that Qt may render as
+// rich text (notification summaries): control characters become spaces,
+// invisible/bidi characters are dropped, angle brackets become ‹ ›, and the
+// result is capped by code points (never splitting a surrogate pair).
 function cleanName(value) {
     if (typeof value !== "string")
         return "";
-    var name = value.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
-    return name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 1) + "…" : name;
+    var name = value.replace(INVISIBLE_CHARS, "").replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+        .replace(/</g, "‹").replace(/>/g, "›").replace(/\s+/g, " ").trim();
+    var chars = Array.from(name);
+    return chars.length > MAX_NAME_LENGTH ? chars.slice(0, MAX_NAME_LENGTH - 1).join("") + "…" : name;
 }
 
 function cleanBattery(value) {
@@ -84,9 +93,12 @@ function cleanPhone(raw) {
 // Parses the status file text. `text` is null when the file could not be
 // read. Anything that does not match the contract collapses to a record the
 // bar treats as "androlink not running", so a corrupt file can never show a
-// made-up phone.
+// made-up phone. Only format version 1 is read; other versions are ignored
+// like the contract asks.
 //
-// States: missing | invalid | stopped | stale | live.
+// States: missing | invalid | stopped | stale | live. Stale matches
+// androlink's own rule: written more than 3 heartbeats ago, or more than one
+// heartbeat in the future (a clock that stepped back).
 function parseStatus(text, nowSecs, heartbeatSecs) {
     if (typeof text !== "string" || text.trim() === "")
         return emptyRecord("missing");
@@ -98,8 +110,7 @@ function parseStatus(text, nowSecs, heartbeatSecs) {
     }
     if (!data || typeof data !== "object" || Array.isArray(data))
         return emptyRecord("invalid");
-    var version = finite(data.version, NaN);
-    if (!Number.isInteger(version) || version < 1)
+    if (data.version !== 1)
         return emptyRecord("invalid");
     var updated = finite(data.updated, NaN);
     if (!Number.isFinite(updated) || updated <= 0)
@@ -123,7 +134,7 @@ function parseStatus(text, nowSecs, heartbeatSecs) {
         heartbeat = clampInt(heartbeatSecs, 1, 86400, 30);
     var age = finite(nowSecs, 0) - updated;
     return {
-        state: age > heartbeat * STALE_HEARTBEATS ? "stale" : "live",
+        state: age > heartbeat * STALE_HEARTBEATS || age < -heartbeat ? "stale" : "live",
         updated: Math.floor(updated),
         phones: phones
     };
@@ -207,6 +218,31 @@ function actionArgs(flag, phone, phoneCount) {
     return ["androlink", flag, phone.id];
 }
 
+// Whether a device action can name `phone` among `phoneCount` phones.
+function canTarget(phone, phoneCount) {
+    return !!phone && actionArgs("--ring", phone, phoneCount) !== null;
+}
+
+// Stable key for a phone: its id, else its name, else its position.
+function phoneKey(phone, index) {
+    if (phone && phone.id !== "")
+        return "id:" + phone.id;
+    if (phone && phone.name !== "")
+        return "name:" + phone.name;
+    return "index:" + index;
+}
+
+// Index of the phone with `key` in `record`, or -1.
+function indexOfKey(record, key) {
+    if (!record || !record.phones || typeof key !== "string" || key === "")
+        return -1;
+    for (var i = 0; i < record.phones.length; i++) {
+        if (phoneKey(record.phones[i], i) === key)
+            return i;
+    }
+    return -1;
+}
+
 // Outcome of a finished CLI run: "" ok, "notRunning" (exit 1), "noPhone"
 // (exit 2: none or ambiguous), "failed" (anything else), "missingCli" when
 // the process never started.
@@ -222,45 +258,101 @@ function exitKind(exitCode, started) {
     return "failed";
 }
 
-function reminderKey(phone, index) {
-    if (phone.id !== "")
-        return "id:" + phone.id;
-    if (phone.name !== "")
-        return "name:" + phone.name;
-    return "index:" + index;
+// Reminder state kept in the module config: { armed: {key: bool},
+// lastSent: {key: unix seconds} }. Anything malformed is dropped.
+function parseReminderState(text) {
+    var state = { armed: {}, lastSent: {} };
+    if (typeof text !== "string" || text === "")
+        return state;
+    var data;
+    try {
+        data = JSON.parse(text);
+    } catch (error) {
+        return state;
+    }
+    if (!data || typeof data !== "object")
+        return state;
+    var armed = data.armed && typeof data.armed === "object" ? data.armed : {};
+    var lastSent = data.lastSent && typeof data.lastSent === "object" ? data.lastSent : {};
+    var keys = Object.keys(armed);
+    for (var i = 0; i < keys.length; i++) {
+        if (typeof armed[keys[i]] === "boolean")
+            state.armed[keys[i]] = armed[keys[i]];
+    }
+    keys = Object.keys(lastSent);
+    for (var j = 0; j < keys.length; j++) {
+        var at = finite(lastSent[keys[j]], NaN);
+        if (Number.isFinite(at) && at > 0)
+            state.lastSent[keys[j]] = Math.floor(at);
+    }
+    return state;
 }
 
-// Low-battery reminder state machine, one entry per phone. `armed` maps a
-// phone key to a boolean (missing = armed). Fires once per discharge cycle
-// when the level is at or below `threshold` and the phone is not charging;
-// re-arms when the phone charges or the level climbs `margin` points above
-// the threshold. Only a live record with a connected phone moves the state:
-// a stale or disconnected reading never fires and never re-arms.
+// Canonical text for the state (sorted keys), so an unchanged state never
+// rewrites the config file.
+function serializeReminderState(state) {
+    var out = { armed: {}, lastSent: {} };
+    var s = state || {};
+    ["armed", "lastSent"].forEach(function (field) {
+        var map = s[field] || {};
+        Object.keys(map).sort().forEach(function (key) {
+            out[field][key] = map[key];
+        });
+    });
+    return JSON.stringify(out);
+}
+
+// Low-battery reminder state machine, one entry per phone. Fires once per
+// discharge cycle when the level is at or below `threshold` and the phone is
+// not charging; re-arms when the phone charges or the level climbs `margin`
+// points above the threshold. Only a live record with a connected phone
+// moves the state: a stale or disconnected reading never fires and never
+// re-arms. A phone reminded less than `minIntervalSecs` ago is not reminded
+// again, so a flapping charger or a level hovering at the re-arm point can't
+// repeat it; that cycle counts as reminded.
 //
-// Returns { armed: <new map>, fire: [{ key, name, level }] }.
-function reminderStep(armed, record, threshold, margin) {
-    var next = {};
-    var keys = Object.keys(armed || {});
-    for (var k = 0; k < keys.length; k++)
-        next[keys[k]] = armed[keys[k]] === true;
+// `opts`: threshold, margin, nowSecs, minIntervalSecs.
+// Returns { state: <new state>, fire: [{ key, name, level }] }.
+function reminderStep(state, record, opts) {
+    var o = opts || {};
+    var prev = state || {};
+    var next = { armed: {}, lastSent: {} };
+    ["armed", "lastSent"].forEach(function (field) {
+        var map = prev[field] || {};
+        Object.keys(map).forEach(function (key) {
+            next[field][key] = map[key];
+        });
+    });
     var fire = [];
     if (!record || record.state !== "live")
-        return { armed: next, fire: fire };
-    var limit = clampInt(threshold, 1, 99, 20);
-    var rearmAt = limit + clampInt(margin, 1, 50, 5);
+        return { state: next, fire: fire };
+    var limit = clampInt(o.threshold, 1, 99, 20);
+    var rearmAt = limit + clampInt(o.margin, 1, 50, 5);
+    var now = finite(o.nowSecs, 0);
+    var minInterval = clampInt(o.minIntervalSecs, 0, 86400 * 7, 1800);
     for (var i = 0; i < record.phones.length; i++) {
         var phone = record.phones[i];
         if (!phone.connected || !phone.battery)
             continue;
-        var key = reminderKey(phone, i);
-        var isArmed = next.hasOwnProperty(key) ? next[key] : true;
+        var key = phoneKey(phone, i);
+        var isArmed = next.armed.hasOwnProperty(key) ? next.armed[key] === true : true;
         if (phone.battery.charging || phone.battery.level >= rearmAt) {
             isArmed = true;
         } else if (isArmed && phone.battery.level <= limit) {
-            fire.push({ key: key, name: phone.name, level: phone.battery.level });
+            var last = next.lastSent.hasOwnProperty(key) ? next.lastSent[key] : 0;
+            if (minInterval === 0 || last === 0 || now - last >= minInterval) {
+                fire.push({ key: key, name: phone.name, level: phone.battery.level });
+                next.lastSent[key] = Math.floor(now);
+            }
             isArmed = false;
         }
-        next[key] = isArmed;
+        next.armed[key] = isArmed;
     }
-    return { armed: next, fire: fire };
+    return { state: next, fire: fire };
+}
+
+// Fixed argv for the reminder. `--` ends the options, so nothing in the
+// texts can be read as one; the name is already free of markup (cleanName).
+function reminderArgv(appName, iconName, summary, body) {
+    return ["notify-send", "-a", appName, "-i", iconName, "--", summary, body];
 }

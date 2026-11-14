@@ -41,14 +41,15 @@ test('missing, unreadable and malformed files read as androlink not running', as
     assert.equal(r.phones.length, 0)
     assert.equal(L.appRunning(r), false)
   }
-  for (const name of ['invalid.json', 'wrong-shape.json', 'no-version.json']) {
+  for (const name of ['invalid.json', 'wrong-shape.json', 'no-version.json', 'future-version.json']) {
     const r = L.parseStatus(await fixture(name), FRESH, 30)
     assert.equal(r.state, 'invalid', name)
     assert.equal(r.phones.length, 0, name)
     assert.equal(L.appRunning(r), false, name)
   }
   for (const junk of ['null', '42', '"text"', '{"version":0,"updated":1,"running":true}',
-    '{"version":1.5,"updated":1,"running":true}', '{"version":1,"running":true}',
+    '{"version":1.5,"updated":1,"running":true}', '{"version":"1","updated":1,"running":true}',
+    '{"version":2,"updated":1,"running":true}', '{"version":1,"running":true}',
     '{"version":1,"updated":-3,"running":true}', '{"version":1,"updated":"soon","running":true}']) {
     assert.equal(L.parseStatus(junk, FRESH, 30).state, 'invalid', junk)
   }
@@ -69,8 +70,11 @@ test('a file older than three heartbeats is stale, never earlier', async () => {
   assert.equal(L.parseStatus(text, UPDATED + 90, 30).state, 'live')
   assert.equal(L.parseStatus(text, UPDATED + 91, 30).state, 'stale')
   assert.equal(L.parseStatus(text, UPDATED + 91, 60).state, 'live')
-  // A clock running behind the writer is not stale.
-  assert.equal(L.parseStatus(text, UPDATED - 500, 30).state, 'live')
+  // A clock up to one heartbeat behind the writer is fine; further is stale
+  // (same rule as androlink's own reader).
+  assert.equal(L.parseStatus(text, UPDATED - 30, 30).state, 'live')
+  assert.equal(L.parseStatus(text, UPDATED - 31, 30).state, 'stale')
+  assert.equal(L.parseStatus(text, UPDATED - 500000, 30).state, 'stale')
   // Non-numeric heartbeats fall back to the contract default of 30 s; numbers clamp to 1 s or more.
   assert.equal(L.parseStatus(text, UPDATED + 91, 'x').state, 'stale')
   assert.equal(L.parseStatus(text, UPDATED + 89, 0).state, 'stale')
@@ -78,13 +82,14 @@ test('a file older than three heartbeats is stale, never earlier', async () => {
   assert.equal(L.appRunning(L.parseStatus(text, UPDATED + 500, 30)), true)
 })
 
-test('a heartbeat published in the file wins and newer versions still read', async () => {
-  const text = await fixture('future-version.json')
-  const fresh = plain(L.parseStatus(text, UPDATED + 30, 30))
+test('a heartbeat published in the file wins; only version 1 is read', async () => {
+  const v1 = (await fixture('future-version.json')).replace('"version": 2', '"version": 1')
+  const fresh = plain(L.parseStatus(v1, UPDATED + 30, 30))
   assert.equal(fresh.state, 'live')
   assert.equal(fresh.phones[0].battery.level, 81)
-  assert.equal(fresh.phones[0].signal, undefined)
-  assert.equal(L.parseStatus(text, UPDATED + 31, 30).state, 'stale')
+  assert.equal(fresh.phones[0].signal, undefined, 'unknown fields are dropped')
+  assert.equal(L.parseStatus(v1, UPDATED + 31, 30).state, 'stale')
+  assert.equal(L.parseStatus(await fixture('future-version.json'), UPDATED + 30, 30).state, 'invalid')
 })
 
 test('phone entries are sanitised field by field', async () => {
@@ -107,6 +112,14 @@ test('phone entries are sanitised field by field', async () => {
   const long = plain(L.cleanPhone({ id: 'x', name: 'n'.repeat(200) }))
   assert.equal(long.name.length, 64)
   assert.ok(long.name.endsWith('…'))
+  assert.equal(L.cleanName('<img src=http://x/a.png>Pixel'), '‹img src=http://x/a.png›Pixel', 'no markup survives')
+  assert.equal(L.cleanName('A\u202eA54\u200b\u2066x\u2069\ufeff'), 'AA54x', 'bidi and zero-width characters are dropped')
+  const emoji = L.cleanName('😀'.repeat(100))
+  assert.equal(Array.from(emoji).length, 64, 'capped by code points')
+  assert.ok(emoji.endsWith('…'))
+  assert.doesNotMatch(emoji.slice(0, -1), /[\ud800-\udbff]$/, 'no split surrogate pair')
+  assert.equal(L.cleanName('   '), '')
+  assert.equal(L.cleanName(5), '')
   assert.equal(L.cleanPhone(null), null)
   assert.equal(L.cleanPhone([1]), null)
 })
@@ -196,6 +209,30 @@ test('actions use fixed argv and name the phone only when several are listed', a
     assert.equal(L.actionArgs(flag, a54, 1), null, String(flag))
 })
 
+test('device actions are possible only when the phone can be named', async () => {
+  const record = plain(L.parseStatus(await fixture('several-phones.json'), FRESH, 30))
+  const [tab, a54, bad] = record.phones
+  assert.equal(L.canTarget(a54, 3), true)
+  assert.equal(L.canTarget(tab, 3), true)
+  assert.equal(L.canTarget(bad, 3), false, 'unsafe id with several phones')
+  assert.equal(L.canTarget(bad, 1), true, 'one phone: the CLI picks it')
+  assert.equal(L.canTarget(null, 1), false)
+})
+
+test('phones are picked by a stable key, not a position', async () => {
+  const record = plain(L.parseStatus(await fixture('several-phones.json'), FRESH, 30))
+  assert.equal(L.phoneKey(record.phones[1], 1), 'id:a54-0f3c9e')
+  assert.equal(L.phoneKey(record.phones[2], 2), 'name:Bad id phone')
+  assert.equal(L.phoneKey({ id: '', name: '' }, 4), 'index:4')
+  assert.equal(L.indexOfKey(record, 'id:a54-0f3c9e'), 1)
+  // The same phone keeps its key when the list order changes.
+  const reordered = { ...record, phones: [record.phones[1], record.phones[0]] }
+  assert.equal(L.indexOfKey(reordered, 'id:a54-0f3c9e'), 0)
+  assert.equal(L.indexOfKey(record, 'id:gone'), -1)
+  assert.equal(L.indexOfKey(record, ''), -1)
+  assert.equal(L.indexOfKey(null, 'id:a54-0f3c9e'), -1)
+})
+
 test('CLI exit codes map to the panel messages', () => {
   assert.equal(L.exitKind(0, true), '')
   assert.equal(L.exitKind(1, true), 'notRunning')
@@ -212,14 +249,17 @@ function phoneRecord(level, charging, extra = {}) {
   }), FRESH, 30)
 }
 
-function run(steps, threshold = 20, margin = 5) {
-  let armed = {}
+const MIN = 1800
+
+function run(steps, threshold = 20, margin = 5, minIntervalSecs = 0) {
+  let state = { armed: {}, lastSent: {} }
   const fired = []
-  for (const record of steps) {
-    const out = L.reminderStep(armed, record, threshold, margin)
-    armed = plain(out.armed)
+  steps.forEach((step, index) => {
+    const [record, nowSecs] = Array.isArray(step) ? step : [step, FRESH + index * 2]
+    const out = L.reminderStep(state, record, { threshold, margin, nowSecs, minIntervalSecs })
+    state = plain(out.state)
     fired.push(plain(out.fire).map((f) => f.level))
-  }
+  })
   return fired
 }
 
@@ -228,8 +268,9 @@ test('the low-battery reminder fires once per discharge cycle', () => {
     phoneRecord(19, false), phoneRecord(10, false), phoneRecord(3, false)]), [[], [], [20], [], [], []])
   // Already low when first seen: one reminder.
   assert.deepEqual(run([phoneRecord(12, false), phoneRecord(11, false)]), [[12], []])
-  const fire = plain(L.reminderStep({}, phoneRecord(18, false), 20, 5).fire)
-  assert.deepEqual(fire, [{ key: 'id:a54', name: 'Galaxy A54', level: 18 }])
+  const out = L.reminderStep({ armed: {}, lastSent: {} }, phoneRecord(18, false), { threshold: 20, margin: 5, nowSecs: FRESH, minIntervalSecs: MIN })
+  assert.deepEqual(plain(out.fire), [{ key: 'id:a54', name: 'Galaxy A54', level: 18 }])
+  assert.deepEqual(plain(out.state), { armed: { 'id:a54': false }, lastSent: { 'id:a54': FRESH } })
 })
 
 test('charging or climbing past threshold plus margin re-arms the reminder', () => {
@@ -241,6 +282,24 @@ test('charging or climbing past threshold plus margin re-arms the reminder', () 
   // Custom threshold and margin.
   assert.deepEqual(run([phoneRecord(30, false), phoneRecord(39, false), phoneRecord(30, false)], 30, 10), [[30], [], []])
   assert.deepEqual(run([phoneRecord(30, false), phoneRecord(40, false), phoneRecord(30, false)], 30, 10), [[30], [], [30]])
+})
+
+test('a flapping charger or hovering level cannot repeat the reminder within the minimum interval', () => {
+  // Charging flaps every write (2 s apart): one reminder, not one per cycle.
+  const flapping = []
+  for (let i = 0; i < 20; i++)
+    flapping.push([phoneRecord(15, i % 2 === 1), FRESH + i * 2])
+  assert.deepEqual(run(flapping, 20, 5, MIN).flat(), [15])
+  // Level oscillating around threshold + margin.
+  const hovering = []
+  for (let i = 0; i < 20; i++)
+    hovering.push([phoneRecord(i % 2 ? 25 : 18, false), FRESH + i * 2])
+  assert.deepEqual(run(hovering, 20, 5, MIN).flat(), [18])
+  // Once the interval has passed, a new cycle reminds again.
+  assert.deepEqual(run([[phoneRecord(15, false), FRESH], [phoneRecord(15, true), FRESH + 60], [phoneRecord(14, false), FRESH + MIN]], 20, 5, MIN), [[15], [], [14]])
+  assert.deepEqual(run([[phoneRecord(15, false), FRESH], [phoneRecord(15, true), FRESH + 60], [phoneRecord(14, false), FRESH + MIN - 1]], 20, 5, MIN), [[15], [], []])
+  // 0 turns the minimum interval off.
+  assert.deepEqual(run([[phoneRecord(15, false), FRESH], [phoneRecord(15, true), FRESH + 2], [phoneRecord(14, false), FRESH + 4]], 20, 5, 0), [[15], [], [14]])
 })
 
 test('stale, stopped, disconnected and battery-less readings never fire or re-arm', () => {
@@ -271,9 +330,27 @@ test('the reminder tracks each phone separately and keeps unknown keys', async (
       { id: '', name: 'C', connected: true, battery: { level: 9, charging: false } },
     ],
   }), FRESH, 30)
-  const out = L.reminderStep({ 'id:gone': false }, two, 20, 5)
+  const out = L.reminderStep({ armed: { 'id:gone': false }, lastSent: { 'id:gone': 5 } }, two, { threshold: 20, margin: 5, nowSecs: FRESH, minIntervalSecs: MIN })
   assert.deepEqual(plain(out.fire).map((f) => f.key), ['id:a', 'name:C'])
-  assert.deepEqual(plain(out.armed), { 'id:gone': false, 'id:a': false, 'id:b': true, 'name:C': false })
-  // Bad threshold and margin fall back to 20 and 5.
-  assert.deepEqual(plain(L.reminderStep({}, phoneRecord(20, false), 'x', null).fire).map((f) => f.level), [20])
+  assert.deepEqual(plain(out.state.armed), { 'id:gone': false, 'id:a': false, 'id:b': true, 'name:C': false })
+  assert.deepEqual(plain(out.state.lastSent), { 'id:gone': 5, 'id:a': FRESH, 'name:C': FRESH })
+  // Bad threshold and margin fall back to 20 and 5; missing state is fine.
+  assert.deepEqual(plain(L.reminderStep(null, phoneRecord(20, false), { threshold: 'x', margin: null, nowSecs: FRESH }).fire).map((f) => f.level), [20])
+})
+
+test('reminder state survives a round trip through the config and rejects junk', () => {
+  const state = { armed: { 'id:b': true, 'id:a': false }, lastSent: { 'id:a': FRESH } }
+  const text = L.serializeReminderState(state)
+  assert.equal(text, JSON.stringify({ armed: { 'id:a': false, 'id:b': true }, lastSent: { 'id:a': FRESH } }), 'keys sorted')
+  assert.deepEqual(plain(L.parseReminderState(text)), { armed: { 'id:a': false, 'id:b': true }, lastSent: { 'id:a': FRESH } })
+  assert.equal(L.serializeReminderState(L.parseReminderState(text)), text, 'stable: no rewrite when nothing changed')
+  for (const junk of ['', 'nope', 'null', '[]', '42', '{"armed":"x","lastSent":7}'])
+    assert.deepEqual(plain(L.parseReminderState(junk)), { armed: {}, lastSent: {} }, junk)
+  assert.deepEqual(plain(L.parseReminderState('{"armed":{"a":1,"b":true},"lastSent":{"a":"x","b":-1,"c":12.9}}')), { armed: { b: true }, lastSent: { c: 12 } })
+  assert.deepEqual(plain(L.parseReminderState(undefined)), { armed: {}, lastSent: {} })
+})
+
+test('the reminder argv ends options before the texts', () => {
+  assert.deepEqual(plain(L.reminderArgv('Shell', 'phone', '-Galaxy battery low', '18% left.')),
+    ['notify-send', '-a', 'Shell', '-i', 'phone', '--', '-Galaxy battery low', '18% left.'])
 })

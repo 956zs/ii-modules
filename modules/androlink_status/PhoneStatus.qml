@@ -18,9 +18,10 @@ Item {
     // Fallback re-read interval (seconds).
     property int pollSecs: 10
 
+    // Without an absolute XDG_RUNTIME_DIR androlink writes no status file.
     readonly property string path: {
         const runtime = Quickshell.env("XDG_RUNTIME_DIR") ?? "";
-        return runtime !== "" ? `${runtime}/androlink/status.json` : "";
+        return runtime.startsWith("/") ? `${runtime}/androlink/status.json` : "";
     }
 
     // Raw text of the last read; null while the file is missing or unreadable.

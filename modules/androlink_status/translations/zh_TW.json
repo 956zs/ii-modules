@@ -33,6 +33,7 @@
   "Running": "執行中",
   "Send clipboard": "傳送剪貼簿",
   "Sending your clipboard to the phone.": "正在把剪貼簿傳到手機。",
+  "Shortest gap between reminders (minutes)": "兩次提醒最短間隔（分鐘）",
   "Show unread notification count": "顯示未讀通知數",
   "Show while androlink isn't running": "androlink 未執行時仍顯示",
   "Stop": "停止",
