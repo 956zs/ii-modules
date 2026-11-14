@@ -120,3 +120,14 @@
   current live stock regions into `$STATE/pristine` and new backups, so
   out-of-band debug edits to stock files survive recomposition. Strip them
   from live, pristine and backups by hand, then confirm with a pristine diff.
+
+## Uninstall leaves Tier B fences (sandbox observation, 2026-11-14)
+
+- 🟡 P2, not investigated: on a copy of the live tree and state root
+  (`IIMOD_II_ROOT`/`IIMOD_STATE_ROOT`/`IIMOD_SHELLCONFIG_ROOT`, `IIMOD_NO_QS=1`),
+  `iimod uninstall idle_modes` (1.5.0) reported success and removed
+  `mod/idle_modes`, but its fenced blocks stayed in `services/Idle.qml` (3) and
+  `IdleInhibitorToggle.qml` (1), and `iimod verify` still said all intact. The
+  live registry lists `idle_modes` patch records only for
+  `IdleInhibitorToggle.qml`. Reproduce before any live `uninstall` of an older
+  Tier B module; the live tree was not touched.

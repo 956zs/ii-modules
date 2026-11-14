@@ -1,3 +1,33 @@
+## 2026-11-14 inline_reply 1.0.0 + androlink_status 1.0.0 (androlink F2/F6)
+
+Branch `feat/androlink-modules` (from `fix/network-traffic-accounting` HEAD),
+not pushed, not installed live (the androlink lead installs after review).
+
+- ✅ `inline_reply` (Tier B, 7 fenced patches over `services/Notifications.qml`,
+  `NotificationItem.qml`, `NotificationPopup.qml`): `inlineReplySupported`,
+  a reply field for live notifications with `hasInlineReply`, Enter sends,
+  Esc cancels, popup hold while typing/text (`iimpReplyHold` guard in
+  `timeoutNotification`), popup keyboard via `iimpReplyComposer` +
+  `HyprlandFocusGrab`. Reply text never logged.
+- ✅ `androlink_status` (Tier A, bar + window): reads
+  `$XDG_RUNTIME_DIR/androlink/status.json` v1 (missing/invalid/stopped/stale/
+  live), capsule + PanelShell panel with fixed-argv CLI actions, low-battery
+  reminder once per discharge in the window slot via `notify-send`.
+- ✅ zh_TW/zh_CN via the i18n subagent; `iimod i18n check --all --deny-orphans` ok.
+- ✅ 220/220 node tests, ConfigLoader drift clean, validate/check both ok.
+- ✅ Sandbox install (IIMOD_* roots on a copy of the live tree, IIMOD_NO_QS=1)
+  composes with every installed Tier B module; composed files parse with
+  Qt 6 qmlformat; qmllint finds no unknown Quickshell members in the popup patch.
+- ✅ Offscreen harness (env -i, private dbus-run-session, isolated HOME/XDG,
+  fake `androlink`/`notify-send`): 58/58 end-to-end checks (capabilities,
+  hasInlineReply, restored entries, hold/timeout/grab/cancel both pointer
+  branches, NotificationReplied text, resident vs non-resident, every status
+  fixture, panel argv and exit-code messages, timeout, missing CLI, reminder
+  cycle, all Material Symbols glyphs). Harness lives outside the repo
+  (`~/.cache/ii-modules-scratch`).
+- ⏳ Not verifiable offscreen: real layer-shell keyboard handoff in the popup
+  (PanelWindow has no offscreen backend). Needs one live check after install.
+
 ## 2026-11-10 network_traffic 1.8.0 accounting fix
 
 Owner: totals and per-app numbers looked wrong; scope chosen: data
