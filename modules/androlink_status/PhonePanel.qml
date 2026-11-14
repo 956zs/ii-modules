@@ -151,7 +151,7 @@ ColumnLayout {
             if (outcome !== "")
                 root.message = root.outcomeText(outcome, runner.lastExitCode);
             else if (flag === "--send-clipboard")
-                root.message = Translation.tr("Clipboard sent to your phone.");
+                root.message = Translation.tr("Sending your clipboard to the phone.");
             else
                 root.message = "";
         }

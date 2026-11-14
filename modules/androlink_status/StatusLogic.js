@@ -12,8 +12,8 @@ var HELPERS = ["running", "stopped", "not_set_up"];
 // A status file older than this many heartbeats means androlink stopped
 // rewriting it (crashed or hung).
 var STALE_HEARTBEATS = 3;
-// Device ids the core accepts are at most 256 bytes.
-var MAX_ID_LENGTH = 256;
+// The androlink CLI refuses device arguments longer than 64 characters.
+var MAX_ID_LENGTH = 64;
 // Display cap for a phone name in the bar and the panel.
 var MAX_NAME_LENGTH = 64;
 // CLI flags the panel may run; anything else is refused.

@@ -77,7 +77,7 @@ iimod install modules/androlink_status/
   時，一律視為 androlink 未執行；`running` 不是 `true` 也一樣。手機欄位逐項檢查，
   不合約定的值改為未知。
 - 動作一律用固定 argv，不經過 shell。只有在列出多支手機時才把手機 id 當成最後一個參數；
-  id 若可能被誤認成參數（以 `-` 開頭、含控制字元）就不執行該手機的動作。
+  id 超過 64 字元（CLI 的上限）、以 `-` 開頭或含控制字元時，不執行該手機的動作。
 - 「打開 androlink」以 detached 方式執行，可能直接啟動 App；其他動作只轉送給執行中的
   androlink，結束代碼決定面板顯示的訊息。
 - 低電量提醒在 window slot 只有一份，透過 `notify-send -a Shell` 送出；只有狀態為

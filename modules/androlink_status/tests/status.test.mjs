@@ -112,9 +112,9 @@ test('phone entries are sanitised field by field', async () => {
 })
 
 test('device ids must be safe as one argv element', () => {
-  for (const ok of ['a54-0f3c9e', 'R5CW12345', 'adb-RFC.local:5555', 'x'.repeat(256)])
+  for (const ok of ['a54-0f3c9e', 'R5CW12345', 'adb-RFC.local:5555', 'x'.repeat(64)])
     assert.equal(L.validId(ok), true, ok)
-  for (const bad of ['', '-rf', '--ring', ' a54', 'a54 ', 'a\nb', 'a\u0000b', 'x'.repeat(257), 7, null, undefined, {}])
+  for (const bad of ['', '-rf', '--ring', ' a54', 'a54 ', 'a\nb', 'a\u0000b', 'x'.repeat(65), 7, null, undefined, {}])
     assert.equal(L.validId(bad), false, JSON.stringify(bad))
 })
 
