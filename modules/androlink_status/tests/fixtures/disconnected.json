@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "updated": 1794550751,
+  "running": true,
+  "phones": [
+    {
+      "id": "a54-0f3c9e",
+      "name": "Galaxy A54",
+      "connected": false,
+      "route": null,
+      "battery": { "level": 12, "charging": false },
+      "helper": null,
+      "unread": 2,
+      "ringing": false,
+      "webcam": false
+    }
+  ]
+}

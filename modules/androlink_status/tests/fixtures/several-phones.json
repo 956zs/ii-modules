@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "updated": 1794550751,
+  "running": true,
+  "phones": [
+    {
+      "id": "tab-s9-77aa",
+      "name": "Galaxy Tab S9",
+      "connected": false,
+      "route": null,
+      "battery": null,
+      "helper": "not_set_up",
+      "unread": 0,
+      "ringing": false,
+      "webcam": false
+    },
+    {
+      "id": "a54-0f3c9e",
+      "name": "Galaxy A54",
+      "connected": true,
+      "route": "other",
+      "battery": { "level": 44, "charging": false },
+      "helper": "running",
+      "unread": 7,
+      "ringing": false,
+      "webcam": true
+    },
+    {
+      "id": "-rf",
+      "name": "  Bad\u0007 id\nphone  ",
+      "connected": true,
+      "route": "bluetooth",
+      "battery": { "level": "150", "charging": "yes" },
+      "helper": "dancing",
+      "unread": -4,
+      "ringing": "true",
+      "webcam": 1
+    },
+    "not a phone",
+    null
+  ]
+}
