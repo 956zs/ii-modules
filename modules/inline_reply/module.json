@@ -1,0 +1,160 @@
+{
+  "protocolVersion": 1,
+  "id": "inline_reply",
+  "name": {
+    "en_US": "Notification Inline Reply",
+    "zh_TW": "通知直接回覆",
+    "zh_CN": "通知直接回复"
+  },
+  "description": {
+    "en_US": "Reply to messages right in the notification popup and the sidebar list. Turns on inline replies in the stock notification server and adds a reply field to notifications whose app offers one (androlink, KDE Connect and others); Enter sends, Esc cancels. The field appears only while the app can still receive the reply, the popup stays open while you type, and the reply text is never logged.",
+    "zh_TW": "直接在通知彈窗和側欄通知列表裡回覆訊息。這個模組會在 stock 通知伺服器開啟直接回覆，並在 App 提供回覆功能的通知（androlink、KDE Connect 等）加上回覆欄；Enter 送出，Esc 取消。只有 App 還能收到回覆時才會出現回覆欄，打字時彈窗不會自動消失，回覆內容不會寫進記錄。",
+    "zh_CN": "直接在通知弹窗和侧栏通知列表里回复消息。这个模块会在 stock 通知服务器开启直接回复，并在应用提供回复功能的通知（androlink、KDE Connect 等）加上回复栏；Enter 发送，Esc 取消。只有应用还能收到回复时才会出现回复栏，打字时弹窗不会自动消失，回复内容不会写进日志。"
+  },
+  "version": "1.0.0",
+  "authors": [
+    "nlcat"
+  ],
+  "license": "MIT",
+  "slots": [
+    "window"
+  ],
+  "entries": {
+    "window": "main.qml"
+  },
+  "compat": {
+    "probes": [
+      {
+        "type": "file-contains",
+        "path": "services/Notifications.qml",
+        "pattern": "        persistenceSupported: true",
+        "reason": "stock NotificationServer block that turns on inline replies"
+      },
+      {
+        "type": "file-contains",
+        "path": "services/Notifications.qml",
+        "pattern": "        property bool popup: false",
+        "reason": "stock Notif wrapper that carries the popup hold flag"
+      },
+      {
+        "type": "file-contains",
+        "path": "services/Notifications.qml",
+        "pattern": "property Notification notification",
+        "reason": "the wrapper keeps the live Quickshell notification; the field shows only while it exists"
+      },
+      {
+        "type": "file-contains",
+        "path": "services/Notifications.qml",
+        "pattern": "    function timeoutNotification(id) {",
+        "reason": "popup timeout that must wait while a reply is typed"
+      },
+      {
+        "type": "file-contains",
+        "path": "services/Notifications.qml",
+        "pattern": "    property bool silent: false",
+        "reason": "service-level property block for the keyboard owner"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/widgets/NotificationItem.qml",
+        "pattern": "import qs.services",
+        "reason": "import block of the notification item"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/widgets/NotificationItem.qml",
+        "pattern": "                Item {",
+        "reason": "action row container the reply field sits above"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/widgets/NotificationItem.qml",
+        "pattern": "StyledFlickable { // Notification actions",
+        "reason": "confirms the anchored Item is the action row"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/widgets/NotificationItem.qml",
+        "pattern": "property var notificationObject",
+        "reason": "the item exposes its Notif wrapper"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/widgets/NotificationGroup.qml",
+        "pattern": "property bool popup: false",
+        "reason": "the field tells popup items from sidebar items by the hosting group"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/notificationPopup/NotificationPopup.qml",
+        "pattern": "        WlrLayershell.layer: WlrLayer.Overlay",
+        "reason": "popup window that takes the keyboard while a reply is typed"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/ii/notificationPopup/NotificationPopup.qml",
+        "pattern": "import Quickshell.Hyprland",
+        "reason": "focus grab type used by the popup patch"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/RippleButton.qml",
+        "reason": "send button"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/StyledToolTip.qml",
+        "reason": "send button tooltip"
+      }
+    ],
+    "testedOn": {
+      "dotsCommit": "cb1c428bf8",
+      "qsVersion": "0.3.2"
+    }
+  },
+  "capabilities": [],
+  "patches": [
+    {
+      "file": "services/Notifications.qml",
+      "op": "insert-after",
+      "anchor": "        persistenceSupported: true",
+      "content": "        // inline_reply: advertise inline replies so apps send an inline-reply action\n        inlineReplySupported: true\n"
+    },
+    {
+      "file": "services/Notifications.qml",
+      "op": "insert-after",
+      "anchor": "        property bool popup: false",
+      "content": "        // inline_reply: a reply is being typed in this popup; keep it on screen\n        property bool iimpReplyHold: false\n"
+    },
+    {
+      "file": "services/Notifications.qml",
+      "op": "insert-after",
+      "anchor": "    function timeoutNotification(id) {",
+      "content": "        // inline_reply: never time out a popup while its reply field is in use\n        if (root.list.find((notif) => notif.notificationId === id)?.iimpReplyHold) return;\n"
+    },
+    {
+      "file": "services/Notifications.qml",
+      "op": "insert-after",
+      "anchor": "    property bool silent: false",
+      "content": "    // inline_reply: notificationId whose popup reply field holds the keyboard (-1: none)\n    property int iimpReplyComposer: -1\n"
+    },
+    {
+      "file": "modules/common/widgets/NotificationItem.qml",
+      "op": "insert-after",
+      "anchor": "import qs.services",
+      "content": "import qs.mod.inline_reply as InlineReply\n"
+    },
+    {
+      "file": "modules/common/widgets/NotificationItem.qml",
+      "op": "insert-before",
+      "anchor": "                Item {",
+      "content": "                // inline_reply: reply field while the live notification offers one\n                InlineReply.ReplyField {\n                    Layout.fillWidth: true\n                    notif: root.notificationObject\n                    urgency: root.notificationObject.urgency\n                }\n\n"
+    },
+    {
+      "file": "modules/ii/notificationPopup/NotificationPopup.qml",
+      "op": "insert-after",
+      "anchor": "        WlrLayershell.layer: WlrLayer.Overlay",
+      "content": "        // inline_reply: take the keyboard only while a reply is typed in this\n        // popup; a click outside hands it back and the field keeps its text.\n        WlrLayershell.keyboardFocus: Notifications.iimpReplyComposer >= 0 ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None\n        HyprlandFocusGrab {\n            windows: [root]\n            active: root.visible && Notifications.iimpReplyComposer >= 0\n            onCleared: Notifications.iimpReplyComposer = -1\n        }\n"
+    }
+  ]
+}
