@@ -1,3 +1,24 @@
+## 2026-11-14 inline_reply / androlink_status security review fixes
+
+Review of `feat/androlink-modules`: 0 Critical/High, 2 Medium, 7 Low, INFO.
+
+- ✅ M1 reply placeholder: `<`/`>` → `‹`/`›`, drawn as PlainText by the field
+  (the Basic style placeholder is AutoText); no other notification text is
+  rendered by this module.
+- ✅ M2 reminder: `notify-send … -- summary body`; `cleanName` drops control,
+  zero-width and bidi characters, replaces `<`/`>`, caps by code points (I6).
+- ✅ L1 `reminderMinIntervalMins` (30) per phone; L2 reminder state persisted in
+  the module config (`reminderState`). PersistentProperties was tested and does
+  not survive a reload for IIMP window entries (ModuleHost creates them with
+  createObject after the reload pass).
+- ✅ L3 only `version === 1`; L4 `updated` more than one heartbeat ahead is
+  stale (androlink's own rule); L5 device actions disabled when the phone can't
+  be named; L6 the panel pick is a phone key; I5 absolute `XDG_RUNTIME_DIR`.
+- ✅ I2 harness: `timeoutAll()` while typing resets `iimpReplyComposer` and the
+  hold; I3 focus loss ends composing (keyboard handed back, text kept);
+  I4 explicit 32767 limit with a "Cut at" line; I1/I8/L7 documented.
+- ✅ 228/228 node tests, harness 67/67 (I3 with the offscreen window activated).
+
 ## 2026-11-14 inline_reply 1.0.0 + androlink_status 1.0.0 (androlink F2/F6)
 
 Branch `feat/androlink-modules` (from `fix/network-traffic-accounting` HEAD),
