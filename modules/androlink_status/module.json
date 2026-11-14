@@ -1,0 +1,76 @@
+{
+  "protocolVersion": 1,
+  "id": "androlink_status",
+  "name": {
+    "en_US": "Phone Status (androlink)",
+    "zh_TW": "手機狀態（androlink）",
+    "zh_CN": "手机状态（androlink）"
+  },
+  "description": {
+    "en_US": "Shows the phone linked by androlink in the bar: battery and charging, dimmed while disconnected, a dot when the background helper stopped, unread count and a camera-in-use mark. Click for details (connection route, helper, unread) and actions: ring the phone, send the clipboard, open DeX, open androlink. Reminds you once per discharge when the phone runs low. Reads only androlink's status file and runs the androlink command with fixed arguments.",
+    "zh_TW": "在 bar 顯示 androlink 連結的手機：電量與充電狀態、未連線時變淡、背景助手停止時亮紅點、未讀通知數，手機當攝影機時顯示使用中標記。點一下可看詳細資料（連線方式、背景助手、未讀）並執行動作：讓手機響、傳送剪貼簿、開啟 DeX、打開 androlink。手機電量偏低時，每次放電只提醒一次。只讀 androlink 的狀態檔，並以固定參數執行 androlink 指令。",
+    "zh_CN": "在 bar 显示 androlink 连接的手机：电量与充电状态、未连接时变淡、后台助手停止时亮红点、未读通知数，手机当摄像头时显示使用中标记。点一下可查看详细信息（连接方式、后台助手、未读）并执行操作：让手机响铃、发送剪贴板、打开 DeX、打开 androlink。手机电量偏低时，每次放电只提醒一次。只读 androlink 的状态文件，并以固定参数运行 androlink 命令。"
+  },
+  "version": "1.0.0",
+  "authors": [
+    "nlcat"
+  ],
+  "license": "MIT",
+  "slots": [
+    "bar",
+    "window"
+  ],
+  "entries": {
+    "bar": "bar.qml",
+    "window": "main.qml",
+    "settings": "settings.qml"
+  },
+  "compat": {
+    "probes": [
+      {
+        "type": "file-exists",
+        "path": "modules/ii/bar/BarGroup.qml",
+        "reason": "bar group container for the capsule"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/RippleButton.qml",
+        "reason": "panel action buttons and phone chips"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/StyledRectangularShadow.qml",
+        "reason": "panel drop shadow"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/ConfigSwitch.qml",
+        "reason": "toggle options in the settings fragment"
+      },
+      {
+        "type": "file-exists",
+        "path": "modules/common/widgets/ConfigSpinBox.qml",
+        "reason": "reminder level in the settings fragment"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property QtObject elementMoveFast",
+        "reason": "colour transitions use the stock fast preset"
+      },
+      {
+        "type": "file-contains",
+        "path": "modules/common/Appearance.qml",
+        "pattern": "property color colErrorContainer",
+        "reason": "camera-in-use row colours"
+      }
+    ],
+    "testedOn": {
+      "dotsCommit": "cb1c428bf8",
+      "qsVersion": "0.3.2"
+    }
+  },
+  "capabilities": [
+    "exec"
+  ]
+}
