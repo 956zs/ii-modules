@@ -237,6 +237,8 @@ Scope {
                                             Layout.fillWidth: true
                                             elide: Text.ElideRight
                                             font.weight: Font.DemiBold
+                                            // Names come from other users; never render them as markup.
+                                            textFormat: Text.PlainText
                                             color: Appearance.colors.colOnLayer1
                                             text: row.modelData.sender
                                         }
@@ -251,6 +253,7 @@ Scope {
                                         visible: row.modelData.kind === "server"
                                         elide: Text.ElideRight
                                         font.pixelSize: Appearance.font.pixelSize.smaller
+                                        textFormat: Text.PlainText
                                         color: Appearance.colors.colPrimary
                                         text: row.modelData.server !== ""
                                             ? row.modelData.channel + "  ·  " + row.modelData.server
