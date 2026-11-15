@@ -1,3 +1,16 @@
+## 2026-11-16 discord_notifs 1.0.3 (PR #42)
+
+- ✅ New Tier A window module: recent Discord notifications panel (All /
+  DMs / Servers / Other) over the `discordnotifs` IPC target, fed by the
+  shell's own notification history. Written 2026-10-30, rebased onto main
+  before its first push; test fixtures use invented names.
+- ✅ 1.0.3: sender and channel/server rows render as plain text, so markup
+  in other users' display names, server names or forum titles (e.g. a
+  remote `<img>`) is shown literally instead of being rendered.
+- ✅ 10/10 module tests, ConfigLoader drift 0, i18n zh_TW/zh_CN
+  `--deny-orphans`, `iimod validate` + `check` OK.
+- Not installed live for 1.0.3; no release published.
+
 ## 2026-11-10 network_traffic 1.8.0 accounting fix
 
 Owner: totals and per-app numbers looked wrong; scope chosen: data
