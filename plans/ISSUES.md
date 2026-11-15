@@ -39,9 +39,24 @@
   ("30 d: 40.5 %/h") — likely short discharge windows plus chunky sysfs
   percent drops inflating dis/disSec aggregates. Data semantics, separate
   from the fixed popup defect.
-- 🟢 P3 network_traffic: pktz truncates comm names to 15 chars
-  ("laptop-monitor-", "RvControlSvc.ex") — cosmetic naming in the per-app
-  list, accounting unaffected.
+- ✅ P3 network_traffic resolved in 1.8.0: per-app names now come from the
+  full command line (ps args), so pktz comm truncation no longer shows.
+
+## network_traffic per-app accounting (2026-11-10)
+
+- ✅ P1 resolved in 1.8.0: every backend baselined first-seen processes, so
+  short-lived processes and apps re-created after nethogs' 150 s idle drop
+  lost their first interval. Live trace: 0.63 MB of a 17.5 MB rx window
+  credited before, 16.8 MB after. Whole-system totals were verified correct
+  against vnstat (month and day match within the flush interval).
+- 🟡 P2 external: `pktz 0.1.0` fails on Linux 7.2 (`load vmlinux: parsing
+  .BTF header: header contains non-zero trailer`, cilium/ebpf v0.21.0), so
+  the module always runs nethogs. Rebuilding pktz against a newer
+  cilium/ebpf is outside this repo; ask the owner before touching
+  `~/go/bin/pktz`.
+- 🟢 P3 nethogs cannot map unconnected UDP sockets (WireGuard/tailscale
+  wire traffic) or forwarded container traffic to a process; those bytes
+  stay Unattributed UDP/TCP until an eBPF backend works again.
 
 ## Adaptive bar follow-ups (2026-10-14)
 

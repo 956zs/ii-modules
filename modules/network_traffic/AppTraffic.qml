@@ -200,7 +200,7 @@ Item {
                        mk: a.mk, mrx: a.mrx, mtx: a.mtx, brx: a.brx, btx: a.btx })
         }
         // One blob, one assignment, one consistent write.
-        store.appAcctState = JSON.stringify({ v: 1, bootId, apps: out })
+        store.appAcctState = JSON.stringify({ v: AppTrafficLogic.appAccountingSchema(), bootId, apps: out })
     }
 
     // Each JsonAdapter assignment is a config-file write; flush sparsely.
@@ -230,19 +230,19 @@ Item {
         property list<string> pendingEntryIds: []
         property int generation: -1
         property int querySerial: -1
-        command: ["ps", "-o", "pid=", "-o", "comm=", "-p", pending.join(",")]
+        command: AppTrafficLogic.psNamesCommand(pending)
         stdout: StdioCollector {
             onStreamFinished: {
                 if (psProc.generation !== root.monitoringGeneration
                         || psProc.querySerial !== root.psQuerySerial) return
                 const map = Object.assign({}, root.commByPid)
-                for (const line of text.split("\n")) {
-                    const m = line.trim().match(/^(\d+)\s+(.+)$/)
-                    if (m && psProc.pending.includes(m[1])) map[m[1]] = m[2]
+                const names = AppTrafficLogic.parsePsNames(text)
+                for (const pid in names) {
+                    if (psProc.pending.includes(pid)) map[pid] = names[pid]
                 }
                 const drained = AppTrafficLogic.drainResolvedPending(
-                    root.pendingDelta, map, Object.keys(root.lastCum).map(entryId => entryId.substring(entryId.lastIndexOf("/") + 1)))
-                root.commByPid = drained.commByPid
+                    root.pendingDelta, map, psProc.pending, root.unattributedProcessKey)
+                root.commByPid = map
                 root.pendingDelta = drained.pendingDelta
                 for (const app of drained.accounting) root.accumulate(app.name, app.rx, app.tx)
                 if (drained.accounting.length > 0) root.acctRevision++
@@ -314,10 +314,14 @@ Item {
         const elapsed = time >= 0 && root.lastBatchTime > 0
             ? Math.max(0, (time - root.lastBatchTime) / 1000) : 0
         if (time >= 0) root.lastBatchTime = time
-        const result = AppTrafficLogic.commitPktzBatch(batch, root.lastCum, root.connCum, elapsed)
+        const result = AppTrafficLogic.commitPktzBatch(batch, root.lastCum, root.connCum, elapsed,
+            root.commByPid, root.pendingDelta, root.unattributedProcessKey)
         root.lastCum = result.lastCum
         root.connCum = result.connCum
+        root.commByPid = result.commByPid
+        root.pendingDelta = result.pendingDelta
         for (const app of result.accounting) root.accumulate(app.name, app.rx, app.tx)
+        if (result.unresolvedPids.length > 0) root.resolveComms(result.unresolvedPids)
         root.apps = result.rates
         root.acctRevision++
     }
@@ -383,8 +387,9 @@ Item {
 
     property var nethogsBatch: []
     property bool nethogsSawSnapshot: false
-    // entryId -> {rx, tx}: last cumulative reading, for deltas. In-memory
-    // only; a nethogs restart resets its counters, so baselines restart too.
+    // Last cumulative reading per collector identity, for deltas: nethogs
+    // "cmdline/pid" -> {rx, tx}; pktz pid -> {rx, tx, comm}. In-memory only;
+    // a collector restart restarts its counters at zero, so this resets too.
     property var lastCum: ({})
     // pktz only: connId -> {rx, tx} cumulative per-connection baselines, for
     // carving excluded-endpoint (loopback/overlay) bytes out of process deltas.
@@ -488,6 +493,7 @@ Item {
 
     // --- ss fallback (TCP only) --------------------------------------------
 
+    // {time, sockets}: previous ss poll, per-socket cumulative bytes.
     property var ssPrevious: null
 
     function startSsFallback() {
@@ -544,29 +550,17 @@ Item {
     }
 
     function commitSsSample(text) {
-        // Per-socket cumulative bytes, summed per process name. Two samples
-        // give deltas. Sockets vanish when closed; per-app sums can therefore
-        // shrink, so negative deltas are clamped — traffic on sockets that
-        // opened and closed between polls is lost (pcap has no such gap).
-        // Excluded-endpoint sockets are filtered in parseSsTotals.
+        // Per-socket cumulative bytes; see AppTrafficLogic.commitSsSample for
+        // what a polling source can and cannot observe. Excluded-endpoint
+        // sockets are filtered in parseSsSockets.
         const now = Date.now()
-        const totals = AppTrafficLogic.parseSsTotals(text)
+        const sockets = AppTrafficLogic.parseSsSockets(text)
         const prev = root.ssPrevious
-        root.ssPrevious = { time: now, totals }
+        root.ssPrevious = { time: now, sockets }
         if (!prev || now <= prev.time) return
-        const elapsed = (now - prev.time) / 1000
-        const out = []
-        for (const n in totals) {
-            const p = prev.totals[n] ?? { rx: 0, tx: 0 }
-            const drx = Math.max(0, totals[n].rx - p.rx)
-            const dtx = Math.max(0, totals[n].tx - p.tx)
-            if (drx + dtx === 0) continue
-            root.accumulate(n, drx, dtx)
-            const down = drx / elapsed
-            const up = dtx / elapsed
-            if (down + up >= 1) out.push({ name: n, down, up })
-        }
-        root.apps = out.sort((a, b) => (b.down + b.up) - (a.down + a.up))
+        const result = AppTrafficLogic.commitSsSample(prev.sockets, sockets, (now - prev.time) / 1000)
+        for (const app of result.accounting) root.accumulate(app.name, app.rx, app.tx)
+        root.apps = result.rates
         root.acctRevision++
     }
 }

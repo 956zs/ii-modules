@@ -128,14 +128,37 @@ iimod install modules/network_traffic/
 frame 才視為封口並提交；EOF、主動停止或 ownership handoff 會捨棄未封口的最後一批，
 最多損失一個 log tick，但不會把 partial frame 當成完整 snapshot。
 
-`nethogs` 與 `pktz` 都以 cumulative counters 的相鄰 delta 記帳。以下事件只建立
-新 baseline，不產生流量尖峰：
+三個 backend 都以 cumulative counters 記帳，但 counter 的起點不同，處理方式也不同：
 
-- 首次觀測 process
-- counter 縮小
-- collector 重啟
-- process command 改變
-- process 從可觀測 snapshot 消失後重新出現
+| Backend | Counter 語義 | 首次出現 | Counter 縮小 |
+|---|---|---|---|
+| `nethogs` | 每個 process 在 nethogs 開始追蹤時從 0 起算；連線關閉後 bytes 仍保留；閒置 150 秒的 process 會被移除，之後再出現時從 0 重建 | 全額入帳 | 視為重建，新值全額入帳 |
+| `pktz` | 每個 PID 一個 kernel counter，pktz 載入時從 0 起算，PID 存活期間持續累加 | 全額入帳；PID baseline 在 pktz 執行期間保留，漏掉幾個 frame 後回來只計差值 | 視為 LRU 淘汰後重建，新值全額入帳 |
+| `ss` | 每個 TCP socket 自建立起累計 | 第一次輪詢只建 baseline（socket 可能早於監控）；之後新出現的 socket 全額入帳 | 視為新 socket，新值全額入帳 |
+
+1.8.0 之前的版本對「首次出現」一律只建 baseline，短命 process（例如 `curl`、
+`git`）和閒置後重新出現的 app 第一個取樣週期的流量都被丟掉。在 50 秒、含兩次
+8 MB 下載的實測中，舊邏輯只記到下載量的 4%，新邏輯記到 96%。
+
+`ss` 依 socket（owner PID + 4-tuple）記帳，因此 socket 在兩次輪詢之間關閉時，
+不會抵銷同一應用新 socket 的流量。
+
+### 應用名稱
+
+名稱由完整命令列決定，不使用 15 字元截斷的 `comm`：
+
+| 命令列 | 名稱 | 規則 |
+|---|---|---|
+| `/usr/bin/laptop-monitor-agent` | `laptop-monitor-agent` | 執行檔名稱 |
+| `python …/bin/semble serve` | `semble` | 直譯器（`python`、`node`、`java`、`bash`…）改用所執行的程式 |
+| `npm exec @upstash/context7-mcp` | `context7-mcp` | 啟動器（`npm`、`npx`、`uv`、`uvx`…）跳過子命令與版本 |
+| `node …/context7-mcp/dist/index.js` | `context7-mcp` | 籠統入口（`index`、`main`、`agent`…）改用最近的有意義目錄 |
+| `/opt/komari/agent` | `komari` | 同上 |
+| `python3 -c …` | `python3` | 內嵌程式碼無程式名稱，保留直譯器 |
+
+`argv[0]` 為 `/proc/self/exe` 的 Electron 程式，以及 `pktz` 回報的 process，會以
+`ps` 查詢完整命令列；查詢期間 bytes 暫存，不會先記到暫時名稱。process 已結束而
+查不到時，`pktz` 使用其 `comm`，`nethogs` 則記入 Unattributed process。
 
 Per-app 來源會跳過排除端點的流量，使其與全系統流量計對帳：loopback
 （`127/8`、`::1`）與 tailscale 範圍（CGNAT `100.64/10`、`fd7a:115c:a1e0::/48`）。
@@ -149,18 +172,17 @@ Per-app 來源會跳過排除端點的流量，使其與全系統流量計對帳
 
 沒有這層排除時，localhost proxy 鏈（例如 adb→scrcpy、本機 API proxy）每一段
 都會被記一次，tailscale 內層流量也會與 `tailscaled` 的加密線路流量重複計算，
-per-app 累計因此可能超過實體介面總量。1.7.0 之前累積的 per-app 資料含有這類
-inflation，會隨日／月滾動自然汰除。
+per-app 累計因此可能超過實體介面總量。
 
 記帳分類如下：
 
 | 分類 | 來源與規則 |
 |---|---|
-| 具名應用 | 可解析 process identity 的流量；最多保留 30 個名稱 |
+| 具名應用 | 可解析程式名稱的流量（見[應用名稱](#應用名稱)）；最多保留 30 個名稱 |
 | 其他 | 超出具名應用上限的長尾流量 |
 | Unattributed TCP | `nethogs` 的 synthetic `unknown TCP/0/0` |
 | Unattributed UDP | `nethogs` 的 synthetic `unknown UDP/0/0` |
-| Unattributed process | 已有 delta，但在結束、重置或 handoff 前仍無法解析 command |
+| Unattributed process | `nethogs` 已有 delta，但在結束、重置或 handoff 前仍無法解析名稱 |
 
 模塊不會把 unattributed bytes 猜測成同一 snapshot 中的 Spotify 或其他應用。
 彈窗摘要以所有保留的 per-app buckets 計算占比；展開時只顯示前五名。這不代表
@@ -219,11 +241,22 @@ schema 1 會把任何舊版未標記或 schema 0 的 `boot` 選擇遷移成 `tod
 - `pktz` upstream identity 只有 PID。模塊增加 command、counter 與 snapshot barrier，
   但相同 PID／command 若在沒有非空中間 snapshot 時重用，protocol 仍無法辨識。
 - 在第一個 500 ms log tick 前開始並結束的 process 可能不會出現在 `pktz` snapshot。
+- `pktz 0.1.0` 在 Linux 7.2 上無法載入 eBPF objects（`load vmlinux: parsing .BTF
+  header: header contains non-zero trailer`），因為它依賴的 `cilium/ebpf v0.21.0`
+  無法解析新版 BTF header。此時模塊自動降級為 `nethogs`，彈窗標示為 `pcap`。
+- `nethogs` 無法把沒有 connect 的 UDP socket（例如 WireGuard／tailscale 的線路
+  流量）以及轉送給容器的流量對應到 process，這些流量會記入 Unattributed UDP／TCP。
 - `nethogs` 只把精確 synthetic rows `unknown TCP/0/0` 與 `unknown UDP/0/0`
   保留為 Unattributed；其他無法辨識的 `unknown <protocol>` 形式會被丟棄。具名應用
   排行因此不是線路總量的完整歸因。
-- `nethogs` 可能漏掉短於取樣間隔的完整連線；`ss` fallback 只涵蓋仍存在的 TCP socket，
-  不含 UDP。
+- `ss` fallback 只涵蓋輪詢時仍存在的 TCP socket，不含 UDP；兩次輪詢之間開啟又關閉的
+  socket 不會被記到。
+
+## 1.8.0 遷移說明
+
+1.8.0 會在第一次啟動時清空 per-app 的今日、本月與開機累計（`appAcctState`
+schema 2）。舊資料由會漏記的邏輯累積，無法修補，與新資料混算會讓排行和占比失真。
+全系統的今日與本月累計不受影響。
 
 ## 從舊手工補丁版遷移
 
@@ -244,7 +277,7 @@ stock JsonAdapter 會在後續寫入 `config.json` 時移除不再宣告的舊
 |---|---|
 | `TrafficLogic.qml` | `/proc/net/dev` 輪詢、速率與全系統累計 |
 | `AppTraffic.qml` | Backend lifecycle、per-app baseline、rate 與 accounting |
-| `AppTrafficLogic.js` | 純 NDJSON/nethogs parsing 與 snapshot 計算 |
+| `AppTrafficLogic.js` | 純 NDJSON/nethogs/ss parsing、snapshot 計算與應用命名 |
 | `ConfigLoader.qml` | 設定讀取、primary-only 寫入與 watched-reader 狀態 |
 | `ConfigRequest.qml` | FIFO、argv-safe、有界 retry 的 IPC 設定請求 |
 | `ConfigLogic.js` | 設定 materialization、allowlist 驗證與 future-schema 保留 |

@@ -7,7 +7,7 @@ async function loadLogic() {
   const source = await readFile(new URL('../AppTrafficLogic.js', import.meta.url), 'utf8')
   const context = vm.createContext({})
   vm.runInContext(
-    `${source}\nglobalThis.api = { restoreAccounting, ranking, pruneAccounting, drainResolvedPending, finalizePending, pktzTimestampMs, pktzCandidates, pktzCommand, parsePktzLine, commitPktzBatch, excludedTrafficEndpoint, parseSsTotals, nethogsCommand, parseNethogsLine, commitNethogsBatch, migrateStatsPeriod }`,
+    `${source}\nglobalThis.api = { restoreAccounting, ranking, pruneAccounting, drainResolvedPending, finalizePending, pktzTimestampMs, pktzCandidates, pktzCommand, parsePktzLine, commitPktzBatch, excludedTrafficEndpoint, parseSsSockets, commitSsSample, appName, programName, parsePsNames, psNamesCommand, appAccountingSchema, nethogsCommand, parseNethogsLine, commitNethogsBatch, migrateStatsPeriod }`,
     context,
   )
   return context.api
@@ -46,7 +46,7 @@ function sum(rows) {
 test('persisted day, month, and boot totals expire at their boundaries', async () => {
   const logic = await loadLogic()
   const stored = JSON.stringify({
-    v: 1,
+    v: 2,
     bootId: 'current-boot',
     apps: [{
       n: 'browser', dk: '2026-07-27', drx: 1000, dtx: 200,
@@ -72,6 +72,7 @@ test('malformed and empty persisted accounting restore safely', async () => {
   assert.deepEqual(plain(logic.ranking(null, 'today', now)), [])
 
   const damaged = JSON.stringify({
+    v: 2,
     bootId: 'boot',
     apps: [
       { n: 'bad', dk: '2026-07-28', drx: null, dtx: -1, mk: '2026-07', mrx: 'NaN', mtx: null, brx: null, btx: -2 },
@@ -84,10 +85,25 @@ test('malformed and empty persisted accounting restore safely', async () => {
   })
 })
 
+test('per-app accounting from schema 1 and unknown schemas is discarded on restore', async () => {
+  const logic = await loadLogic()
+  const now = new Date(2026, 6, 28, 12, 0, 0)
+  const apps = [{
+    n: 'browser', dk: '2026-07-28', drx: 900, dtx: 90,
+    mk: '2026-07', mrx: 5000, mtx: 500, brx: 900, btx: 90,
+  }]
+  assert.equal(logic.appAccountingSchema(), 2)
+  for (const v of [undefined, 1, 3, '2']) {
+    assert.deepEqual(plain(logic.restoreAccounting(JSON.stringify({ v, bootId: 'boot', apps }), 'boot', now)), {})
+  }
+  assert.deepEqual(Object.keys(plain(logic.restoreAccounting(JSON.stringify({ v: 2, bootId: 'boot', apps }), 'boot', now))), ['browser'])
+})
+
 test('restore clamps a current day into its month when the stored month key is stale', async () => {
   const logic = await loadLogic()
   const now = new Date(2026, 6, 28, 12, 0, 0)
   const stored = JSON.stringify({
+    v: 2,
     bootId: 'boot',
     apps: [{
       n: 'browser', dk: '2026-07-28', drx: 900, dtx: 90,
@@ -122,58 +138,71 @@ test('pktz command requests the stable NDJSON stream', async () => {
   assert.deepEqual(plain(logic.pktzCommand('/tmp/pktz')), ['/tmp/pktz', '--log'])
 })
 
-test('pktz cumulative NDJSON replays exact app totals, directions, rates, and sorting', async () => {
+test('pktz cumulative NDJSON accounts every byte since pktz started exactly once', async () => {
   const logic = await loadLogic()
   const trace = await readFile(new URL('./fixtures/pktz-process.ndjson', import.meta.url), 'utf8')
+  const names = { 25186: 'spotify', 31415: 'udp-client' }
   let batch = []
   let timestamp = ''
-  let lastCum = {}
-  let result = null
+  let state = { lastCum: {}, connCum: {} }
+  const total = {}
+  const commit = elapsed => {
+    state = logic.commitPktzBatch(batch, state.lastCum, state.connCum, elapsed, names, {})
+    for (const row of plain(state.accounting)) {
+      total[row.name] = total[row.name] ?? { rx: 0, tx: 0 }
+      total[row.name].rx += row.rx
+      total[row.name].tx += row.tx
+    }
+    batch = []
+  }
 
   for (const line of trace.split('\n')) {
     const parsed = logic.parsePktzLine(line)
     if (!parsed) continue
-    if (timestamp !== '' && parsed.ts !== timestamp) {
-      result = logic.commitPktzBatch(batch, lastCum, {}, 0.5)
-      lastCum = result.lastCum
-      batch = []
-    }
+    if (timestamp !== '' && parsed.ts !== timestamp) commit(0)
     timestamp = parsed.ts
     batch.push(parsed)
   }
-  result = logic.commitPktzBatch(batch, lastCum, {}, 0.5)
+  commit(0.5)
 
-  assert.deepEqual(plain(result.accounting), [
-    { name: 'spotify', rx: 1200, tx: 200 },
-    { name: 'udp-client', rx: 400, tx: 100 },
-  ])
-  assert.deepEqual(sum(plain(result.accounting)), { rx: 1600, tx: 300 })
-  assert.deepEqual(plain(result.rates), [
+  // Final cumulative counters: nothing lost to a first-sight baseline.
+  assert.deepEqual(total, {
+    spotify: { rx: 2200, tx: 400 },
+    'udp-client': { rx: 500, tx: 150 },
+  })
+  assert.deepEqual(plain(state.rates), [
     { name: 'spotify', down: 2400, up: 400 },
     { name: 'udp-client', down: 800, up: 200 },
   ])
 })
 
-test('pktz process disappearance drops its old baseline before identity reuse', async () => {
+test('pktz PID baselines survive skipped frames so a returning PID is not counted twice', async () => {
   const logic = await loadLogic()
+  const names = { 1: 'one', 2: 'two' }
   let state = logic.commitPktzBatch([
     { pid: '1', comm: 'one', rx: 100, tx: 10 },
     { pid: '2', comm: 'two', rx: 200, tx: 20 },
-  ], {}, {}, 0)
+  ], {}, {}, 0, names, {})
+  assert.deepEqual(plain(state.accounting), [
+    { name: 'one', rx: 100, tx: 10 },
+    { name: 'two', rx: 200, tx: 20 },
+  ])
   state = logic.commitPktzBatch([
     { pid: '1', comm: 'one', rx: 150, tx: 15 },
-  ], state.lastCum, {}, 0.5)
+  ], state.lastCum, {}, 0.5, names, {})
+  assert.deepEqual(plain(state.accounting), [{ name: 'one', rx: 50, tx: 5 }])
   assert.deepEqual(plain(state.lastCum), {
-    '1/one': { rx: 150, tx: 15 },
+    1: { rx: 150, tx: 15, comm: 'one' },
+    2: { rx: 200, tx: 20, comm: 'two' },
   })
 
   state = logic.commitPktzBatch([
     { pid: '2', comm: 'two', rx: 260, tx: 30 },
-  ], state.lastCum, {}, 0.5)
-  assert.deepEqual(plain(state.accounting), [])
+  ], state.lastCum, {}, 0.5, names, {})
+  assert.deepEqual(plain(state.accounting), [{ name: 'two', rx: 60, tx: 10 }])
 })
 
-test('pktz parser rejects malformed records and counter discontinuities establish a baseline', async () => {
+test('pktz parser rejects malformed records and a shrunk counter is credited from zero', async () => {
   const logic = await loadLogic()
   assert.equal(logic.parsePktzLine(null), null)
   assert.equal(logic.parsePktzLine(''), null)
@@ -184,19 +213,55 @@ test('pktz parser rejects malformed records and counter discontinuities establis
   assert.equal(logic.parsePktzLine('{"type":"process","ts":"t","pid":1,"comm":"","rx_bytes":1,"tx_bytes":2}'), null)
   assert.equal(logic.parsePktzLine('{"type":"process","ts":"t","pid":1,"comm":"app","rx_bytes":-1,"tx_bytes":2}'), null)
 
+  const names = { 42: 'app' }
   const first = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:00Z","pid":42,"comm":"app","rx_bps":1,"tx_bps":2,"rx_bytes":1000,"tx_bytes":500,"conns":1}')
-  let state = logic.commitPktzBatch([first], {}, {}, 0)
+  let state = logic.commitPktzBatch([first], {}, {}, 0, names, {})
+  assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 1000, tx: 500 }])
+
+  // An LRU-evicted kernel counter is recreated at zero: its new value is new
+  // traffic, never a negative delta.
   const shrunk = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:00.5Z","pid":42,"comm":"app","rx_bps":999999,"tx_bps":999999,"rx_bytes":20,"tx_bytes":10,"conns":1}')
-  state = logic.commitPktzBatch([shrunk], state.lastCum, {}, 0.5)
-  assert.deepEqual(plain(state.accounting), [])
-  assert.deepEqual(plain(state.rates), [])
+  state = logic.commitPktzBatch([shrunk], state.lastCum, {}, 0.5, names, {})
+  assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 20, tx: 10 }])
+  assert.deepEqual(plain(state.rates), [{ name: 'app', down: 40, up: 20 }])
 
   const resumed = logic.parsePktzLine('{"type":"process","ts":"2026-07-29T00:00:01.5Z","pid":42,"comm":"app","rx_bps":999999,"tx_bps":999999,"rx_bytes":50,"tx_bytes":20,"conns":1}')
-  state = logic.commitPktzBatch([resumed], state.lastCum, {}, 1)
+  state = logic.commitPktzBatch([resumed], state.lastCum, {}, 1, names, {})
   assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 30, tx: 10 }])
   assert.deepEqual(plain(state.rates), [{ name: 'app', down: 30, up: 10 }])
 })
 
+test('pktz names come from ps and fall back to the truncated comm when the process is gone', async () => {
+  const logic = await loadLogic()
+  const entry = { pid: '7', comm: 'laptop-monitor-', rx: 300, tx: 900 }
+  let state = logic.commitPktzBatch([entry], {}, {}, 0, {}, {})
+  assert.deepEqual(plain(state.accounting), [])
+  assert.deepEqual(plain(state.unresolvedPids), ['7'])
+  assert.deepEqual(plain(state.pendingDelta), { 7: { pid: '7', rx: 300, tx: 900, fallback: 'laptop-monitor-' } })
+
+  const resolved = plain(logic.drainResolvedPending(state.pendingDelta, { 7: 'laptop-monitor-agent' }, ['7'], '__unattributed_process'))
+  assert.deepEqual(resolved.accounting, [{ name: 'laptop-monitor-agent', rx: 300, tx: 900 }])
+  assert.deepEqual(resolved.pendingDelta, {})
+
+  const exited = plain(logic.drainResolvedPending(state.pendingDelta, {}, ['7'], '__unattributed_process'))
+  assert.deepEqual(exited.accounting, [{ name: 'laptop-monitor-', rx: 300, tx: 900 }])
+
+  // A frame without the PID settles its parked bytes under the comm.
+  state = logic.commitPktzBatch([], state.lastCum, {}, 0.5, {}, state.pendingDelta)
+  assert.deepEqual(plain(state.accounting), [{ name: 'laptop-monitor-', rx: 300, tx: 900 }])
+  assert.deepEqual(plain(state.pendingDelta), {})
+})
+
+test('pktz drops a resolved name when the PID execs into another program', async () => {
+  const logic = await loadLogic()
+  let state = logic.commitPktzBatch([{ pid: '9', comm: 'bash', rx: 10, tx: 10 }], {}, {}, 0, { 9: 'bash' }, {})
+  assert.deepEqual(plain(state.accounting), [{ name: 'bash', rx: 10, tx: 10 }])
+  state = logic.commitPktzBatch([{ pid: '9', comm: 'curl', rx: 70, tx: 20 }], state.lastCum, {}, 0.5, state.commByPid, {})
+  assert.deepEqual(plain(state.accounting), [])
+  assert.deepEqual(plain(state.commByPid), {})
+  assert.deepEqual(plain(state.unresolvedPids), ['9'])
+  assert.deepEqual(plain(state.pendingDelta), { 9: { pid: '9', rx: 60, tx: 10, fallback: 'curl' } })
+})
 
 test('pktz conn records parse for TCP with state and UDP without, rejecting malformed ones', async () => {
   const logic = await loadLogic()
@@ -229,16 +294,18 @@ test('excluded endpoints cover loopback, mapped loopback, and tailscale ranges o
 
 test('loopback conn deltas are carved out of pktz process deltas', async () => {
   const logic = await loadLogic()
+  const names = { 9: 'proxy' }
   const conn = (rx, tx) => ({ kind: 'conn', pid: '9', comm: 'proxy', src: '127.0.0.1', sport: 4000, dst: '127.0.0.1', dport: 5000, proto: 'TCP', rx, tx })
   const wan = (rx, tx) => ({ kind: 'conn', pid: '9', comm: 'proxy', src: '192.168.0.2', sport: 4001, dst: '1.2.3.4', dport: 443, proto: 'TCP', rx, tx })
   let state = logic.commitPktzBatch([
     { pid: '9', comm: 'proxy', rx: 1000, tx: 1000 }, conn(600, 600), wan(400, 400),
-  ], {}, {}, 0)
-  assert.deepEqual(plain(state.accounting), [])
+  ], {}, {}, 0, names, {})
+  // First sight: full process counter minus the full loopback conn counter.
+  assert.deepEqual(plain(state.accounting), [{ name: 'proxy', rx: 400, tx: 400 }])
 
   state = logic.commitPktzBatch([
     { pid: '9', comm: 'proxy', rx: 1500, tx: 1400 }, conn(900, 850), wan(600, 550),
-  ], state.lastCum, state.connCum, 0.5)
+  ], state.lastCum, state.connCum, 0.5, names, {})
   // process delta rx 500 minus loopback conn delta 300 = 200; tx 400-250=150.
   assert.deepEqual(plain(state.accounting), [{ name: 'proxy', rx: 200, tx: 150 }])
   assert.deepEqual(plain(state.rates), [{ name: 'proxy', down: 400, up: 300 }])
@@ -246,49 +313,54 @@ test('loopback conn deltas are carved out of pktz process deltas', async () => {
 
 test('a first-sighted loopback conn on an established process subtracts its full bytes', async () => {
   const logic = await loadLogic()
+  const names = { 9: 'proxy' }
   let state = logic.commitPktzBatch([
     { pid: '9', comm: 'proxy', rx: 100, tx: 100 },
-  ], {}, {}, 0)
+  ], {}, {}, 0, names, {})
   state = logic.commitPktzBatch([
     { pid: '9', comm: 'proxy', rx: 400, tx: 400 },
     { kind: 'conn', pid: '9', comm: 'proxy', src: '127.0.0.1', sport: 1, dst: '127.0.0.1', dport: 2, proto: 'TCP', rx: 250, tx: 300 },
-  ], state.lastCum, state.connCum, 0.5)
+  ], state.lastCum, state.connCum, 0.5, names, {})
   assert.deepEqual(plain(state.accounting), [{ name: 'proxy', rx: 50, tx: 0 }])
 })
 
 test('excluded conn subtraction clamps at zero and conn counter shrink resets its baseline', async () => {
   const logic = await loadLogic()
+  const names = { 3: 'app' }
   const lo = (rx, tx) => ({ kind: 'conn', pid: '3', comm: 'app', src: '::1', sport: 1, dst: '::1', dport: 2, proto: 'TCP', rx, tx })
   let state = logic.commitPktzBatch([
     { pid: '3', comm: 'app', rx: 100, tx: 100 }, lo(90, 90),
-  ], {}, {}, 0)
+  ], {}, {}, 0, names, {})
+  assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 10, tx: 10 }])
   // Oversubtraction (conn eviction return) clamps instead of going negative.
   state = logic.commitPktzBatch([
     { pid: '3', comm: 'app', rx: 150, tx: 150 },
     { kind: 'conn', pid: '3', comm: 'app', src: '::1', sport: 9, dst: '::1', dport: 8, proto: 'TCP', rx: 400, tx: 400 },
-  ], state.lastCum, state.connCum, 0.5)
+  ], state.lastCum, state.connCum, 0.5, names, {})
   assert.deepEqual(plain(state.accounting), [])
 
   // Conn counter shrink: fresh baseline, no subtraction, process delta intact.
   state = logic.commitPktzBatch([
     { pid: '3', comm: 'app', rx: 260, tx: 260 },
     { kind: 'conn', pid: '3', comm: 'app', src: '::1', sport: 9, dst: '::1', dport: 8, proto: 'TCP', rx: 5, tx: 5 },
-  ], state.lastCum, state.connCum, 0.5)
+  ], state.lastCum, state.connCum, 0.5, names, {})
   assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 110, tx: 110 }])
 })
 
 test('processes without conn coverage keep their full process deltas', async () => {
   const logic = await loadLogic()
+  const names = { 5: 'daemon' }
   let state = logic.commitPktzBatch([
     { pid: '5', comm: 'daemon', rx: 10, tx: 10 },
-  ], {}, {}, 0)
+  ], {}, {}, 0, names, {})
+  assert.deepEqual(plain(state.accounting), [{ name: 'daemon', rx: 10, tx: 10 }])
   state = logic.commitPktzBatch([
     { pid: '5', comm: 'daemon', rx: 40, tx: 25 },
-  ], state.lastCum, state.connCum, 0.5)
+  ], state.lastCum, state.connCum, 0.5, names, {})
   assert.deepEqual(plain(state.accounting), [{ name: 'daemon', rx: 30, tx: 15 }])
 })
 
-test('ss totals skip loopback and tailscale sockets and keep WAN sockets', async () => {
+test('ss sockets skip loopback and tailscale endpoints and are keyed per socket', async () => {
   const logic = await loadLogic()
   const text = [
     'ESTAB 0 0 192.168.0.131:54070 101.91.134.222:443 users:(("chrome",pid=1,fd=9))',
@@ -302,11 +374,31 @@ test('ss totals skip loopback and tailscale sockets and keep WAN sockets', async
     'ESTAB 0 0 192.168.0.131:50000 8.8.8.8:443 users:(("chrome",pid=1,fd=10))',
     '\t cubic bytes_sent:200 bytes_received:300',
   ].join('\n')
-  assert.deepEqual(plain(logic.parseSsTotals(text)), {
-    chrome: { rx: 5300, tx: 1200 },
+  assert.deepEqual(plain(logic.parseSsSockets(text)), {
+    '1|192.168.0.131:54070|101.91.134.222:443': { name: 'chrome', rx: 5000, tx: 1000 },
+    '1|192.168.0.131:50000|8.8.8.8:443': { name: 'chrome', rx: 300, tx: 200 },
   })
-  assert.deepEqual(plain(logic.parseSsTotals('')), {})
-  assert.deepEqual(plain(logic.parseSsTotals(null)), {})
+  assert.deepEqual(plain(logic.parseSsSockets('')), {})
+  assert.deepEqual(plain(logic.parseSsSockets(null)), {})
+})
+
+test('ss samples baseline existing sockets and credit sockets opened between polls in full', async () => {
+  const logic = await loadLogic()
+  const first = {
+    a: { name: 'chrome', rx: 5000, tx: 1000 },
+    b: { name: 'chrome', rx: 300, tx: 200 },
+  }
+  assert.deepEqual(plain(logic.commitSsSample(null, first, 2)), { accounting: [], rates: [] })
+
+  // Socket b closed and c opened: the name-level sum would shrink and hide c.
+  const second = {
+    a: { name: 'chrome', rx: 5400, tx: 1100 },
+    c: { name: 'chrome', rx: 800, tx: 100 },
+  }
+  const result = plain(logic.commitSsSample(first, second, 2))
+  assert.deepEqual(result.accounting, [{ name: 'chrome', rx: 1200, tx: 200 }])
+  assert.deepEqual(result.rates, [{ name: 'chrome', down: 600, up: 100 }])
+  assert.deepEqual(plain(logic.commitSsSample(second, second, 2)), { accounting: [], rates: [] })
 })
 
 test('collector requests TCP and UDP cumulative bytes', async () => {
@@ -316,7 +408,7 @@ test('collector requests TCP and UDP cumulative bytes', async () => {
   assert.deepEqual(command.slice(5), ['-v', '2', '-d', '2'])
 })
 
-test('raw cumulative trace replays exact app totals, directions, rates, and sorting', async () => {
+test('nethogs trace accounts every reported byte exactly once', async () => {
   const logic = await loadLogic()
   const trace = await readFile(new URL('./fixtures/nethogs-v2.trace', import.meta.url), 'utf8')
   let batch = []
@@ -324,6 +416,7 @@ test('raw cumulative trace replays exact app totals, directions, rates, and sort
   let pendingDelta = {}
   let result = null
   let refresh = 0
+  const total = {}
 
   for (const line of trace.split('\n')) {
     const parsed = logic.parseNethogsLine(line)
@@ -332,6 +425,11 @@ test('raw cumulative trace replays exact app totals, directions, rates, and sort
       result = logic.commitNethogsBatch(batch, lastCum, refresh === 0 ? 0 : 2, { 303: 'electron-app' }, pendingDelta)
       lastCum = result.lastCum
       pendingDelta = result.pendingDelta
+      for (const row of plain(result.accounting)) {
+        total[row.name] = total[row.name] ?? { rx: 0, tx: 0 }
+        total[row.name].rx += row.rx
+        total[row.name].tx += row.tx
+      }
       batch = []
       refresh++
     } else {
@@ -339,18 +437,31 @@ test('raw cumulative trace replays exact app totals, directions, rates, and sort
     }
   }
 
-  const accounting = plain(result.accounting)
-  assert.deepEqual(accounting, [
-    { name: 'browser', rx: 900, tx: 400 },
-    { name: 'udp-client', rx: 1200, tx: 200 },
-    { name: 'electron-app', rx: 240, tx: 60 },
-  ])
-  assert.deepEqual(sum(accounting), { rx: 2340, tx: 660 })
+  // nethogs counters start at zero with nethogs, so the final counters are the
+  // exact totals; nothing is lost to a first-sight baseline.
+  assert.deepEqual(total, {
+    browser: { rx: 3500, tx: 1800 },
+    'udp-client': { rx: 4200, tx: 700 },
+    'electron-app': { rx: 440, tx: 160 },
+  })
+  assert.deepEqual(plain(pendingDelta), {})
   assert.deepEqual(plain(result.rates), [
     { name: 'udp-client', down: 600, up: 100 },
     { name: 'browser', down: 450, up: 200 },
     { name: 'electron-app', down: 120, up: 30 },
   ])
+})
+
+test('a short-lived process seen in a single refresh is fully credited', async () => {
+  const logic = await loadLogic()
+  let state = logic.commitNethogsBatch([
+    logic.parseNethogsLine('/usr/bin/app/1/1000\t10\t20'),
+  ], {}, 0, {}, {})
+  state = logic.commitNethogsBatch([
+    logic.parseNethogsLine('/usr/bin/app/1/1000\t10\t20'),
+    logic.parseNethogsLine('/usr/bin/curl/2/1000\t49940\t8075820'),
+  ], state.lastCum, 2, {}, state.pendingDelta)
+  assert.deepEqual(plain(state.accounting), [{ name: 'curl', rx: 8075820, tx: 49940 }])
 })
 
 test('empty, null, boundary, and malformed input are handled deterministically', async () => {
@@ -688,16 +799,18 @@ test('popup translates unattributed sentinel labels in supported locales', async
   assert.equal(zhCN['Unattributed TCP'], '未归属 TCP')
 })
 
-test('a process absent for one snapshot gets a fresh baseline if its identity reappears', async () => {
+test('a nethogs row dropped for idling and recreated counts its restarted counter in full', async () => {
   const logic = await loadLogic()
   const baseline = [{ cmdline: '/usr/bin/app', pid: '42', rx: 1000, tx: 500 }]
   let state = logic.commitNethogsBatch(baseline, {}, 0, {}, {})
+  assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 1000, tx: 500 }])
 
+  // nethogs deletes a process after 150 s without packets and recreates it at
+  // zero on the next packet, so a returning row holds only new bytes.
   state = logic.commitNethogsBatch([], state.lastCum, 2, {}, state.pendingDelta)
-  const reusedIdentity = [{ cmdline: '/usr/bin/app', pid: '42', rx: 4000, tx: 2500 }]
-  state = logic.commitNethogsBatch(reusedIdentity, state.lastCum, 2, {}, state.pendingDelta)
-  assert.deepEqual(plain(state.accounting), [])
-  assert.deepEqual(plain(state.rates), [])
+  const recreated = [{ cmdline: '/usr/bin/app', pid: '42', rx: 4000, tx: 2500 }]
+  state = logic.commitNethogsBatch(recreated, state.lastCum, 2, {}, state.pendingDelta)
+  assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 4000, tx: 2500 }])
 })
 
 test('pruning rolls an expired Other bucket into the current day and month', async () => {
@@ -757,38 +870,36 @@ test('PID disappearance conserves unresolved deltas and clears stale comm names'
   const logic = await loadLogic()
   const entry = [{ cmdline: '/proc/self/exe', pid: '77', rx: 10, tx: 20 }]
   let state = logic.commitNethogsBatch(entry, {}, 0, {}, {})
+  assert.deepEqual(plain(state.pendingDelta), {
+    '/proc/self/exe/77': { pid: '77', rx: 10, tx: 20 },
+  })
   state = logic.commitNethogsBatch(
     [{ cmdline: '/proc/self/exe', pid: '77', rx: 110, tx: 70 }],
-    state.lastCum,
-    2,
-    {},
-    state.pendingDelta,
+    state.lastCum, 2, {}, state.pendingDelta,
   )
   assert.deepEqual(plain(state.pendingDelta), {
-    '/proc/self/exe/77': { pid: '77', rx: 100, tx: 50 },
+    '/proc/self/exe/77': { pid: '77', rx: 110, tx: 70 },
   })
 
   state = logic.commitNethogsBatch([], state.lastCum, 2, {}, state.pendingDelta)
   assert.deepEqual(plain(state.pendingDelta), {})
   assert.deepEqual(plain(state.accounting), [
-    { name: '__unattributed_process', rx: 100, tx: 50 },
+    { name: '__unattributed_process', rx: 110, tx: 70 },
   ])
   assert.deepEqual(plain(state.activePids), [])
 
   let reused = logic.commitNethogsBatch(entry, state.lastCum, 2, { 77: 'old-process' }, state.pendingDelta)
   assert.deepEqual(plain(reused.accounting), [])
   assert.deepEqual(plain(reused.commByPid), {})
+  assert.deepEqual(plain(reused.unresolvedPids), ['77'])
 
   reused = logic.commitNethogsBatch(
     [{ cmdline: '/proc/self/exe', pid: '77', rx: 30, tx: 30 }],
-    reused.lastCum,
-    2,
-    reused.commByPid,
-    reused.pendingDelta,
+    reused.lastCum, 2, reused.commByPid, reused.pendingDelta,
   )
   assert.deepEqual(plain(reused.accounting), [])
   assert.deepEqual(plain(reused.pendingDelta), {
-    '/proc/self/exe/77': { pid: '77', rx: 20, tx: 10 },
+    '/proc/self/exe/77': { pid: '77', rx: 30, tx: 30 },
   })
 })
 
@@ -815,20 +926,23 @@ test('an active unresolved PID remains queued while a previous ps query is busy'
   assert.deepEqual(plain(state.unresolvedPids), ['77'])
 })
 
-test('resolved comms drain pending bytes immediately without another nethogs batch', async () => {
+test('resolved names drain pending bytes immediately and vanished PIDs settle as unattributed', async () => {
   const logic = await loadLogic()
   const pending = {
     '/proc/self/exe/77': { pid: '77', rx: 100, tx: 50 },
     '/proc/self/exe/88': { pid: '88', rx: 30, tx: 10 },
+    '/proc/self/exe/99': { pid: '99', rx: 5, tx: 5 },
   }
   const drained = plain(logic.drainResolvedPending(
-    pending,
-    { 77: 'resolved-app', 88: 'stale-app' },
-    ['77'],
+    pending, { 77: 'resolved-app' }, ['77', '88'], '__unattributed_process',
   ))
-  assert.deepEqual(drained.accounting, [{ name: 'resolved-app', rx: 100, tx: 50 }])
-  assert.deepEqual(drained.pendingDelta, {})
-  assert.deepEqual(drained.commByPid, { 77: 'resolved-app' })
+  assert.deepEqual(drained.accounting, [
+    { name: 'resolved-app', rx: 100, tx: 50 },
+    { name: '__unattributed_process', rx: 30, tx: 10 },
+  ])
+  // 99 was not part of this query: it waits for its own.
+  assert.deepEqual(drained.pendingDelta, { '/proc/self/exe/99': { pid: '99', rx: 5, tx: 5 } })
+  assert.deepEqual(plain(logic.drainResolvedPending(null, null, null)), { pendingDelta: {}, accounting: [] })
 })
 
 test('QML isolates ps results by monitoring generation and entry lifecycle', async () => {
@@ -847,13 +961,13 @@ test('QML isolates ps results by monitoring generation and entry lifecycle', asy
   assert.match(source, /for \(const app of drained\.accounting\) root\.accumulate\(/)
 })
 
-test('counter shrink does not fabricate traffic', async () => {
+test('nethogs counter shrink credits the restarted counter, never a negative delta', async () => {
   const logic = await loadLogic()
   const baseline = [{ cmdline: '/usr/bin/app', pid: '42', rx: 1000, tx: 500 }]
   let state = logic.commitNethogsBatch(baseline, {}, 0, {}, {})
   const shrunk = [{ cmdline: '/usr/bin/app', pid: '42', rx: 20, tx: 10 }]
   state = logic.commitNethogsBatch(shrunk, state.lastCum, 2, {}, state.pendingDelta)
-  assert.deepEqual(plain(state.accounting), [])
+  assert.deepEqual(plain(state.accounting), [{ name: 'app', rx: 20, tx: 10 }])
 })
 
 test('counter shrink clears cached PID identity and pending bytes before re-resolution', async () => {
@@ -869,7 +983,9 @@ test('counter shrink clears cached PID identity and pending bytes before re-reso
     { name: '__unattributed_process', rx: 100, tx: 50 },
   ])
   assert.deepEqual(plain(state.commByPid), {})
-  assert.deepEqual(plain(state.pendingDelta), {})
+  assert.deepEqual(plain(state.pendingDelta), {
+    '/proc/self/exe/42': { pid: '42', rx: 20, tx: 10 },
+  })
 
   state = logic.commitNethogsBatch(
     [{ cmdline: '/proc/self/exe', pid: '42', rx: 50, tx: 25 }],
@@ -877,20 +993,20 @@ test('counter shrink clears cached PID identity and pending bytes before re-reso
   )
   assert.deepEqual(plain(state.accounting), [])
   assert.deepEqual(plain(state.pendingDelta), {
-    '/proc/self/exe/42': { pid: '42', rx: 30, tx: 15 },
+    '/proc/self/exe/42': { pid: '42', rx: 50, tx: 25 },
   })
   assert.deepEqual(plain(state.unresolvedPids), ['42'])
 })
 
-test('unattributed counter shrink establishes a new baseline without fabricated bytes', async () => {
+test('unattributed rows count from zero and a restarted counter is credited in full', async () => {
   const logic = await loadLogic()
   const baseline = [logic.parseNethogsLine('unknown UDP/0/0\t500\t1000')]
   let state = logic.commitNethogsBatch(baseline, {}, 0, {}, {})
+  assert.deepEqual(plain(state.accounting), [{ name: '__unattributed_udp', rx: 1000, tx: 500 }])
 
   const shrunk = [logic.parseNethogsLine('unknown UDP/0/0\t20\t40')]
   state = logic.commitNethogsBatch(shrunk, state.lastCum, 2, {}, state.pendingDelta)
-  assert.deepEqual(plain(state.accounting), [])
-  assert.deepEqual(plain(state.rates), [])
+  assert.deepEqual(plain(state.accounting), [{ name: '__unattributed_udp', rx: 40, tx: 20 }])
 
   const resumed = [logic.parseNethogsLine('unknown UDP/0/0\t30\t70')]
   state = logic.commitNethogsBatch(resumed, state.lastCum, 2, {}, state.pendingDelta)
@@ -908,8 +1024,61 @@ test('unresolved executable deltas are credited once after comm resolution', asy
   assert.deepEqual(plain(state.accounting), [])
 
   state = logic.commitNethogsBatch(second, state.lastCum, 2, { 77: 'resolved-app' }, state.pendingDelta)
-  assert.deepEqual(plain(state.accounting), [{ name: 'resolved-app', rx: 100, tx: 50 }])
+  assert.deepEqual(plain(state.accounting), [{ name: 'resolved-app', rx: 110, tx: 70 }])
   assert.deepEqual(plain(state.pendingDelta), {})
+})
+
+test('app names come from the program, not the interpreter or a generic entry point', async () => {
+  const logic = await loadLogic()
+  const cases = [
+    ['/usr/bin/laptop-monitor-agent', 'laptop-monitor-agent'],
+    ['/opt/google/chrome/chrome --type=utility --lang=en-US', 'chrome'],
+    ['/opt/komari/agent -e https://example.invalid', 'komari'],
+    ['/usr/lib/geoclue-2.0/demos/agent', 'geoclue-2.0'],
+    ['/home/u/.cache/uv/archive-v0/X/bin/python /home/u/.cache/uv/archive-v0/X/bin/semble serve', 'semble'],
+    ['python3 -m http.server 80', 'http'],
+    ['python3 -c print(1)', 'python3'],
+    ['node /x/node_modules/@upstash/context7-mcp/dist/index.js', 'context7-mcp'],
+    ['npm exec @upstash/context7-mcp', 'context7-mcp'],
+    ['npx -y @scope/pkg@1.2.3', 'pkg'],
+    ['uv run --with httpx tool.py', 'tool'],
+    ['uvx ruff check', 'ruff'],
+    ['java -jar /a/b/prismlauncher.jar', 'prismlauncher'],
+    ['java -cp lib.jar org.example.EntryPoint', 'EntryPoint'],
+    ['bash -c sleep 1', 'bash'],
+    ['-bash', 'bash'],
+    ['node', 'node'],
+    ['C:\\Games\\osu!\\osu!.exe', 'osu!'],
+    ['__unattributed_tcp', '__unattributed_tcp'],
+  ]
+  for (const [cmdline, name] of cases) assert.equal(logic.appName(cmdline), name, cmdline)
+  for (const unresolvable of ['/proc/self/exe --type=renderer', 'exe', '', '   ', null, undefined, 42])
+    assert.equal(logic.appName(unresolvable), null, String(unresolvable))
+  assert.equal(logic.programName(''), '')
+  assert.equal(logic.programName('/bin/agent'), 'agent')
+})
+
+test('ps name parsing prefers the command line and falls back to comm', async () => {
+  const logic = await loadLogic()
+  const text = [
+    '  953 agent',
+    ' 1913 Discord',
+    ' 2559 laptop-monitor-',
+    '--',
+    '  953 /opt/komari/agent -e x',
+    ' 1913 /proc/self/exe --type=utility',
+    ' 2559 /usr/bin/laptop-monitor-agent',
+  ].join('\n')
+  assert.deepEqual(plain(logic.parsePsNames(text)), {
+    953: 'komari',
+    1913: 'Discord',
+    2559: 'laptop-monitor-agent',
+  })
+  assert.deepEqual(plain(logic.parsePsNames('')), {})
+  assert.deepEqual(plain(logic.parsePsNames(null)), {})
+  assert.deepEqual(plain(logic.psNamesCommand(['953', 1913, '1;rm', ''])), [
+    'sh', '-c', 'ps -o pid=,comm= -p "$1"; echo --; ps -ww -o pid=,args= -p "$1"', 'sh', '953,1913',
+  ])
 })
 
 test('handoff finalization conserves unresolved bytes exactly once in an unattributed bucket', async () => {

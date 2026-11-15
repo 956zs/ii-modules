@@ -1,3 +1,29 @@
+## 2026-11-10 network_traffic 1.8.0 accounting fix
+
+Owner: totals and per-app numbers looked wrong; scope chosen: data
+correctness only (UI unchanged), split names by program, reset per-app data.
+
+- ✅ Whole-system totals verified correct against vnstat (Nov rx 43.68 GB /
+  tx 111.36 GB vs vnstat 40.69 / 103.76 GiB); the large upload is real
+  (Claude Code request bodies dominate).
+- ✅ Per-app root cause: first-seen and shrunk counters were baselined.
+  nethogs 0.8.8 source confirms counters start at zero and keep
+  closed-connection bytes; pktz keeps one zero-started BPF counter per PID.
+  Fixed for nethogs, pktz (PID-keyed retained baselines), and ss (per-socket).
+- ✅ Names from full command line: interpreters/launchers resolve to the
+  program, generic entry points to the nearest meaningful directory.
+- ✅ `appAcctState` schema 2 discards schema-1 per-app totals once.
+- ✅ 54/54 node tests; validate/check/i18n exact check/ConfigLoader drift
+  clean; live install 1.7.0 -> 1.8.0 with no module QML errors; nethogs
+  active (pktz fails on Linux 7.2, see ISSUES).
+- ✅ Live reconciliation (interface counters vs nethogs replay, 40 s with an
+  iperf3 run over the USB tether `enp0s20f0u1u1`): per-app rx 806.5 MB /
+  tx 436.4 MB vs interfaces 925.6 / 488.4 MB (87 % / 89 %), never above.
+  The remaining gap is pcap capture loss at high packet rates. Comparing
+  flushed `acctState` and `appAcctState` deltas is invalid: the two blobs
+  flush on independent 60 s timers.
+- Branch `fix/network-traffic-accounting` (3 commits + plans), not pushed.
+
 ## 2026-11-01 aula_keys 1.1.0 bar indicator
 
 - ✅ bar.qml: keyboard icon (dim hidden/off, accent live, red tint for
