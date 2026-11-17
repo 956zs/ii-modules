@@ -131,3 +131,21 @@
   live registry lists `idle_modes` patch records only for
   `IdleInhibitorToggle.qml`. Reproduce before any live `uninstall` of an older
   Tier B module; the live tree was not touched.
+
+## androlink keep-awake gate, batch 2 security review (2026-11-17)
+
+- ✅ II-GATE-1 / F1 resolved in `idle_modes` 1.2.0 (branch
+  `feat/androlink-keep-awake`): a held idle suspend is checked again every
+  `keepAwakeRecheckSecs` and bounded by `keepAwakeMaxHoldMins`; input ends
+  the wait through hypridle `on-resume` or the screens turning on.
+- ✅ II-GATE-2 resolved: an unreadable power supply class, or an offline
+  `Mains` supply with no battery visible, is unknown and lets the suspend run.
+- ✅ II-GATE-3 resolved: a top-level `heartbeat_s` (1–3600) widens the
+  freshness limit to three heartbeats.
+- 🟡 P2 owner action: the `on-resume = …/idle-mode-gate.sh resume` line must be
+  added to `~/.config/hypr/hypridle.conf` (README `sed`) and re-added after
+  each dots update; without it input is noticed only when the screens turn on.
+- 🟢 P3 II-GATE-2 follow-up: a laptop whose battery driver did not load and
+  which has no `Mains` entry still counts as a desktop. A DMI
+  `chassis_type` check (portable types 8, 9, 10, 14, 30, 31, 32) would close
+  it; it needs a test-only path override like `IDLE_MODES_POWER_SUPPLY_DIR`.

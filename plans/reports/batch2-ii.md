@@ -103,3 +103,106 @@ Not run: the iimod Rust suite (no Rust changed).
 - androlink drops a rate-limited `--refresh` quietly (exit 0), so the panel
   still shows 「正在重新連線。」 then.
 - The panel does not show `mic` or the top-level `keep_awake` (out of scope).
+
+## Security fixes
+
+Fixes for the batch 2 security review findings on `idle_modes`, on the same
+branch (`73a5d2f`, `72b6015`, `ff7848f`), not pushed, nothing installed
+live. `idle_modes` 1.1.0 → 1.2.0 (two new options and the `resume`
+command).
+
+| Finding | Commit | What changed |
+|---|---|---|
+| II-GATE-1 / F1 (confirmed, low) | `ff7848f` | The gate waits while it holds the idle suspend, checks again every `keepAwakeRecheckSecs` and suspends once the hold no longer applies or after `keepAwakeMaxHoldMins`; input, a mode change or a screen on ends the wait |
+| II-GATE-2 (info) | `73a5d2f` | An unreadable power supply class, or an offline `Mains` supply with no battery visible, is unknown and lets the suspend run |
+| II-GATE-3 (info) | `72b6015` | A top-level `heartbeat_s` (1–3600) widens the freshness limit to three heartbeats |
+
+II-GATE-1 / F1 in detail:
+
+- Re-check: every `keepAwakeRecheckSecs` (60, 15–600) the gate reads the
+  mode, floor, freshness option, status file and power again. It suspends when
+  `keep_awake` is empty, the file is stale, stopped, missing or invalid, or
+  the battery is below the floor or unreadable.
+- Limit: `keepAwakeMaxHoldMins` (120, 1–1440); at the limit it suspends
+  whatever androlink reports. The ConfigLoader clamps both options.
+- Ends without a suspend: `idle-mode-gate.sh resume` (hypridle
+  `on-resume`), the mode leaving off, or a screen on again / no answer from
+  `hyprctl`.
+- Hold file: `$XDG_RUNTIME_DIR/idle-mode-gate.pid` (0600, `flock`), only in a
+  private user-owned runtime dir; a symlink or foreign file stops the wait.
+  `resume` signals only the lock holder whose `/proc` cmdline is the gate's
+  `suspend` and removes unlocked leftovers. A new idle period replaces a gate
+  that still waits.
+
+Tests per finding:
+
+- II-GATE-1 / F1, Node: re-checks that suspend (keep_awake cleared, battery
+  drop, floor raised, level unreadable, stale/stopped/missing/invalid file);
+  waits that end without a suspend (half, full, one screen on, no screens,
+  junk or failing `hyprctl`, hold file removed or naming another PID); the
+  limit (15 s × 4, 45 s × 2); option rounding, clamping and junk; runtime dir
+  0777/0770/0757; symlink and directory hold files; `resume` stopping a real
+  waiting gate at once with no sleep left behind; a second idle period
+  replacing the first; `resume` never signalling an unrelated PID or a
+  non-gate lock holder; the README `sed` on a sample `hypridle.conf`
+  (idempotent).
+- II-GATE-1 / F1, harness: the ConfigLoader heals and writes back the options;
+  the real gate with real `sleep` and `flock` keeps a 0600 hold file, reads
+  the healed options, stops on `resume` in about 110 ms, suspends at the 15 s
+  check once `keep_awake` clears, and ends the wait when a screen is on.
+- II-GATE-2: missing dir, a regular file, mode 000 and 644 dirs, offline
+  `Mains` alone and with a peripheral battery, `Mains` without `online`,
+  online `Mains` without a battery; an empty dir is still a desktop.
+- II-GATE-3: 120 s and 3600 s heartbeats old and ahead, 10 s and 1 s
+  heartbeats keep 90 s, 31.5 s, ten invalid values (0, 0.5, -30, 3601, 1e9,
+  string, null, bool, array, object), a 300 s option over three 30 s
+  heartbeats.
+
+Decisions:
+
+- The loop sits in the gate, as the fix plan asks, with the three conditions
+  the F1 verifier set for a loop: cancel on input, one waiting copy (`flock`),
+  and a hard maximum (`keepAwakeMaxHoldMins`). `hypridle.conf` is outside the
+  shell tree and iimod patches only shell QML, so the module can't add the
+  `on-resume` line; the READMEs give the one-line edit and an idempotent
+  `sed`. Without that line the loop stays safe: it suspends from a check only
+  while every screen is still DPMS-off (`hyprctl monitors`), which the stock
+  10-minute screen-off listener guarantees until input, and stops on any
+  other answer.
+- At the limit the gate suspends on AC too (the F1 verifier suggested battery
+  only). This also bounds a stalled `transfer` reason (AL-KEEPAWAKE-1, F2)
+  from the gate's side; the owner can raise the limit to 24 h.
+- Freshness uses the longer of the option and three heartbeats, so the option
+  stays a floor; with the defaults both give 90 s.
+- The optional DMI `chassis_type` check from the II-GATE-2 verifier was not
+  added (P3 in `plans/ISSUES.md`).
+- The earlier Open item "hypridle runs the suspend command once per idle
+  period" is resolved by II-GATE-1.
+
+Checks:
+
+| Check | Result |
+|---|---|
+| `node --test modules/*/tests/*.test.mjs` | 263/263 (was 247: +16 idle_modes) |
+| Offscreen harness (`~/.cache/ii-modules-scratch-b2ii`) | 89/89 (was 80: +9 idle_modes) |
+| Mutation checks on the gate (8: TERM trap, `-x`, offline Mains, heartbeat, screens, cmdline check, hold-file token, private runtime dir) | each caught by a test |
+| `iimod validate` / `check` (idle_modes 1.2.0) | ok |
+| `iimod i18n check --all --deny-orphans`, idle_modes extract/check | ok, 14 modules |
+| `node tools/lib-sync/check-configloader.mjs` | 11 copies, 0 undeclared deviations |
+| `tools/release/test-contracts.sh` / `test-publish.sh` | 15 / 13 passed |
+| `bash -n` gate, `qmlformat` ConfigLoader, `git diff --check` | ok |
+
+The harness gate checks run with fake `hyprctl`/`systemctl`/`loginctl`
+first on the gate's own PATH only, and are skipped (as a failure) unless
+`command -v` resolves all three to the fakes.
+
+Open:
+
+- Owner install: `iimod install modules/idle_modes --allow-patches` (1.2.0),
+  copy the gate again, add the `on-resume` line with the README `sed`, then
+  restart hypridle through Hyprland.
+- androlink `plans/features-2026-11-17.md` (N39 row, §Idle gate) should
+  mention the re-check, the limit and `heartbeat_s`; that file is outside
+  this repo.
+- The gate reads `heartbeat_s` only if androlink writes it at the top level
+  of `status.json`; until then the option applies.

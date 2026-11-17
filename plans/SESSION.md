@@ -796,3 +796,18 @@ patch; screentime zero-day stats semantics change → minor.
 - ✅ Network Traffic no longer assigns undeclared `pktzStarted`; `reapply` now restores durable host state and every journaled projection after post-preflight failures; same-value unmanaged user translations remain unowned; and scanner regex recognition includes whole-word non-member `typeof`, `void`, and `delete`.
 - ✅ Release fixtures now cover Clock Popup, Battery Trend, Memory Center, and ActiveWindow stock surfaces. ActiveWindow documentation distinguishes read-only `check` reporting from state-changing `reapply` incompatibility handling.
 - ✅ Clean integration verification on CLI 1.3.0: Rust fmt, 63 unit, 18 i18n CLI, 37 integration, and all-target clippy; 97 module contracts; site 47/47 plus TypeScript/Vite/VitePress production build; release contracts 15/15 and publish contracts 13/13; exact repository i18n and all eight module validate/check runs; four fixture-dependent official release dry-runs; catalog, paired skills, shell syntax, diff, secret, and conflict-marker checks. No live mutation, push, tag, or Release was performed.
+
+## androlink keep-awake gate security fixes (2026-11-17)
+
+- ✅ Branch `feat/androlink-keep-awake`: `73a5d2f` (II-GATE-2), `72b6015`
+  (II-GATE-3), `ff7848f` (II-GATE-1 / F1, `idle_modes` 1.2.0). The gate now
+  waits while it holds the idle suspend, checks again every
+  `keepAwakeRecheckSecs`, suspends at `keepAwakeMaxHoldMins`, and stops on
+  `idle-mode-gate.sh resume` (hypridle `on-resume`), a mode change or a
+  screen turning on. PID file `$XDG_RUNTIME_DIR/idle-mode-gate.pid` (0600,
+  `flock`).
+- ✅ Verification: Node 263/263, offscreen harness 89/89
+  (`~/.cache/ii-modules-scratch-b2ii`, sandbox and run dirs removed),
+  iimod validate/check, i18n, lib-sync, release 15 and publish 13 contracts.
+  Details in `plans/reports/batch2-ii.md` (Security fixes). Nothing installed
+  live; `hypridle.conf` untouched.
