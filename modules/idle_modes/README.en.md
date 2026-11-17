@@ -111,6 +111,11 @@ reads the file on each run and clamps the same way.
   Peripheral batteries (`scope` `Device`) and USB-C partner supplies are
   ignored. A supply without a `type` counts as AC when named `AC*`, `ADP*` or
   `ACAD*`, and as a battery when named `BAT*`.
+- "No battery" (a desktop, which holds like AC) needs a power supply class
+  that can be read and lists neither a system battery nor a `Mains` supply.
+  A class that can't be read, a battery whose level can't be read, or an
+  offline `Mains` supply with no battery in sight means the level is
+  unknown, and the suspend runs.
 - Every run prints one line with the decision and its reasons, for example
   `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending`.
 - `idle-mode-gate.sh suspend --dry-run` prints the decision without suspending.

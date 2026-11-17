@@ -365,6 +365,55 @@ gateTest('gate: several batteries average; unreadable and type-less supplies are
   }
 })
 
+// ---- II-GATE-2: a power supply class that can't be read is not a desktop ----
+
+gateTest('gate: an unreadable or missing power supply class is unknown and lets the suspend run', () => {
+  const box = sandbox()
+  try {
+    setStatus(box, status())
+    const run = (dir) => runGate(box, ['suspend', '--dry-run'], { IDLE_MODES_POWER_SUPPLY_DIR: dir }).stdout.trim()
+    // Read and empty: no battery and no mains, a desktop.
+    assert.equal(run(box.power), 'idle-mode-gate: mode off, androlink keep_awake mic, no battery, not suspending')
+    writeFileSync(join(box.root, 'a-file'), 'x\n')
+    for (const dir of [join(box.root, 'no-such-dir'), join(box.root, 'a-file')])
+      assert.equal(run(dir), 'idle-mode-gate: mode off, androlink keep_awake mic, battery level unknown, would suspend', dir)
+    if (process.getuid?.() !== 0) {
+      chmodSync(box.power, 0o000)
+      try {
+        assert.equal(run(box.power), 'idle-mode-gate: mode off, androlink keep_awake mic, battery level unknown, would suspend', 'unreadable')
+      } finally {
+        chmodSync(box.power, 0o755)
+      }
+      chmodSync(box.power, 0o644)
+      try {
+        assert.match(run(box.power), /battery level unknown, would suspend$/, 'readable but not searchable')
+      } finally {
+        chmodSync(box.power, 0o755)
+      }
+    }
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: an offline mains supply with no battery in sight is unknown', () => {
+  const box = sandbox()
+  try {
+    setStatus(box, status())
+    setPower(box, { ADP1: { type: 'Mains', online: 0 } })
+    assert.equal(decide(box), 'idle-mode-gate: mode off, androlink keep_awake mic, battery level unknown, would suspend')
+    setPower(box, { 'hid-mouse-battery': { type: 'Battery', scope: 'Device', capacity: 90 } })
+    assert.match(decide(box), /battery level unknown, would suspend$/, 'a peripheral battery is no system battery')
+    setPower(box, { ADP1: { online: null } })
+    rmSync(join(box.power, 'ADP1/online'))
+    assert.match(decide(box), /battery level unknown, would suspend$/, 'no online file')
+    setPower(box, { ADP1: { online: 1 } })
+    assert.match(decide(box), /on AC, not suspending$/, 'online mains with no battery is AC')
+  } finally {
+    cleanup(box)
+  }
+})
+
 gateTest('gate: without --dry-run it suspends through systemctl, then loginctl', () => {
   const box = sandbox()
   try {

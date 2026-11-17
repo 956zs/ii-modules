@@ -47,13 +47,19 @@ read_line() {
     printf '%s' "$line"
 }
 
-# Power source summary: "ac", "battery <percent>", "no-battery" (no system
-# battery at all, e.g. a desktop) or "unknown" (a battery whose charge can't
-# be read). Peripheral batteries (scope Device: mice, headsets) and USB-C
-# partner supplies are ignored. With several system batteries the charge is
-# their mean.
+# Power source summary: "ac", "battery <percent>", "no-battery" (the power
+# supply class was read and lists no system battery and no mains supply, e.g.
+# a desktop) or "unknown" (the class can't be read, a battery's charge can't
+# be read, or a mains supply is offline with no battery in sight).
+# Peripheral batteries (scope Device: mice, headsets) and USB-C partner
+# supplies are ignored. With several system batteries the charge is their
+# mean.
 power_state() {
-    local entry name type scope capacity ac=0 batteries=0 readable=0 sum=0
+    local entry name type scope capacity ac=0 mains=0 batteries=0 readable=0 sum=0
+    if ! [ -d "$power_dir" ] || ! [ -r "$power_dir" ] || ! [ -x "$power_dir" ]; then
+        echo unknown
+        return
+    fi
     for entry in "$power_dir"/*; do
         [ -d "$entry" ] || continue
         name=${entry##*/}
@@ -68,6 +74,7 @@ power_state() {
         [ "$scope" = Device ] && continue
         case "$type" in
             Mains)
+                mains=1
                 [ "$(read_line "$entry/online")" = 1 ] && ac=1
                 ;;
             Battery)
@@ -84,7 +91,9 @@ power_state() {
         echo ac
     elif ((readable > 0)); then
         echo "battery $((sum / readable))"
-    elif ((batteries > 0)); then
+    elif ((batteries > 0 || mains)); then
+        # A battery without a level, or an offline mains supply with no
+        # battery visible: a portable PC whose charge can't be known.
         echo unknown
     else
         echo no-battery

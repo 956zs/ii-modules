@@ -101,6 +101,9 @@ pkill -x hypridle; hyprctl dispatch 'hl.dsp.exec_cmd("hypridle")'
   電量是系統電池 `capacity` 的平均值。周邊裝置電池（`scope` 為 `Device`）與 USB-C
   對端電源不列入。沒有 `type` 的項目，名稱是 `AC*`、`ADP*` 或 `ACAD*` 時視為電源
   供應器，`BAT*` 視為電池。
+- 「沒有電池」（桌機，比照插電擋下休眠）的條件是 power supply 目錄讀得到，而且裡面
+  既沒有系統電池也沒有 `Mains`。目錄讀不到、電池讀不到電量，或 `Mains` 離線且看
+  不到電池時，都視為電量不明，照常休眠。
 - 每次執行印出一行判斷結果與原因，例如
   `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending`。
 - `idle-mode-gate.sh suspend --dry-run` 只印出判斷結果，不會休眠。
