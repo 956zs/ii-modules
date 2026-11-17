@@ -562,7 +562,7 @@ gateTest("gate: the status file's heartbeat_s widens the freshness window to thr
 
 // ---- II-GATE-1 / F1: a hold is checked again while the PC stays idle ----
 
-gateTest('gate: a held suspend checks again and suspends once keep_awake is empty', () => {
+gateTest('gate: a held suspend checks again and suspends once keep_awake stays empty through the grace', () => {
   const box = sandbox()
   try {
     setPower(box, onAc)
@@ -572,13 +572,203 @@ gateTest('gate: a held suspend checks again and suspends once keep_awake is empt
     assert.equal(out.status, 0, out.stderr)
     assert.deepEqual(lines(out), [
       'idle-mode-gate: mode off, androlink keep_awake transfer, on AC, not suspending, checking again every 60 s for up to 120 min',
-      'idle-mode-gate: mode off, androlink keep_awake none, suspending',
+      'idle-mode-gate: mode off, androlink keep_awake none for 45 s, suspending',
     ])
     assert.equal(out.suspendLog, 'systemctl suspend\n')
-    assert.equal(sleepLog(box), '60\n60\n', 'held through the first check, suspended at the second')
+    assert.equal(sleepLog(box), '60\n60\n45\n', 'held through the first check, empty at the second, suspended 45 s later')
     assert.equal(existsSync(holdFile(box)), false, 'the hold file is removed before the suspend')
   } finally {
     cleanup(box)
+  }
+})
+
+// ---- N-GATE-1: a short keep_awake gap (a stream reconnecting) is no release ----
+
+// Runs a held gate whose status file the fake sleep of each listed wait
+// changes: steps[n] is the keep_awake list (or a whole status object) from
+// wait n on. A screen on at wait `end` stops a gate that keeps holding.
+function runSteps(box, steps, { options = {}, end } = {}) {
+  setPower(box, onAc)
+  setStatus(box, status({ keep_awake: ['mic'], heartbeat_s: 3600 }))
+  setConfig(box, { mode: 'off', ...options })
+  for (const [n, step] of Object.entries(steps))
+    onSleep(box, Number(n), { [statusFile(box)]: Array.isArray(step) ? status({ keep_awake: step, heartbeat_s: 3600 }) : step })
+  if (end)
+    onSleep(box, end, { ...(steps[end] ? { [statusFile(box)]: status({ keep_awake: steps[end], heartbeat_s: 3600 }) } : {}), [monitorsFile(box)]: [{ name: 'eDP-1', dpmsStatus: true }] })
+  const out = runGate(box, ['suspend'])
+  assert.equal(out.status, 0, out.stderr)
+  return { out, rest: lines(out).slice(1), sleeps: sleepLog(box).split('\n').filter(Boolean).map(Number) }
+}
+
+gateTest('gate: keep_awake empty at one check and back at the next does not suspend', () => {
+  const box = sandbox()
+  try {
+    // The mic stream reconnects across the first check and is back for the
+    // second (45 s later); the user comes back at the third.
+    const { out, rest, sleeps } = runSteps(box, { 1: [], 2: ['mic'] }, { end: 3 })
+    assert.deepEqual(rest, ['idle-mode-gate: a screen is on, not suspending'])
+    assert.equal(out.suspendLog, '')
+    assert.deepEqual(sleeps, [60, 45, 60], 'the grace check comes 45 s after the empty one, then the normal interval')
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: a reason back during the grace starts the grace anew', () => {
+  const box = sandbox()
+  try {
+    const { out, rest, sleeps } = runSteps(box, { 1: [], 2: ['webcam'], 3: [] })
+    assert.deepEqual(rest, ['idle-mode-gate: mode off, androlink keep_awake none for 45 s, suspending'])
+    assert.equal(out.suspendLog, 'systemctl suspend\n')
+    assert.deepEqual(sleeps, [60, 45, 60, 45])
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: with a grace longer than the interval, every check in it must be empty', () => {
+  const box = sandbox()
+  try {
+    // 15 s checks, 45 s grace: empty at 15, 30, 45 and 60 s, suspended at 60.
+    let r = runSteps(box, { 1: [] }, { options: { keepAwakeRecheckSecs: 15 } })
+    assert.deepEqual(r.rest, ['idle-mode-gate: mode off, androlink keep_awake none for 45 s, suspending'])
+    assert.deepEqual(r.sleeps, [15, 15, 15, 15])
+    cleanup(box)
+    // A reason back at the third check of the grace: no suspend at its end.
+    Object.assign(box, sandbox())
+    r = runSteps(box, { 1: [], 3: ['transfer'] }, { options: { keepAwakeRecheckSecs: 15 }, end: 5 })
+    assert.deepEqual(r.rest, ['idle-mode-gate: a screen is on, not suspending'])
+    assert.equal(r.out.suspendLog, '')
+    assert.deepEqual(r.sleeps, [15, 15, 15, 15, 15])
+    cleanup(box)
+    // A grace that the interval does not divide: the last wait ends at it.
+    Object.assign(box, sandbox())
+    r = runSteps(box, { 1: [] }, { options: { keepAwakeReleaseGraceSecs: 100 } })
+    assert.deepEqual(r.rest, ['idle-mode-gate: mode off, androlink keep_awake none for 100 s, suspending'])
+    assert.deepEqual(r.sleeps, [60, 60, 40])
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: a stale, stopped, missing or invalid file or a low battery during the grace suspends at once', () => {
+  const cases = [
+    [status({ updated: nowSecs() - 1000 }), 'androlink status stale'],
+    [status({ running: false, keep_awake: [] }), 'androlink status stopped'],
+    [null, 'androlink status missing'],
+    ['{"version":', 'androlink status invalid'],
+  ]
+  for (const [next, why] of cases) {
+    const box = sandbox()
+    try {
+      const { out, rest, sleeps } = runSteps(box, { 1: [], 2: next })
+      assert.deepEqual(rest, [`idle-mode-gate: mode off, ${why}, suspending`], why)
+      assert.equal(out.suspendLog, 'systemctl suspend\n', why)
+      assert.deepEqual(sleeps, [60, 45], why)
+    } finally {
+      cleanup(box)
+    }
+  }
+  // keep_awake empties as the power stops allowing a hold: a reason coming
+  // back could not hold again, so there is no grace.
+  for (const [capacity, power] of [['19\n', 'battery 19% below floor 20%'], ['unknown\n', 'battery level unknown']]) {
+    const box = sandbox()
+    try {
+      setStatus(box, status({ keep_awake: ['mic'] }))
+      setPower(box, onBattery(30))
+      onSleep(box, 1, { [join(box.power, 'BAT0/capacity')]: capacity, [statusFile(box)]: status({ keep_awake: [] }) })
+      const out = runGate(box, ['suspend'])
+      assert.deepEqual(lines(out).slice(1), [`idle-mode-gate: mode off, androlink keep_awake none, ${power}, suspending`], power)
+      assert.equal(out.suspendLog, 'systemctl suspend\n', power)
+      assert.equal(sleepLog(box), '60\n', `${power}: at once`)
+    } finally {
+      cleanup(box)
+    }
+  }
+  // The battery drops below the floor during the grace: at once too.
+  const box = sandbox()
+  try {
+    setStatus(box, status({ keep_awake: ['mic'] }))
+    setPower(box, onBattery(30))
+    onSleep(box, 1, { [statusFile(box)]: status({ keep_awake: [] }) })
+    onSleep(box, 2, { [join(box.power, 'BAT0/capacity')]: '19\n' })
+    const out = runGate(box, ['suspend'])
+    assert.deepEqual(lines(out).slice(1), ['idle-mode-gate: mode off, androlink keep_awake none, battery 19% below floor 20%, suspending'])
+    assert.equal(sleepLog(box), '60\n45\n', 'the grace check is the first to see the low battery')
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: an empty keep_awake on battery at or above the floor gets the grace', () => {
+  const box = sandbox()
+  try {
+    setStatus(box, status({ keep_awake: ['mic'] }))
+    setPower(box, onBattery(20))
+    onSleep(box, 1, { [statusFile(box)]: status({ keep_awake: [] }) })
+    onSleep(box, 2, { [statusFile(box)]: status({ keep_awake: ['mic'] }) })
+    onSleep(box, 3, { [monitorsFile(box)]: [{ name: 'eDP-1', dpmsStatus: true }] })
+    const out = runGate(box, ['suspend'])
+    assert.deepEqual(lines(out).slice(1), ['idle-mode-gate: a screen is on, not suspending'])
+    assert.equal(out.suspendLog, '')
+    assert.equal(sleepLog(box), '60\n45\n60\n')
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: the hold limit cuts a grace short', () => {
+  const box = sandbox()
+  try {
+    const { out, rest, sleeps } = runSteps(box, { 2: [] }, { options: { keepAwakeRecheckSecs: 15, keepAwakeMaxHoldMins: 1, keepAwakeReleaseGraceSecs: 600 } })
+    assert.deepEqual(rest, ['idle-mode-gate: mode off, androlink keep_awake none, held 1 min (the limit), suspending'])
+    assert.equal(out.suspendLog, 'systemctl suspend\n')
+    assert.deepEqual(sleeps, [15, 15, 15, 15])
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: the first decision has no grace, so an idle PC with nothing to hold suspends at once', () => {
+  const box = sandbox()
+  try {
+    setPower(box, onAc)
+    setStatus(box, status({ keep_awake: [] }))
+    let out = runGate(box, ['suspend'])
+    assert.deepEqual(lines(out), ['idle-mode-gate: mode off, androlink keep_awake none, suspending'])
+    assert.equal(out.suspendLog, 'systemctl suspend\n')
+    assert.equal(sleepLog(box), '')
+    // Below the floor the log says so.
+    setPower(box, onBattery(10))
+    out = runGate(box, ['suspend', '--dry-run'])
+    assert.deepEqual(lines(out), ['idle-mode-gate: mode off, androlink keep_awake none, battery 10% below floor 20%, would suspend'])
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: the release grace option is rounded and clamped to 15-600 s', () => {
+  for (const [options, grace, sleeps] of [
+    [{}, 45, [60, 45]],
+    [{ keepAwakeReleaseGraceSecs: 15 }, 15, [60, 15]],
+    [{ keepAwakeReleaseGraceSecs: 1 }, 15, [60, 15]],
+    [{ keepAwakeReleaseGraceSecs: -30 }, 15, [60, 15]],
+    [{ keepAwakeReleaseGraceSecs: 29.6 }, 30, [60, 30]],
+    [{ keepAwakeReleaseGraceSecs: 600 }, 600, [60, ...Array(10).fill(60)]],
+    [{ keepAwakeReleaseGraceSecs: 5000 }, 600, [60, ...Array(10).fill(60)]],
+    [{ keepAwakeReleaseGraceSecs: '120' }, 45, [60, 45]],
+    [{ keepAwakeReleaseGraceSecs: null }, 45, [60, 45]],
+    [{ keepAwakeReleaseGraceSecs: true }, 45, [60, 45]],
+  ]) {
+    const box = sandbox()
+    try {
+      const label = JSON.stringify(options)
+      const r = runSteps(box, { 1: [] }, { options })
+      assert.deepEqual(r.rest, [`idle-mode-gate: mode off, androlink keep_awake none for ${grace} s, suspending`], label)
+      assert.deepEqual(r.sleeps, sleeps, label)
+    } finally {
+      cleanup(box)
+    }
   }
 })
 
@@ -1036,16 +1226,20 @@ test('gate options are declared in the ConfigLoader with the same ranges', async
   assert.match(loader, /property int keepAwakeMaxHoldMins: 120\n/)
   assert.match(loader, /root\.clamp\(adapterItem\.keepAwakeRecheckSecs, 15, 600, 60\)/)
   assert.match(loader, /root\.clamp\(adapterItem\.keepAwakeMaxHoldMins, 1, 1440, 120\)/)
+  assert.match(loader, /property int keepAwakeReleaseGraceSecs: 45\n/)
+  assert.match(loader, /root\.clamp\(adapterItem\.keepAwakeReleaseGraceSecs, 15, 600, 45\)/)
   assert.match(script, /floor_default=20 floor_min=0 floor_max=100\n/)
   assert.match(script, /max_age_default=90 max_age_min=15 max_age_max=3600\n/)
   assert.match(script, /recheck_default=60 recheck_min=15 recheck_max=600\n/)
   assert.match(script, /max_hold_default=120 max_hold_min=1 max_hold_max=1440\n/)
+  assert.match(script, /grace_default=45 grace_min=15 grace_max=600\n/)
+  assert.match(script, /read_option keepAwakeReleaseGraceSecs /)
   assert.match(script, /read_option keepAwakeRecheckSecs /)
   assert.match(script, /read_option keepAwakeMaxHoldMins /)
   assert.match(script, /read_option keepAwakeBatteryFloor /)
   assert.match(script, /read_option keepAwakeMaxAgeSecs /)
   assert.ok((statSync(gate).mode & 0o111) !== 0, 'the gate script stays executable')
   const m = await manifest()
-  assert.equal(m.version, '1.2.0')
+  assert.equal(m.version, '1.2.1')
   assert.deepEqual(m.capabilities, [], 'the gate runs outside the shell; the module itself needs no capability')
 })

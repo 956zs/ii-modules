@@ -19,10 +19,13 @@
 #
 # A hold is not decided once: the gate waits and checks again every
 # keepAwakeRecheckSecs, and suspends as soon as the hold no longer applies or
-# after keepAwakeMaxHoldMins. The wait ends without a suspend when `resume`
-# runs (input), when the mode leaves "off", or when a screen is on again (the
-# sign of input when hypridle.conf lacks the on-resume line). The waiting
-# gate's PID is in $XDG_RUNTIME_DIR/idle-mode-gate.pid (0600, locked).
+# after keepAwakeMaxHoldMins. When only keep_awake empties (a call's mic or
+# camera reconnecting, the next queued transfer), it suspends only once the
+# list stayed empty at every check for keepAwakeReleaseGraceSecs. The wait
+# ends without a suspend when `resume` runs (input), when the mode leaves
+# "off", or when a screen is on again (the sign of input when hypridle.conf
+# lacks the on-resume line). The waiting gate's PID is in
+# $XDG_RUNTIME_DIR/idle-mode-gate.pid (0600, locked).
 #
 # Prints one line with the decision and its reasons, and one more when a wait
 # ends. Usage: idle-mode-gate.sh suspend [--dry-run] | idle-mode-gate.sh resume
@@ -38,6 +41,7 @@ floor_default=20 floor_min=0 floor_max=100
 max_age_default=90 max_age_min=15 max_age_max=3600
 recheck_default=60 recheck_min=15 recheck_max=600
 max_hold_default=120 max_hold_min=1 max_hold_max=1440
+grace_default=45 grace_min=15 grace_max=600
 # androlink's own heartbeat range (status.heartbeat_s); outside it the
 # file's value is ignored.
 heartbeat_min=1 heartbeat_max=3600
@@ -177,43 +181,52 @@ androlink_state() { # max_age_secs now_secs
     echo "fresh ${reasons:-}"
 }
 
-# Whether androlink holds the idle suspend right now: sets hold (1 or 0) and
+# Whether androlink holds the idle suspend right now: sets hold (1 or 0),
+# empty (1 when keep_awake is empty in a fresh status file and the power
+# source would let a reason hold: a reason coming back would hold again) and
 # why (the reasons, for the log line). Reads the options on every call.
 decide() {
-    local floor max_age now state reasons power level
+    local floor max_age now state reasons power level power_ok=0 power_why
     floor=$(read_option keepAwakeBatteryFloor "$floor_default" "$floor_min" "$floor_max")
     max_age=$(read_option keepAwakeMaxAgeSecs "$max_age_default" "$max_age_min" "$max_age_max")
     now=${EPOCHSECONDS:-$(date +%s)}
-    hold=0
+    hold=0 empty=0
     read -r state reasons <<<"$(androlink_state "$max_age" "$now")"
     if [ "$state" != fresh ]; then
         why="androlink status $state"
-    elif [ -z "${reasons:-}" ]; then
+        return
+    fi
+    power=$(power_state)
+    case "$power" in
+        ac)
+            power_ok=1
+            power_why="on AC"
+            ;;
+        no-battery)
+            power_ok=1
+            power_why="no battery"
+            ;;
+        "battery "*)
+            level=${power#battery }
+            if ((level >= floor)); then
+                power_ok=1
+                power_why="battery $level% (floor $floor%)"
+            else
+                power_why="battery $level% below floor $floor%"
+            fi
+            ;;
+        *)
+            power_why="battery level unknown"
+            ;;
+    esac
+    if [ -n "${reasons:-}" ]; then
+        hold=$power_ok
+        why="androlink keep_awake $reasons, $power_why"
+    elif ((power_ok)); then
+        empty=1
         why="androlink keep_awake none"
     else
-        power=$(power_state)
-        case "$power" in
-            ac)
-                hold=1
-                why="androlink keep_awake $reasons, on AC"
-                ;;
-            no-battery)
-                hold=1
-                why="androlink keep_awake $reasons, no battery"
-                ;;
-            "battery "*)
-                level=${power#battery }
-                if ((level >= floor)); then
-                    hold=1
-                    why="androlink keep_awake $reasons, battery $level% (floor $floor%)"
-                else
-                    why="androlink keep_awake $reasons, battery $level% below floor $floor%"
-                fi
-                ;;
-            *)
-                why="androlink keep_awake $reasons, battery level unknown"
-                ;;
-        esac
+        why="androlink keep_awake none, $power_why"
     fi
 }
 
@@ -281,9 +294,10 @@ release_hold() {
 # suspend now ($why says why). Exits without suspending when the wait can't
 # be kept safely or is cancelled, the mode leaves "off" or a screen is on.
 wait_while_held() {
-    local fd recheck max_hold held=0 wait_secs
+    local fd recheck max_hold grace held=0 wait_secs empty_for=-1
     recheck=$(read_option keepAwakeRecheckSecs "$recheck_default" "$recheck_min" "$recheck_max")
     max_hold=$(read_option keepAwakeMaxHoldMins "$max_hold_default" "$max_hold_min" "$max_hold_max")
+    grace=$(read_option keepAwakeReleaseGraceSecs "$grace_default" "$grace_min" "$grace_max")
     if ! runtime_private; then
         echo "idle-mode-gate: mode off, $why, not suspending (no private XDG_RUNTIME_DIR to wait in)"
         exit 0
@@ -313,9 +327,11 @@ wait_while_held() {
     trap 'release_hold; echo "idle-mode-gate: input, not suspending"; exit 0' TERM INT HUP
     echo "idle-mode-gate: mode off, $why, not suspending, checking again every $recheck s for up to $max_hold min"
     while :; do
-        # The next check comes after recheck seconds, or at the hold limit
-        # when that is sooner, so a hold never runs past the limit.
+        # The next check comes after recheck seconds, or when the release
+        # grace or the hold limit ends if that is sooner, so neither is
+        # overshot.
         wait_secs=$recheck
+        ((empty_for >= 0 && grace - empty_for < wait_secs)) && wait_secs=$((grace - empty_for))
         ((max_hold * 60 - held < wait_secs)) && wait_secs=$((max_hold * 60 - held))
         # The sleep gets no copy of the locked hold file, so it can't keep
         # the lock after the gate is killed outright (SIGKILL, OOM).
@@ -338,7 +354,27 @@ wait_while_held() {
             exit 0
         fi
         decide
-        ((hold)) || break
+        if ((hold)); then
+            empty_for=-1
+        elif ((empty)); then
+            # keep_awake is empty in a fresh file: a reason may be about to
+            # come back (androlink drops mic and webcam while a stream
+            # reconnects). Suspend only once it stayed empty at every check
+            # for the whole grace; any reason back starts the grace anew.
+            if ((empty_for < 0)); then
+                empty_for=0
+            else
+                empty_for=$((empty_for + wait_secs))
+            fi
+            if ((empty_for >= grace)); then
+                why="$why for $empty_for s"
+                break
+            fi
+        else
+            # Stale, stopped, missing or invalid status, or the battery below
+            # the floor or unreadable: no grace.
+            break
+        fi
         if ((held >= max_hold * 60)); then
             why="$why, held $max_hold min (the limit)"
             break

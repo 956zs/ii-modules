@@ -51,6 +51,7 @@ FileView {
         adapterItem.keepAwakeMaxAgeSecs = root.clamp(adapterItem.keepAwakeMaxAgeSecs, 15, 3600, 90);
         adapterItem.keepAwakeRecheckSecs = root.clamp(adapterItem.keepAwakeRecheckSecs, 15, 600, 60);
         adapterItem.keepAwakeMaxHoldMins = root.clamp(adapterItem.keepAwakeMaxHoldMins, 1, 1440, 120);
+        adapterItem.keepAwakeReleaseGraceSecs = root.clamp(adapterItem.keepAwakeReleaseGraceSecs, 15, 600, 45);
         root.materializing = false;
         if (root.owner)
             writeAdapter();
@@ -90,5 +91,9 @@ FileView {
         // The gate holds the idle suspend for at most this many minutes per
         // idle period, then suspends whatever androlink reports.
         property int keepAwakeMaxHoldMins: 120
+        // When keep_awake empties during a hold (a call's mic or camera
+        // reconnecting), the gate suspends only once it stayed empty this
+        // many seconds.
+        property int keepAwakeReleaseGraceSecs: 45
     }
 }

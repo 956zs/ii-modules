@@ -35,8 +35,12 @@ off 模式下，androlink 正在做休眠會打斷的事時，gate 也會跳過�
 | 最新但 `keep_awake` 是空的、過期、已結束、不存在或無效 | 不限 | 照常 |
 
 擋下休眠不是一次就定案。電腦持續閒置時，gate 每 `keepAwakeRecheckSecs` 秒重新檢查
-一次，只要符合上表「照常」的情況就立刻休眠，例如傳檔結束或電量掉到下限以下。擋滿
+一次，只要符合上表「照常」的情況就立刻休眠，例如電量掉到下限以下或狀態檔過期。擋滿
 `keepAwakeMaxHoldMins` 分鐘後，不論 androlink 回報什麼都會休眠。
+
+`keep_awake` 變空時會先給一段寬限期，因為串流重新連線時 androlink 會暫時拿掉
+`mic` 和 `webcam`。要在 `keepAwakeReleaseGraceSecs` 秒內每次檢查都是空的才會
+休眠；原因回來就繼續擋下。只有在電源條件允許擋下休眠時才有寬限期。
 
 有輸入時（hypridle 執行 gate 的 `resume`）、模式切到半開或全開，或有螢幕重新亮起時，
 gate 會結束等待，不會休眠。
@@ -103,6 +107,7 @@ listener {
 | `keepAwakeMaxAgeSecs` | `90` | androlink 的狀態檔要在這麼多秒內寫過才算數；檔案寫明的 `heartbeat_s` 三倍較長時以它為準（15–3600） |
 | `keepAwakeRecheckSecs` | `60` | 擋下閒置休眠期間，每隔這麼多秒重新檢查一次（15–600） |
 | `keepAwakeMaxHoldMins` | `120` | 每段閒置最多擋下閒置休眠這麼多分鐘，之後就休眠（1–1440） |
+| `keepAwakeReleaseGraceSecs` | `45` | 擋下期間，`keep_awake` 要空滿這麼多秒才休眠，避免串流重新連線時通話被中斷（15–600） |
 
 磁貼每次切換都會寫入這個檔案，手動修改也會即時套用。超出範圍的數值會由 shell 修正為
 最近的合法值；gate script 每次執行都會讀取這個檔案，並用同樣的範圍修正。
@@ -136,15 +141,15 @@ listener {
   寫入的目錄時才會等待。`idle-mode-gate.sh resume` 只會停止持有那把鎖、正在執行
   gate `suspend` 的程序；沒人鎖住的殘留檔案會被刪除。新的一段閒置會取代仍在等待
   的 gate。
-- 每次檢查都會重新讀取模式、電量下限與新鮮度選項、狀態檔與電源；檢查間隔與擋下
-  上限在開始等待時讀取。最後一次等待會縮短，剛好在擋下上限時結束，不會超過
-  上限。
+- 每次檢查都會重新讀取模式、電量下限與新鮮度選項、狀態檔與電源；檢查間隔、擋下
+  上限與寬限期在開始等待時讀取。等待會縮短到剛好在擋下上限或寬限期結束時檢查，
+  兩者都不會超過。
 - 檢查後要休眠前，所有螢幕都必須仍然關閉（`hyprctl monitors` 回報 `dpmsStatus`
   為 false）。有螢幕亮著或沒有回應時，結束等待且不休眠。
 - 每次執行印出一行判斷結果與原因，例如
   `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending,
   checking again every 60 s for up to 120 min`；等待結束時再印一行，例如
-  `idle-mode-gate: mode off, androlink keep_awake none, suspending`。
+  `idle-mode-gate: mode off, androlink keep_awake none for 45 s, suspending`。
 - `idle-mode-gate.sh suspend --dry-run` 只印出判斷結果，不會休眠也不會等待。
 
 ## 限制
@@ -157,6 +162,10 @@ listener {
 - 沒有 `on-resume` 那一行時，只能在下次檢查看到螢幕亮起才知道有輸入。請加上那一行。
 - 擋滿 `keepAwakeMaxHoldMins` 時，即使插著電、正在通話或傳檔也會休眠。無人看管的
   長時間傳檔請調高上限。
+- 閒置期間通話或傳檔結束後，要再過 `keepAwakeReleaseGraceSecs` 秒才會休眠。重新
+  連線超過寬限期時，仍會結束擋下。
+- 每段閒置的第一次檢查（休眠監聽觸發時）沒有寬限期：那時 `keep_awake` 是空的就
+  直接休眠。
 - 只以 USB 電源出現（沒有 `Mains` 項目）的充電器不會被當成插電，改由電量下限決定。
 - shell 啟動完成前 full 不會生效：window 模塊可能要數十秒才載入完成，之後還有
   3 秒的重建延遲。

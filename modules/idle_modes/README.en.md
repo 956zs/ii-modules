@@ -40,8 +40,15 @@ happen on time.
 
 A hold is not a one-time decision. While the PC stays idle, the gate checks
 again every `keepAwakeRecheckSecs` and suspends as soon as a row above says
-"runs", for example when a transfer ends or the battery drops below the floor.
-After `keepAwakeMaxHoldMins` it suspends whatever androlink reports.
+"runs", for example when the battery drops below the floor or the status file
+goes stale. After `keepAwakeMaxHoldMins` it suspends whatever androlink
+reports.
+
+An empty `keep_awake` gets a grace first, because androlink drops `mic` and
+`webcam` while a stream reconnects. The gate suspends only when the list stays
+empty at every check for `keepAwakeReleaseGraceSecs`; a reason that comes back
+keeps the hold. This applies only while the power source would let a reason
+hold the suspend.
 
 The wait ends without a suspend when there is input (hypridle runs the gate's
 `resume`), when the mode changes to half or full, or when a screen is on
@@ -112,6 +119,7 @@ Settings path: `~/.config/illogical-impulse/modules/idle_modes.json`.
 | `keepAwakeMaxAgeSecs` | `90` | androlink's status file counts only when written within this many seconds, or within three of the `heartbeat_s` it names, whichever is longer (15–3600) |
 | `keepAwakeRecheckSecs` | `60` | While the idle suspend is held, check again this often (15–600) |
 | `keepAwakeMaxHoldMins` | `120` | Hold the idle suspend for at most this many minutes per idle period, then suspend (1–1440) |
+| `keepAwakeReleaseGraceSecs` | `45` | During a hold, suspend only after `keep_awake` stayed empty this many seconds, so a stream reconnecting doesn't end a call (15–600) |
 
 The tile writes this file on every change, and hand edits apply live. The
 shell heals out-of-range numbers to the nearest valid value; the gate script
@@ -155,16 +163,16 @@ reads the file on each run and clamps the same way.
   holds that lock and runs the gate's `suspend`; a leftover file is removed.
   A new idle period replaces a gate that still waits.
 - Each check reads the mode, the floor and freshness options, the status
-  file and the power supply again; the check interval and the hold limit are
-  read when the wait starts. The last wait is cut short to end at the hold
-  limit, so a hold never runs past it.
+  file and the power supply again; the check interval, the hold limit and the
+  grace are read when the wait starts. A wait is cut short to end at the hold
+  limit or the end of a grace, so neither is overshot.
 - Before a suspend from a check, every screen must still be off
   (`hyprctl monitors` reports `dpmsStatus` false). A screen that is on, or
   no answer, ends the wait without a suspend.
 - Every run prints one line with the decision and its reasons, for example
   `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending,
   checking again every 60 s for up to 120 min`, and one more when a wait
-  ends, such as `idle-mode-gate: mode off, androlink keep_awake none,
+  ends, such as `idle-mode-gate: mode off, androlink keep_awake none for 45 s,
   suspending`.
 - `idle-mode-gate.sh suspend --dry-run` prints the decision without suspending
   or waiting.
@@ -183,6 +191,11 @@ reads the file on each run and clamps the same way.
   turning on, at the next check. Install the line.
 - At `keepAwakeMaxHoldMins` the PC suspends even on AC and in the middle of a
   call or transfer. Raise the limit for longer unattended transfers.
+- When a call or transfer ends while the PC is idle, the suspend comes
+  `keepAwakeReleaseGraceSecs` later. A reconnect longer than the grace still
+  ends the hold.
+- The first check of an idle period (the suspend listener firing) has no
+  grace: an empty `keep_awake` at that moment suspends at once.
 - A charger that shows up only as a USB supply (no `Mains` entry) is not seen
   as AC; the battery floor decides instead.
 - "full" is not in effect until the shell has finished starting: window
