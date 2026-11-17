@@ -77,7 +77,7 @@ pkill -x hypridle; hyprctl dispatch 'hl.dsp.exec_cmd("hypridle")'
 | --- | --- | --- |
 | `mode` | `"off"` | `"off"`、`"half"` 或 `"full"`；無效值會修正為 `"off"` |
 | `keepAwakeBatteryFloor` | `20` | 電量（百分比）不低於這個值時，androlink 的使用中原因才會擋下閒置休眠（0–100） |
-| `keepAwakeMaxAgeSecs` | `90` | androlink 的狀態檔要在這麼多秒內寫過才算數（15–3600） |
+| `keepAwakeMaxAgeSecs` | `90` | androlink 的狀態檔要在這麼多秒內寫過才算數；檔案寫明的 `heartbeat_s` 三倍較長時以它為準（15–3600） |
 
 磁貼每次切換都會寫入這個檔案，手動修改也會即時套用。超出範圍的數值會由 shell 修正為
 最近的合法值；gate script 每次執行都會讀取這個檔案，並用同樣的範圍修正。
@@ -93,8 +93,10 @@ pkill -x hypridle; hyprctl dispatch 'hl.dsp.exec_cmd("hypridle")'
   （檔案缺少、無法讀取或值無效時也視為 `"off"`）。
 - gate 只在 `XDG_RUNTIME_DIR` 是絕對路徑、檔案不超過 64 KiB 時讀取
   `$XDG_RUNTIME_DIR/androlink/status.json`。檔案必須是單一 JSON 物件，`version` 為
-  1、`running` 為 true，`updated` 不早於 `keepAwakeMaxAgeSecs` 秒前（也不晚於它的
-  三分之一）。`keep_awake` 缺少或為 `null` 時視為沒有原因。
+  1、`running` 為 true，`updated` 不早於新鮮度上限（也不超前它的三分之一）。
+  `keep_awake` 缺少或為 `null` 時視為沒有原因。
+- 新鮮度上限是 `keepAwakeMaxAgeSecs`。狀態檔最上層的 `heartbeat_s` 介於 1 到 3600
+  時，若三次 heartbeat 較長就改用它；其他值一律忽略。
 - 原因代碼只記錄符合代碼格式的項目（小寫字母、數字與 `_`，最多 32 字元；最多 8 個，
   排序並去除重複），清單裡的其他內容一律忽略。
 - 電源資訊來自 `/sys/class/power_supply`：任何 `online` 為 1 的 `Mains` 視為插電；

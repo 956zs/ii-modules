@@ -414,6 +414,44 @@ gateTest('gate: an offline mains supply with no battery in sight is unknown', ()
   }
 })
 
+// ---- II-GATE-3: freshness follows the file's own heartbeat ----
+
+gateTest("gate: the status file's heartbeat_s widens the freshness window to three heartbeats", () => {
+  const box = sandbox()
+  try {
+    setPower(box, onAc)
+    const check = (fields, expected, label) => {
+      setStatus(box, status(fields))
+      assert.match(decide(box), expected, label)
+    }
+    const held = /keep_awake mic, on AC, not suspending$/
+    const stale = /androlink status stale, would suspend$/
+    // 120 s heartbeats: 360 s old is still fresh, and up to one heartbeat ahead.
+    check({ heartbeat_s: 120, updated: nowSecs() - 300 }, held, '300 s old, 120 s heartbeat')
+    check({ heartbeat_s: 120, updated: nowSecs() - 370 }, stale, '370 s old, 120 s heartbeat')
+    check({ heartbeat_s: 120, updated: nowSecs() + 110 }, held, '110 s ahead')
+    check({ heartbeat_s: 120, updated: nowSecs() + 130 }, stale, '130 s ahead')
+    // The top of androlink's range.
+    check({ heartbeat_s: 3600, updated: nowSecs() - 10700 }, held, '3600 s heartbeat')
+    check({ heartbeat_s: 3600, updated: nowSecs() - 10900 }, stale, 'past three 3600 s heartbeats')
+    // Shorter heartbeats never narrow the option's window.
+    check({ heartbeat_s: 10, updated: nowSecs() - 80 }, held, '10 s heartbeat keeps 90 s')
+    check({ heartbeat_s: 1, updated: nowSecs() - 100 }, stale, '1 s heartbeat, past 90 s')
+    check({ heartbeat_s: 31.5, updated: nowSecs() - 92 }, held, 'fractional: ceil(94.5) = 95 s')
+    // Anything outside 1–3600, or not a number, is ignored: 90 s.
+    for (const heartbeat of [0, 0.5, -30, 3601, 1e9, '120', null, true, [120], { s: 120 }]) {
+      check({ heartbeat_s: heartbeat, updated: nowSecs() - 80 }, held, `ignored ${JSON.stringify(heartbeat)}, 80 s`)
+      check({ heartbeat_s: heartbeat, updated: nowSecs() - 100 }, stale, `ignored ${JSON.stringify(heartbeat)}, 100 s`)
+    }
+    // A longer option wins over three short heartbeats.
+    setConfig(box, { keepAwakeMaxAgeSecs: 300 })
+    check({ heartbeat_s: 30, updated: nowSecs() - 200 }, held, 'option 300 s')
+    check({ heartbeat_s: 30, updated: nowSecs() - 310 }, stale, 'past the 300 s option')
+  } finally {
+    cleanup(box)
+  }
+})
+
 gateTest('gate: without --dry-run it suspends through systemctl, then loginctl', () => {
   const box = sandbox()
   try {

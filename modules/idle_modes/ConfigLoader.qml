@@ -79,7 +79,8 @@ FileView {
         // on battery at or above this percent.
         property int keepAwakeBatteryFloor: 20
         // androlink's status file counts only when written within this many
-        // seconds (three of its 30 s heartbeats by default).
+        // seconds (three of its 30 s heartbeats by default), or within three
+        // of the heartbeat_s the file names, whichever is longer.
         property int keepAwakeMaxAgeSecs: 90
     }
 }

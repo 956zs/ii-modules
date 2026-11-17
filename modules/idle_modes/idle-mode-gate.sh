@@ -8,9 +8,10 @@
 #
 # In mode "off" it also holds the idle suspend while androlink reports work
 # that a suspend would cut off: a fresh $XDG_RUNTIME_DIR/androlink/status.json
-# (version 1, running, written within keepAwakeMaxAgeSecs) with a non-empty
-# keep_awake list ("mic", "webcam", "transfer"), and the PC on AC power or its
-# battery at or above keepAwakeBatteryFloor percent. Anything missing or
+# (version 1, running, written within keepAwakeMaxAgeSecs or three of the
+# file's own heartbeat_s, whichever is longer) with a non-empty keep_awake
+# list ("mic", "webcam", "transfer"), and the PC on AC power or its battery at
+# or above keepAwakeBatteryFloor percent. Anything missing or
 # invalid falls back to the plain mode check. Only this idle suspend is held:
 # locking, lid close, the ii Sleep menu and low-battery suspend are unchanged.
 #
@@ -26,6 +27,9 @@ power_dir="${IDLE_MODES_POWER_SUPPLY_DIR:-/sys/class/power_supply}"
 # ranges; the script clamps on its own because it can run before the shell).
 floor_default=20 floor_min=0 floor_max=100
 max_age_default=90 max_age_min=15 max_age_max=3600
+# androlink's own heartbeat range (status.heartbeat_s); outside it the
+# file's value is ignored.
+heartbeat_min=1 heartbeat_max=3600
 # Larger status files are not androlink's; don't parse them.
 status_max_bytes=65536
 
@@ -103,7 +107,7 @@ power_state() {
 # androlink's keep-awake reasons: "fresh <codes>" (comma-separated, possibly
 # empty) or "missing" | "invalid" | "stopped" | "stale".
 androlink_state() { # max_age_secs now_secs
-    local runtime="${XDG_RUNTIME_DIR:-}" file parsed updated reasons size age
+    local runtime="${XDG_RUNTIME_DIR:-}" file parsed updated beats reasons size age limit
     # Without an absolute XDG_RUNTIME_DIR androlink writes no status file.
     [[ "$runtime" == /* ]] || { echo missing; return; }
     file="$runtime/androlink/status.json"
@@ -113,13 +117,15 @@ androlink_state() { # max_age_secs now_secs
     # Exactly one JSON object. Reason codes are kept only when they look like
     # codes, so the log line never carries anything else; duplicates are
     # dropped and the order is fixed. A missing or null keep_awake is none.
-    parsed=$(jq -r -s '
+    # A heartbeat_s in androlink's range gives three heartbeats (0 if not).
+    parsed=$(jq -r -s --argjson hmin "$heartbeat_min" --argjson hmax "$heartbeat_max" '
         if length != 1 then "invalid" else .[0] |
         if type != "object" or .version != 1 then "invalid"
         elif (.updated | type) != "number" or .updated <= 0 or .updated >= 1e11 then "invalid"
         elif .running != true then "stopped"
         elif ((.keep_awake // []) | type) != "array" then "invalid"
-        else "\(.updated | floor) \([(.keep_awake // [])[]
+        else "\(.updated | floor) \(.heartbeat_s
+                | if type == "number" and . >= $hmin and . <= $hmax then . * 3 | ceil else 0 end) \([(.keep_awake // [])[]
             | select(type == "string" and test("\\A[a-z][a-z0-9_]{0,31}\\z"))] | unique | .[:8] | join(","))"
         end end' "$file" 2>/dev/null) || { echo invalid; return; }
     case "$parsed" in
@@ -128,12 +134,19 @@ androlink_state() { # max_age_secs now_secs
             return
             ;;
     esac
-    read -r updated reasons <<<"$parsed"
-    [[ "$updated" =~ ^[0-9]{1,11}$ && "${reasons:-}" =~ ^[a-z0-9_,]*$ ]] || { echo invalid; return; }
+    read -r updated beats reasons <<<"$parsed"
+    [[ "$updated" =~ ^[0-9]{1,11}$ && "$beats" =~ ^[0-9]{1,5}$ && "${reasons:-}" =~ ^[a-z0-9_,]*$ ]] || {
+        echo invalid
+        return
+    }
+    # The option, widened to three of androlink's heartbeats when it says it
+    # writes less often.
+    limit=$1
+    ((beats > limit)) && limit=$beats
     age=$(($2 - updated))
     # Older than the limit, or ahead of this clock by more than one heartbeat
     # (a third of the limit): androlink's own staleness rule.
-    if ((age > $1 || age < -($1 / 3))); then
+    if ((age > limit || age < -(limit / 3))); then
         echo stale
         return
     fi

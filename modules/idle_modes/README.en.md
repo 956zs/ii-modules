@@ -82,7 +82,7 @@ Settings path: `~/.config/illogical-impulse/modules/idle_modes.json`.
 | --- | --- | --- |
 | `mode` | `"off"` | `"off"`, `"half"` or `"full"`; invalid values heal to `"off"` |
 | `keepAwakeBatteryFloor` | `20` | Battery percent at or above which androlink's keep-awake reasons hold the idle suspend (0–100) |
-| `keepAwakeMaxAgeSecs` | `90` | androlink's status file counts only when written within this many seconds (15–3600) |
+| `keepAwakeMaxAgeSecs` | `90` | androlink's status file counts only when written within this many seconds, or within three of the `heartbeat_s` it names, whichever is longer (15–3600) |
 
 The tile writes this file on every change, and hand edits apply live. The
 shell heals out-of-range numbers to the nearest valid value; the gate script
@@ -101,8 +101,11 @@ reads the file on each run and clamps the same way.
 - The gate reads `$XDG_RUNTIME_DIR/androlink/status.json` only when
   `XDG_RUNTIME_DIR` is absolute and the file is at most 64 KiB. It must hold
   one JSON object with `version` 1, `running` true and an `updated` no older
-  than `keepAwakeMaxAgeSecs` (and no more than a third of it in the future).
+  than the freshness limit (and no more than a third of it in the future).
   A missing or `null` `keep_awake` means none.
+- The freshness limit is `keepAwakeMaxAgeSecs`. A top-level `heartbeat_s`
+  from 1 to 3600 widens it to three heartbeats when that is longer; any other
+  value is ignored.
 - Reason codes are logged only when they look like codes (lowercase letters,
   digits and `_`, at most 32 characters; at most 8, sorted, without
   duplicates); anything else in the list is ignored.
