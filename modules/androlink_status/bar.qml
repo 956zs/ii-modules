@@ -13,7 +13,8 @@ import "StatusLogic.js" as Logic
  * battery percent and a charging bolt; dimmed while the phone is
  * disconnected or androlink stopped updating its status file; a red dot on
  * the icon while the background helper is stopped; the unread count; a
- * camera mark while the phone is used as a webcam. Clicking opens a panel
+ * camera mark while the phone is used as a webcam; "Saving battery" while
+ * androlink waits for the phone to call back. Clicking opens a panel
  * with details and actions. Bar entries exist once per monitor and only
  * read; the low-battery reminder lives in the window slot (main.qml).
  */
@@ -81,7 +82,7 @@ BarGroup {
         GridLayout {
             id: content
             anchors.centerIn: parent
-            columns: root.barVertical ? 1 : 6
+            columns: root.barVertical ? 1 : 7
             columnSpacing: 4
             rowSpacing: 1
 
@@ -133,6 +134,15 @@ BarGroup {
                 visible: root.model.quiet && !root.barVertical
                 Layout.alignment: Qt.AlignVCenter
                 text: Translation.tr("Not running")
+                font.pixelSize: Appearance.font.pixelSize.smaller
+                color: root.dimColor
+            }
+
+            // The phone hung up to save battery; androlink waits for it.
+            StyledText {
+                visible: root.model.savingBattery && !root.barVertical
+                Layout.alignment: Qt.AlignVCenter
+                text: Translation.tr("Saving battery")
                 font.pixelSize: Appearance.font.pixelSize.smaller
                 color: root.dimColor
             }
@@ -206,6 +216,7 @@ BarGroup {
                     reader: status
                     actionTimeoutSecs: cfg.options.actionTimeoutSecs
                     lowThreshold: cfg.options.lowBatteryThreshold
+                    refreshMinIntervalSecs: cfg.options.refreshMinIntervalSecs
                     openCount: root.panelOpenCount
                 }
             }

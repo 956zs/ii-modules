@@ -9,8 +9,9 @@ import "StatusLogic.js" as Logic
 /*
  * Panel opened from the bar capsule: the phone's name and connection state,
  * battery, route, background helper and unread count, a camera-in-use row
- * with a stop action, and the androlink CLI actions. With several phones a
- * row of chips picks which one the details and actions apply to.
+ * with a stop action, "Saving battery" while androlink waits for the phone to
+ * call back, and the androlink CLI actions (Reconnect included). With several
+ * phones a row of chips picks which one the details and actions apply to.
  */
 ColumnLayout {
     id: root
@@ -21,6 +22,12 @@ ColumnLayout {
     property int actionTimeoutSecs: 15
     // Low-battery threshold (module option); colours the battery value.
     property int lowThreshold: 20
+    // Least seconds between two Reconnect runs (module option, 0-300).
+    property int refreshMinIntervalSecs: 10
+    // Unix seconds of the last Reconnect run from this panel (0 = never).
+    property real lastRefreshSecs: 0
+    // True while Reconnect waits out refreshMinIntervalSecs.
+    property bool refreshCooling: false
     // Bumped by the bar entry each time the panel reopens.
     property int openCount: 0
     onOpenCountChanged: root.reset()
@@ -43,6 +50,10 @@ ColumnLayout {
     // CLI can be told (with several phones, a safe id).
     readonly property bool deviceActionsReady: root.appRunning && !root.stale && root.phone !== null && root.phone.connected
         && Logic.canTarget(root.phone, root.phones.length)
+    // The selected phone hung up to save battery and this PC waits for it to
+    // call back (androlink's 「省電中」); only while the file is current.
+    readonly property bool savingBattery: root.appRunning && !root.stale && root.phone !== null
+        && !root.phone.connected && root.phone.callsBack
 
     spacing: 10
 
@@ -71,7 +82,7 @@ ColumnLayout {
         if (!root.phone)
             return "";
         if (!root.phone.connected)
-            return Translation.tr("Not connected");
+            return root.savingBattery ? Translation.tr("Saving battery") : Translation.tr("Not connected");
         switch (root.phone.route) {
         case "lan":
             return Translation.tr("Connected over LAN");
@@ -151,8 +162,19 @@ ColumnLayout {
         const argv = Logic.actionArgs(flag, root.phone, root.phones.length);
         if (!argv)
             return;
+        // Reconnect wakes phones on mobile data: at most once per
+        // refreshMinIntervalSecs from this panel (androlink limits it too).
+        const nowSecs = Date.now() / 1000;
+        if (flag === "--refresh" && Logic.refreshWaitSecs(root.lastRefreshSecs, nowSecs, root.refreshMinIntervalSecs) > 0)
+            return;
         root.message = "";
-        runner.run(flag, argv);
+        if (!runner.run(flag, argv) || flag !== "--refresh")
+            return;
+        root.lastRefreshSecs = nowSecs;
+        if (root.refreshMinIntervalSecs > 0) {
+            root.refreshCooling = true;
+            refreshCooldown.restart();
+        }
     }
 
     CommandRunner {
@@ -164,9 +186,18 @@ ColumnLayout {
                 root.message = root.outcomeText(outcome, runner.lastExitCode);
             else if (flag === "--send-clipboard")
                 root.message = Translation.tr("Sending your clipboard to the phone.");
+            else if (flag === "--refresh")
+                root.message = Translation.tr("Reconnecting.");
             else
                 root.message = "";
         }
+    }
+
+    // Ends the Reconnect cool-down; run() re-checks the time on its own.
+    Timer {
+        id: refreshCooldown
+        interval: Math.max(1, root.refreshMinIntervalSecs) * 1000
+        onTriggered: root.refreshCooling = false
     }
 
     component DetailRow: RowLayout {
@@ -368,9 +399,11 @@ ColumnLayout {
                 ? Appearance.colors.colError : Appearance.colors.colOnLayer1
         }
         DetailRow {
-            iconName: root.routeIcon(root.phone ? root.phone.route : null)
+            iconName: root.savingBattery ? "battery_saver" : root.routeIcon(root.phone ? root.phone.route : null)
             label: Translation.tr("Connection")
-            value: root.phone && root.phone.connected ? root.routeLabel(root.phone.route) : Translation.tr("Not connected")
+            value: root.phone && root.phone.connected ? root.routeLabel(root.phone.route)
+                : root.savingBattery ? Translation.tr("Saving battery")
+                : Translation.tr("Not connected")
         }
         DetailRow {
             iconName: "smart_toy"
@@ -414,8 +447,17 @@ ColumnLayout {
             label: Translation.tr("Open DeX")
             onClicked: root.run("--dex")
         }
+        // Ends the wait for every phone that hung up to save battery and
+        // syncs again (androlink --refresh; it never names a phone).
         ActionButton {
-            Layout.columnSpan: root.appRunning && root.phone !== null ? 1 : 2
+            visible: root.appRunning && root.phone !== null
+            enabled: root.appRunning && !root.stale && !runner.busy && !root.refreshCooling
+            iconName: "sync"
+            label: Translation.tr("Reconnect")
+            onClicked: root.run("--refresh")
+        }
+        ActionButton {
+            Layout.columnSpan: 2
             iconName: "open_in_new"
             label: Translation.tr("Open androlink")
             onClicked: root.run("")
