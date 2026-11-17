@@ -30,6 +30,7 @@ test('a live single-phone file parses to the contract fields', async () => {
     unread: 3,
     ringing: false,
     webcam: false,
+    callsBack: false,
   }])
   assert.equal(L.appRunning(L.parseStatus(await fixture('live-one.json'), FRESH, 30)), true)
 })
@@ -98,7 +99,7 @@ test('phone entries are sanitised field by field', async () => {
   assert.equal(r.phones.length, 3, 'non-object entries are dropped')
   assert.deepEqual(r.phones[0], {
     id: 'tab-s9-77aa', name: 'Galaxy Tab S9', connected: false, route: null, battery: null,
-    helper: 'not_set_up', unread: 0, ringing: false, webcam: false,
+    helper: 'not_set_up', unread: 0, ringing: false, webcam: false, callsBack: false,
   })
   const bad = r.phones[2]
   assert.equal(bad.id, '', 'an id the CLI could read as a flag is dropped')
@@ -109,6 +110,7 @@ test('phone entries are sanitised field by field', async () => {
   assert.equal(bad.unread, 0)
   assert.equal(bad.ringing, false)
   assert.equal(bad.webcam, false)
+  assert.equal(bad.callsBack, false)
   const long = plain(L.cleanPhone({ id: 'x', name: 'n'.repeat(200) }))
   assert.equal(long.name.length, 64)
   assert.ok(long.name.endsWith('…'))
@@ -157,7 +159,7 @@ test('the bar shows battery, charging, low battery and markers of the primary ph
   const live = plain(L.barModel(L.parseStatus(await fixture('live-one.json'), FRESH, 30), opts))
   assert.deepEqual(live, {
     shown: true, quiet: false, dim: false, name: 'Galaxy A54', batteryText: '60%', charging: false,
-    low: false, helperStopped: false, unread: 3, ringing: false, webcam: false,
+    low: false, helperStopped: false, unread: 3, ringing: false, webcam: false, savingBattery: false,
   })
   const charging = plain(L.barModel(L.parseStatus(await fixture('charging.json'), FRESH, 30), opts))
   assert.equal(charging.batteryText, '15%')
@@ -240,6 +242,17 @@ test('CLI exit codes map to the panel messages', () => {
   assert.equal(L.exitKind(101, true), 'failed')
   assert.equal(L.exitKind(-1, true), 'failed')
   assert.equal(L.exitKind(0, false), 'missingCli')
+  // Device actions: exit 2 means the phone can't be told.
+  for (const flag of ['--ring', '--ring-stop', '--send-clipboard', '--dex'])
+    assert.equal(L.exitKind(2, true, flag), 'noPhone', flag)
+  // Global actions name no phone: exit 2 is a refused option (an older
+  // androlink), shown with its code.
+  for (const flag of ['--refresh', '--webcam-stop']) {
+    assert.equal(L.exitKind(2, true, flag), 'failed', flag)
+    assert.equal(L.exitKind(1, true, flag), 'notRunning', flag)
+    assert.equal(L.exitKind(0, true, flag), '', flag)
+    assert.equal(L.exitKind(0, false, flag), 'missingCli', flag)
+  }
 })
 
 function phoneRecord(level, charging, extra = {}) {
@@ -353,4 +366,100 @@ test('reminder state survives a round trip through the config and rejects junk',
 test('the reminder argv ends options before the texts', () => {
   assert.deepEqual(plain(L.reminderArgv('Shell', 'phone', '-Galaxy battery low', '18% left.')),
     ['notify-send', '-a', 'Shell', '-i', 'phone', '--', '-Galaxy battery low', '18% left.'])
+})
+
+test('calls_back is read strictly; missing means false', async () => {
+  const r = plain(L.parseStatus(await fixture('saving-battery.json'), FRESH, 30))
+  assert.equal(r.state, 'live')
+  assert.equal(r.phones[0].callsBack, true)
+  assert.equal(r.phones[0].connected, false)
+  assert.equal(r.phones[0].mic, undefined, 'fields the module does not use are dropped')
+  for (const junk of ['true', 1, null, {}, [true]])
+    assert.equal(plain(L.cleanPhone({ id: 'a', calls_back: junk })).callsBack, false, JSON.stringify(junk))
+  assert.equal(plain(L.cleanPhone({ id: 'a' })).callsBack, false)
+})
+
+test('the bar says "Saving battery" only for a current, disconnected phone that calls back', async () => {
+  const saving = plain(L.barModel(L.parseStatus(await fixture('saving-battery.json'), FRESH, 30), opts))
+  assert.deepEqual(saving, {
+    shown: true, quiet: false, dim: true, name: 'Galaxy A54', batteryText: '48%', charging: false,
+    low: false, helperStopped: false, unread: 1, ringing: false, webcam: false, savingBattery: true,
+  })
+  // A stale file can't say the PC still waits.
+  const stale = plain(L.barModel(L.parseStatus(await fixture('saving-battery.json'), UPDATED + 600, 30), opts))
+  assert.equal(stale.savingBattery, false)
+  assert.equal(stale.dim, true)
+  // Simply offline, connected, or no phone at all: not saving battery.
+  assert.equal(plain(L.barModel(L.parseStatus(await fixture('disconnected.json'), FRESH, 30), opts)).savingBattery, false)
+  const connected = (await fixture('saving-battery.json')).replace('"connected": false', '"connected": true')
+  assert.equal(plain(L.barModel(L.parseStatus(connected, FRESH, 30), opts)).savingBattery, false)
+  assert.equal(plain(L.barModel(L.parseStatus(await fixture('no-phones.json'), FRESH, 30), opts)).savingBattery, false)
+  for (const text of [null, await fixture('not-running.json')]) {
+    const quiet = plain(L.barModel(L.parseStatus(text, FRESH, 30), { ...opts, showWhenNotRunning: true }))
+    assert.equal(quiet.savingBattery, false)
+  }
+  // The primary phone decides: a connected phone wins over one that calls back.
+  const two = L.parseStatus(JSON.stringify({
+    version: 1, updated: UPDATED, running: true,
+    phones: [
+      { id: 'tab', name: 'Tab', connected: false, calls_back: true },
+      { id: 'a54', name: 'A54', connected: true, battery: { level: 70, charging: false } },
+    ],
+  }), FRESH, 30)
+  const primary = plain(L.barModel(two, opts))
+  assert.equal(primary.name, 'A54')
+  assert.equal(primary.savingBattery, false)
+})
+
+test('Reconnect runs androlink --refresh with a fixed argv and never names a phone', async () => {
+  const record = plain(L.parseStatus(await fixture('several-phones.json'), FRESH, 30))
+  const [tab, a54, bad] = record.phones
+  for (const phone of [tab, a54, bad, null])
+    assert.deepEqual(plain(L.actionArgs('--refresh', phone, 3)), ['androlink', '--refresh'])
+  assert.deepEqual(plain(L.actionArgs('--refresh', a54, 1)), ['androlink', '--refresh'])
+  assert.deepEqual(plain(L.actionArgs('--refresh', null, 0)), ['androlink', '--refresh'])
+  for (const flag of ['--refresh=a54', '--refresh a54', 'refresh', '--Refresh'])
+    assert.equal(L.actionArgs(flag, a54, 1), null, flag)
+})
+
+test('Reconnect waits out the minimum interval', () => {
+  const T = 1794550000
+  assert.equal(L.refreshWaitSecs(0, T, 10), 0, 'never run')
+  assert.equal(L.refreshWaitSecs(T, T, 10), 10)
+  assert.equal(L.refreshWaitSecs(T, T + 0.5, 10), 10, 'rounds up')
+  assert.equal(L.refreshWaitSecs(T, T + 9, 10), 1)
+  assert.equal(L.refreshWaitSecs(T, T + 9.99, 10), 1)
+  assert.equal(L.refreshWaitSecs(T, T + 10, 10), 0, 'exactly the interval')
+  assert.equal(L.refreshWaitSecs(T, T + 3600, 10), 0)
+  // 0 turns the limit off; the range is 0-300 and junk means the default 10.
+  assert.equal(L.refreshWaitSecs(T, T, 0), 0)
+  assert.equal(L.refreshWaitSecs(T, T, -5), 0)
+  assert.equal(L.refreshWaitSecs(T, T, 1000), 300)
+  assert.equal(L.refreshWaitSecs(T, T, 'x'), 10)
+  assert.equal(L.refreshWaitSecs(T, T, null), 10)
+  assert.equal(L.refreshWaitSecs(T, T, undefined), 10)
+  // A clock that stepped back never locks the button.
+  assert.equal(L.refreshWaitSecs(T, T - 60, 10), 0)
+  // Junk timestamps count as never run.
+  for (const last of [null, undefined, 'x', -1, NaN])
+    assert.equal(L.refreshWaitSecs(last, T, 10), 0, String(last))
+})
+
+test('manifest, options and catalogs cover the Reconnect and saving-battery strings', async () => {
+  const m = JSON.parse(await readFile(new URL('../module.json', import.meta.url), 'utf8'))
+  assert.equal(m.version, '1.1.0')
+  assert.deepEqual(m.capabilities, ['exec'])
+  const loader = await readFile(new URL('../ConfigLoader.qml', import.meta.url), 'utf8')
+  assert.match(loader, /property int refreshMinIntervalSecs: 10\n/)
+  assert.match(loader, /root\.clamp\(adapterItem\.refreshMinIntervalSecs, 0, 300, 10\)/)
+  const panel = await readFile(new URL('../PhonePanel.qml', import.meta.url), 'utf8')
+  assert.match(panel, /root\.run\("--refresh"\)/)
+  assert.match(panel, /Logic\.refreshWaitSecs\(root\.lastRefreshSecs, nowSecs, root\.refreshMinIntervalSecs\) > 0/)
+  const bar = await readFile(new URL('../bar.qml', import.meta.url), 'utf8')
+  assert.match(bar, /refreshMinIntervalSecs: cfg\.options\.refreshMinIntervalSecs/)
+  assert.match(bar, /visible: root\.model\.savingBattery && !root\.barVertical/)
+  const zhTW = JSON.parse(await readFile(new URL('../translations/zh_TW.json', import.meta.url), 'utf8'))
+  assert.equal(zhTW['Saving battery'], '省電中')
+  assert.equal(zhTW.Reconnect, '重新連線')
+  assert.equal(zhTW['Reconnecting.'], '正在重新連線。')
 })
