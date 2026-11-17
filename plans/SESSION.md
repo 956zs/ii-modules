@@ -811,3 +811,18 @@ patch; screentime zero-day stats semantics change → minor.
   iimod validate/check, i18n, lib-sync, release 15 and publish 13 contracts.
   Details in `plans/reports/batch2-ii.md` (Security fixes). Nothing installed
   live; `hypridle.conf` untouched.
+
+## androlink keep-awake gate security fixes, round 2 (2026-11-17)
+
+- ✅ Branch `feat/androlink-keep-awake`: `8e47d9c` (N-GATE-4), `f8c5892`
+  (N-GATE-3), `52ab686` (N-GATE-1, `idle_modes` 1.2.1, new option
+  `keepAwakeReleaseGraceSecs`), `14bcbb8` (N-GATE-2). The gate waits out a
+  release grace before suspending on an empty `keep_awake`, ends a wait the
+  PC slept through without a suspend, never runs past the hold limit, and
+  its sleep no longer holds the lock.
+- ✅ Verification: Node 278/278, offscreen harness 95/95
+  (`~/.cache/ii-modules-scratch-b2ii`, sandbox and run dirs removed), 12
+  mutation checks caught, iimod validate/check, i18n, lib-sync, release 15
+  and publish 13 contracts. Details in `plans/reports/batch2-ii.md`
+  (Security fixes, round 2). Nothing installed live; `hypridle.conf`
+  untouched.

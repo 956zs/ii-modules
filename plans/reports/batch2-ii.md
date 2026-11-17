@@ -206,3 +206,154 @@ Open:
   this repo.
 - The gate reads `heartbeat_s` only if androlink writes it at the top level
   of `status.json`; until then the option applies.
+
+## Security fixes, round 2
+
+Fixes for the batch 2 re-review findings on `idle_modes`, on the same branch
+(`8e47d9c`, `f8c5892`, `52ab686`, `14bcbb8`). Nothing was pushed or
+installed live. `idle_modes` goes from 1.2.0 to 1.2.1, a patch bump as the
+round asked, although it adds the option `keepAwakeReleaseGraceSecs`.
+
+| Finding | Commit | What changed |
+|---|---|---|
+| N-GATE-1 (confirmed, low) | `52ab686` | When `keep_awake` empties during a hold, the gate waits out a release grace (`keepAwakeReleaseGraceSecs`, 45, 15–600). It suspends only if the list was empty at every check through the grace; any reason that comes back keeps the hold |
+| N-GATE-2 (confirmed, low) | `14bcbb8` | If the PC slept during a wait, the gate exits without a suspend. It detects this through a changed suspend count, or a boot clock more than 15 s past the wait |
+| N-GATE-3 (info) | `f8c5892` | Each wait lasts at most until the hold limit (and the grace end), so a hold ends at `keepAwakeMaxHoldMins` and not one interval later |
+| N-GATE-4 (info) | `8e47d9c` | The wait's `sleep` runs with the locked hold-file fd closed (`{fd}>&-`), so a SIGKILLed gate leaves no lock behind |
+
+N-GATE-1 in detail:
+
+- Only an empty `keep_awake` in a fresh, running status file gets the grace,
+  and only while the power source would let a reason hold (AC, no battery,
+  or a battery at or above the floor). `decide` sets `empty` in exactly that
+  case.
+- These suspend at once, with no grace: a stale, stopped, missing or invalid
+  file; a battery below the floor or unreadable; the hold limit. The limit
+  also cuts a grace short.
+- During the grace the gate keeps checking at the normal interval, and the
+  last wait is cut to end with the grace. With a 15 s interval and the
+  default 45 s grace, the list has to be empty at four checks 15 s apart.
+- The suspend line reads `androlink keep_awake none for 45 s, suspending`.
+  When the battery is the reason, the line says so, e.g. `androlink
+  keep_awake none, battery 19% below floor 20%`.
+- The first decision of an idle period, when hypridle's listener fires, has
+  no grace. An idle PC with nothing to hold still suspends at once, as
+  before.
+
+N-GATE-2 in detail:
+
+- Before each wait, `mark_clock` reads three values:
+  - `/proc/uptime`, which is CLOCK_BOOTTIME and keeps running through
+    suspend and hibernation;
+  - the wall clock;
+  - `/sys/power/suspend_stats/success`, which is 0444 here.
+- After the wait, `pc_slept` sees a sleep when the suspend count changed, or
+  when the boot clock moved more than `slept_margin` (15 s) past the wait
+  actually asked.
+- If `/proc/uptime` can't be read, the wall clock is used instead. A forward
+  step of the wall clock then only ends the wait. An unreadable count is
+  ignored.
+- The gate then prints `the PC slept during the wait, not suspending` and
+  exits 0, and the EXIT trap removes the hold file.
+- `IDLE_MODES_UPTIME_FILE` and `IDLE_MODES_SUSPEND_COUNT_FILE` override the
+  two kernel files, for tests only.
+
+Tests per finding (Node, `modules/idle_modes/tests/idle-modes.test.mjs`, 32 → 47):
+
+- N-GATE-1:
+  - empty for one check, then back: no suspend (60, 45, 60);
+  - back during the grace, then empty again: the grace starts anew;
+  - grace longer than the interval: empty at all four 15 s checks; a reason
+    back at the third check: no suspend;
+  - a grace the interval does not divide (100 s: 60 + 40);
+  - stale, stopped, missing or invalid file during the grace;
+  - battery below the floor or unreadable as the list empties (at once) and
+    during the grace;
+  - battery exactly at the floor still gets the grace;
+  - the limit cuts a grace short;
+  - no grace at the first decision, and its low-battery log line;
+  - option values 15, 1, -30, 29.6, 600, 5000, a string, null and a bool.
+- N-GATE-2:
+  - the boot clock 16 s past the wait, and hours past it;
+  - a counted suspend while the clock barely moved, and with `/proc/uptime`
+    unreadable;
+  - the 75 s boundary, and a clock that went back;
+  - the margin measured from a wait the limit cut to 60 s (74 s holds,
+    76 s is a sleep);
+  - junk, empty or vanishing clock files never count as a sleep;
+  - a sleep during the grace;
+  - the default kernel paths.
+- N-GATE-3:
+  - 45 s → 45 + 15 and 600 s → 60 with a 1 min limit;
+  - ten interval and limit pairs, where the waits sum to the limit and only
+    the last one is shorter.
+- N-GATE-4:
+  - a real waiting gate is SIGKILLed;
+  - the gate held the file open and its sleep did not;
+  - the lock is free at once while the sleep still runs;
+  - the next gate takes the lock and stops on `resume`.
+
+Harness checks (`~/.cache/ii-modules-scratch-b2ii`, 89 → 95; these use real
+`sleep`, `flock` and clocks):
+
+- The ConfigLoader clamps and writes back the grace (1 → 15).
+- With `keep_awake` emptied, the gate suspends after 30 s:
+  `none for 15 s`.
+- An empty list at one check, back before the grace check, followed by
+  `resume`: no suspend. The checks are tracked by the gate's sleep PIDs,
+  not by fixed delays.
+- A fake `/proc/uptime` jumping 3600 s during a real 15 s wait, with
+  androlink stopped: `the PC slept`, no suspend.
+- The real clocks saw no sleep in the other real waits.
+- After SIGKILL: the gate had one fd on the hold file and its sleep had
+  none; the lock was free while the sleep lived on, and the next gate waited
+  and stopped on `resume`.
+
+Mutation checks: each of the following edits made at least one test fail.
+
+- N-GATE-1: no grace, no reset when a reason comes back, no power condition,
+  no cut at the grace end.
+- N-GATE-2: never slept, no suspend count, margin from the interval instead
+  of the wait, `>=` margin.
+- N-GATE-3: no cut at the limit.
+- N-GATE-4: no fd close.
+
+Decisions:
+
+- The grace is a module option with a floor of 15 s, androlink's
+  `LINK_GRACE_MS`, so it can't be configured away. Its default of 45 s
+  covers the 15 s link grace plus the restart, and is three checks at the
+  minimum interval.
+- The fix is on the gate side only. Keeping `mic`/`webcam` in `keep_awake`
+  while androlink is reconnecting, the alternative the verdict mentions,
+  is androlink code and outside this group's paths.
+- Sleep detection uses the BOOTTIME margin plus the kernel's suspend count.
+  The count also catches a lid close and open shorter than the margin. A
+  logind `PrepareForSleep` listener would need a D-Bus client in a bash
+  script, so it was not used.
+- The window between the end of a wait and the checks after it (under a
+  second, plus up to 5 s for `hyprctl`) is not covered: a suspend that
+  starts and ends inside it is not seen.
+- No Rust was touched in this group, so `cargo fmt`, `clippy` and
+  `cargo test` do not apply. The iimod suite was not run.
+
+Checks:
+
+| Check | Result |
+|---|---|
+| `node --test modules/*/tests/*.test.mjs` | 278/278 (was 263: +15 idle_modes) |
+| Offscreen harness (`~/.cache/ii-modules-scratch-b2ii`) | 95/95 (was 89: +6); sandbox and run dirs removed |
+| Mutation checks (12, listed above) | each caught |
+| `iimod validate` / `check` (idle_modes 1.2.1) | ok |
+| `iimod i18n check --all --deny-orphans`, idle_modes extract/check | ok, 14 modules |
+| `node tools/lib-sync/check-configloader.mjs` | 11 copies, 0 undeclared deviations |
+| `tools/release/test-contracts.sh` / `test-publish.sh` | 15 / 13 passed |
+| `bash -n` gate, `qmlformat` ConfigLoader, `git diff --check` | ok |
+
+Open:
+
+- Owner install as before (`iimod install modules/idle_modes
+  --allow-patches`, copy the gate again). Per the re-review, the deployed
+  gate is still an older copy.
+- androlink `plans/features-2026-11-17.md` (§Idle gate) should mention the
+  release grace and the sleep check. That file is outside this repo.

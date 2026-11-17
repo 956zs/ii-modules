@@ -149,3 +149,19 @@
   which has no `Mains` entry still counts as a desktop. A DMI
   `chassis_type` check (portable types 8, 9, 10, 14, 30, 31, 32) would close
   it; it needs a test-only path override like `IDLE_MODES_POWER_SUPPLY_DIR`.
+
+## androlink keep-awake gate, batch 2 re-review (2026-11-17)
+
+- ✅ N-GATE-1 resolved in `idle_modes` 1.2.1: an empty `keep_awake` during a
+  hold gets a release grace (`keepAwakeReleaseGraceSecs`, 45, 15–600) before
+  the suspend; stale/stopped/missing/invalid status, low or unreadable
+  battery and the hold limit still suspend at once.
+- ✅ N-GATE-2 resolved: a wait the PC slept through (suspend count changed,
+  or `/proc/uptime` more than 15 s past the wait) ends without a suspend.
+- ✅ N-GATE-3 resolved: the last wait ends at `keepAwakeMaxHoldMins`.
+- ✅ N-GATE-4 resolved: the wait's `sleep` does not inherit the locked
+  hold-file fd.
+- 🟢 P3 optional androlink side of N-GATE-1: keep `mic`/`webcam` in
+  `keep_awake` through a bounded `Reconnecting` phase and `transfer` for a
+  short linger between queued transfers; the gate's grace already covers
+  the gap.
