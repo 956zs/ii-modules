@@ -25,7 +25,8 @@
 # ends without a suspend when `resume` runs (input), when the mode leaves
 # "off", or when a screen is on again (the sign of input when hypridle.conf
 # lacks the on-resume line). The waiting gate's PID is in
-# $XDG_RUNTIME_DIR/idle-mode-gate.pid (0600, locked).
+# $XDG_RUNTIME_DIR/idle-mode-gate.pid (0600, locked). A wait the PC slept
+# through (lid close, the Sleep menu) also ends it without a suspend.
 #
 # Prints one line with the decision and its reasons, and one more when a wait
 # ends. Usage: idle-mode-gate.sh suspend [--dry-run] | idle-mode-gate.sh resume
@@ -34,6 +35,10 @@ set -u
 config_file="${XDG_CONFIG_HOME:-$HOME/.config}/illogical-impulse/modules/idle_modes.json"
 # Overridable for tests only; the kernel's power supply class otherwise.
 power_dir="${IDLE_MODES_POWER_SUPPLY_DIR:-/sys/class/power_supply}"
+# Overridable for tests only: seconds since boot counting time asleep
+# (CLOCK_BOOTTIME), and the kernel's count of successful suspends.
+uptime_file="${IDLE_MODES_UPTIME_FILE:-/proc/uptime}"
+suspend_count_file="${IDLE_MODES_SUSPEND_COUNT_FILE:-/sys/power/suspend_stats/success}"
 
 # Module option defaults and ranges (the shell's ConfigLoader heals the same
 # ranges; the script clamps on its own because it can run before the shell).
@@ -47,6 +52,8 @@ grace_default=45 grace_min=15 grace_max=600
 heartbeat_min=1 heartbeat_max=3600
 # Larger status files are not androlink's; don't parse them.
 status_max_bytes=65536
+# A wait that took this many seconds longer than asked was slept through.
+slept_margin=15
 
 hold_file=""
 [[ "${XDG_RUNTIME_DIR:-}" == /* ]] && hold_file="$XDG_RUNTIME_DIR/idle-mode-gate.pid"
@@ -283,6 +290,47 @@ cancel_holder() {
     return 0
 }
 
+# Whole seconds since boot, time asleep included, or empty when unknown.
+boot_secs() {
+    local up
+    up=$(read_line "$uptime_file")
+    up=${up%%[. ]*}
+    [[ "$up" =~ ^[0-9]{1,12}$ ]] && printf '%s' "$((10#$up))"
+}
+
+# Successful suspends since boot, or empty when the kernel doesn't say.
+suspend_count() {
+    local count
+    count=$(read_line "$suspend_count_file")
+    [[ "$count" =~ ^[0-9]{1,12}$ ]] && printf '%s' "$((10#$count))"
+}
+
+# Notes the clocks before a wait, for pc_slept.
+mark_clock() {
+    mark_boot=$(boot_secs)
+    mark_wall=${EPOCHSECONDS:-$(date +%s)}
+    mark_count=$(suspend_count)
+}
+
+# True when the PC slept (suspend or hibernation) during the wait of $1
+# seconds since mark_clock: the kernel counted another suspend, or the boot
+# clock, which runs on while `sleep`'s clock stops, moved more than
+# slept_margin past the wait. The wall clock stands in when /proc/uptime
+# can't be read; a forward step of it then also ends the wait, which never
+# suspends.
+pc_slept() { # wait_secs
+    local count boot elapsed
+    count=$(suspend_count)
+    [ -n "$mark_count" ] && [ -n "$count" ] && [ "$count" != "$mark_count" ] && return 0
+    boot=$(boot_secs)
+    if [ -n "$mark_boot" ] && [ -n "$boot" ]; then
+        elapsed=$((boot - mark_boot))
+    else
+        elapsed=$((${EPOCHSECONDS:-$(date +%s)} - mark_wall))
+    fi
+    ((elapsed > $1 + slept_margin))
+}
+
 # Removes the hold file while it still names this gate.
 release_hold() {
     [ -n "$sleeper" ] && kill "$sleeper" 2>/dev/null
@@ -294,7 +342,7 @@ release_hold() {
 # suspend now ($why says why). Exits without suspending when the wait can't
 # be kept safely or is cancelled, the mode leaves "off" or a screen is on.
 wait_while_held() {
-    local fd recheck max_hold grace held=0 wait_secs empty_for=-1
+    local fd recheck max_hold grace held=0 wait_secs empty_for=-1 mark_boot mark_wall mark_count
     recheck=$(read_option keepAwakeRecheckSecs "$recheck_default" "$recheck_min" "$recheck_max")
     max_hold=$(read_option keepAwakeMaxHoldMins "$max_hold_default" "$max_hold_min" "$max_hold_max")
     grace=$(read_option keepAwakeReleaseGraceSecs "$grace_default" "$grace_min" "$grace_max")
@@ -333,6 +381,7 @@ wait_while_held() {
         wait_secs=$recheck
         ((empty_for >= 0 && grace - empty_for < wait_secs)) && wait_secs=$((grace - empty_for))
         ((max_hold * 60 - held < wait_secs)) && wait_secs=$((max_hold * 60 - held))
+        mark_clock
         # The sleep gets no copy of the locked hold file, so it can't keep
         # the lock after the gate is killed outright (SIGKILL, OOM).
         sleep "$wait_secs" {fd}>&- &
@@ -340,6 +389,13 @@ wait_while_held() {
         wait "$sleeper"
         sleeper=""
         held=$((held + wait_secs))
+        # After a system sleep the screens can stay off until the first
+        # input while the status file is stale or the phone gone, so a check
+        # now would suspend the PC again just after it woke.
+        if pc_slept "$wait_secs"; then
+            echo "idle-mode-gate: the PC slept during the wait, not suspending"
+            exit 0
+        fi
         if [ "$(read_line "$hold_file")" != "$$" ]; then
             echo "idle-mode-gate: wait cancelled, not suspending"
             exit 0

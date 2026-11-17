@@ -42,8 +42,8 @@ off 模式下，androlink 正在做休眠會打斷的事時，gate 也會跳過�
 `mic` 和 `webcam`。要在 `keepAwakeReleaseGraceSecs` 秒內每次檢查都是空的才會
 休眠；原因回來就繼續擋下。只有在電源條件允許擋下休眠時才有寬限期。
 
-有輸入時（hypridle 執行 gate 的 `resume`）、模式切到半開或全開，或有螢幕重新亮起時，
-gate 會結束等待，不會休眠。
+有輸入時（hypridle 執行 gate 的 `resume`）、模式切到半開或全開、有螢幕重新亮起，或
+等待期間電腦睡過（闔上螢幕、選單的「睡眠」）時，gate 會結束等待，不會休眠。
 
 闔上螢幕、ii 選單的「睡眠」和低電量自動休眠都不經過 gate，行為不變。
 
@@ -146,6 +146,10 @@ listener {
   兩者都不會超過。
 - 檢查後要休眠前，所有螢幕都必須仍然關閉（`hyprctl monitors` 回報 `dpmsStatus`
   為 false）。有螢幕亮著或沒有回應時，結束等待且不休眠。
+- 等待期間電腦睡過時，結束等待且不休眠，因為喚醒後螢幕可能要到第一次輸入才會
+  亮。`/sys/power/suspend_stats/success` 多算了一次休眠，或 `/proc/uptime` 的開機
+  時鐘（睡眠時照樣走）比等待時間多走超過 15 秒，就視為睡過。讀不到
+  `/proc/uptime` 時改用系統時鐘。
 - 每次執行印出一行判斷結果與原因，例如
   `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending,
   checking again every 60 s for up to 120 min`；等待結束時再印一行，例如
@@ -166,6 +170,8 @@ listener {
   連線超過寬限期時，仍會結束擋下。
 - 每段閒置的第一次檢查（休眠監聽觸發時）沒有寬限期：那時 `keep_awake` 是空的就
   直接休眠。
+- 等待期間電腦睡過後，這段閒置不會再閒置休眠：要等有輸入、再閒置滿一段時間才會
+  休眠。
 - 只以 USB 電源出現（沒有 `Mains` 項目）的充電器不會被當成插電，改由電量下限決定。
 - shell 啟動完成前 full 不會生效：window 模塊可能要數十秒才載入完成，之後還有
   3 秒的重建延遲。

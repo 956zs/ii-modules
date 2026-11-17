@@ -1050,6 +1050,127 @@ gateTest('gate: a new idle period replaces a gate that still waits', { timeout: 
   }
 })
 
+// ---- N-GATE-2: a wait the PC slept through ends without a suspend ----
+//
+// The fake sleep returns at once, so the gate's boot clock (/proc/uptime) and
+// the kernel's suspend count come from files the test moves on during a wait.
+
+const uptimeFile = (box) => join(box.root, 'uptime')
+const countFile = (box) => join(box.root, 'suspend-count')
+const clockEnv = (box) => ({ IDLE_MODES_UPTIME_FILE: uptimeFile(box), IDLE_MODES_SUSPEND_COUNT_FILE: countFile(box) })
+
+// A held gate whose wait `after.wait` (the first by default) sees the clocks
+// change to `after` ({ uptime, count }; null removes the file) and the
+// status file go stale, which suspends at once unless the gate notices it
+// slept. `before` replaces the clocks' starting text.
+function sleptRun(box, after, { options = {}, steps = {}, before = {} } = {}) {
+  setPower(box, onAc)
+  setStatus(box, status())
+  setConfig(box, { mode: 'off', ...options })
+  writeFileSync(uptimeFile(box), before.uptime ?? '1000.25 8000.10\n')
+  writeFileSync(countFile(box), before.count ?? '3\n')
+  const n = after.wait ?? 1
+  for (const [k, step] of Object.entries(steps))
+    onSleep(box, Number(k), { [statusFile(box)]: status({ keep_awake: step }) })
+  onSleep(box, n, {
+    ...('uptime' in after ? { [uptimeFile(box)]: after.uptime } : {}),
+    ...('count' in after ? { [countFile(box)]: after.count } : {}),
+    [statusFile(box)]: status({ updated: nowSecs() - 1000 }),
+  })
+  const out = runGate(box, ['suspend'], clockEnv(box))
+  assert.equal(out.status, 0, out.stderr)
+  return { out, rest: lines(out).slice(1), sleeps: sleepLog(box).split('\n').filter(Boolean).map(Number) }
+}
+
+const slept = ['idle-mode-gate: the PC slept during the wait, not suspending']
+const staleSuspend = ['idle-mode-gate: mode off, androlink status stale, suspending']
+
+gateTest('gate: a wait the PC slept through ends without a suspend', () => {
+  for (const [label, after] of [
+    ['the boot clock 16 s past the 60 s wait', { uptime: '1076.00 8001.00\n' }],
+    ['the boot clock hours on (a night asleep)', { uptime: '15000.50 8001.00\n' }],
+    ['the kernel counted a suspend, the boot clock barely moved', { uptime: '1000.90 8000.20\n', count: '4\n' }],
+    ['a suspend counted, /proc/uptime unreadable', { uptime: null, count: '4\n' }],
+  ]) {
+    const box = sandbox()
+    try {
+      const { out, rest } = sleptRun(box, after)
+      assert.deepEqual(rest, slept, label)
+      assert.equal(out.suspendLog, '', label)
+      assert.equal(existsSync(holdFile(box)), false, `${label}: the hold file is removed`)
+    } finally {
+      cleanup(box)
+    }
+  }
+})
+
+gateTest('gate: a wait at most 15 s longer than asked is no sleep', () => {
+  for (const [label, after, options] of [
+    ['75 s for a 60 s wait', { uptime: '1075.99 8001.00\n' }],
+    ['the clock went back', { uptime: '900.00 8001.00\n' }],
+    // The hold limit cuts the wait to 60 s: the margin counts from that.
+    ['74 s for a wait cut to 60 s by the limit', { uptime: '1074.00 8001.00\n' }, { keepAwakeRecheckSecs: 600, keepAwakeMaxHoldMins: 1 }],
+  ]) {
+    const box = sandbox()
+    try {
+      const { out, rest } = sleptRun(box, after, { options })
+      assert.deepEqual(rest, staleSuspend, label)
+      assert.equal(out.suspendLog, 'systemctl suspend\n', label)
+    } finally {
+      cleanup(box)
+    }
+  }
+  const box = sandbox()
+  try {
+    // 600 s interval cut to 60 s by the limit: 76 s is a sleep, though far
+    // less than the interval.
+    const { out, rest } = sleptRun(box, { uptime: '1076.00 8001.00\n' }, { options: { keepAwakeRecheckSecs: 600, keepAwakeMaxHoldMins: 1 } })
+    assert.deepEqual(rest, slept)
+    assert.equal(out.suspendLog, '')
+  } finally {
+    cleanup(box)
+  }
+})
+
+gateTest('gate: clocks that cannot be read never count as a sleep', () => {
+  for (const [label, after, before] of [
+    ['junk uptime and count', {}, { uptime: 'soon\n', count: 'many\n' }],
+    ['empty uptime and count', {}, { uptime: '', count: '' }],
+    ['uptime gone after the wait', { uptime: null }],
+    ['uptime junk after the wait', { uptime: 'x\n' }],
+    ['suspend count gone after the wait', { count: null }],
+    ['suspend count junk after the wait', { count: '-1\n' }],
+  ]) {
+    const box = sandbox()
+    try {
+      const { out, rest } = sleptRun(box, after, { before })
+      assert.deepEqual(rest, staleSuspend, label)
+      assert.equal(out.suspendLog, 'systemctl suspend\n', label)
+    } finally {
+      cleanup(box)
+    }
+  }
+})
+
+gateTest('gate: a sleep during the release grace ends the wait without a suspend', () => {
+  const box = sandbox()
+  try {
+    const { out, rest, sleeps } = sleptRun(box, { wait: 2, uptime: '5000.00 9000.00\n' }, { steps: { 1: [] } })
+    assert.deepEqual(rest, slept)
+    assert.equal(out.suspendLog, '')
+    assert.deepEqual(sleeps, [60, 45])
+  } finally {
+    cleanup(box)
+  }
+})
+
+test('the gate reads the boot clock and the suspend count from the kernel by default', async () => {
+  const script = await readFile(gate, 'utf8')
+  assert.match(script, /^uptime_file="\$\{IDLE_MODES_UPTIME_FILE:-\/proc\/uptime\}"$/m)
+  assert.match(script, /^suspend_count_file="\$\{IDLE_MODES_SUSPEND_COUNT_FILE:-\/sys\/power\/suspend_stats\/success\}"$/m)
+  assert.match(script, /^slept_margin=15$/m)
+})
+
 // ---- N-GATE-4: the background sleep never holds the lock ----
 
 gateTest('gate: a killed gate leaves no lock behind, so the next idle period can wait', { timeout: 20000 }, async () => {

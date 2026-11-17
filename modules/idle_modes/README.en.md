@@ -51,8 +51,8 @@ keeps the hold. This applies only while the power source would let a reason
 hold the suspend.
 
 The wait ends without a suspend when there is input (hypridle runs the gate's
-`resume`), when the mode changes to half or full, or when a screen is on
-again.
+`resume`), when the mode changes to half or full, when a screen is on again,
+or when the PC slept during the wait (lid close, the Sleep menu).
 
 Lid close, the ii Sleep menu and the low-battery suspend never pass through
 the gate, so they are unchanged.
@@ -169,6 +169,12 @@ reads the file on each run and clamps the same way.
 - Before a suspend from a check, every screen must still be off
   (`hyprctl monitors` reports `dpmsStatus` false). A screen that is on, or
   no answer, ends the wait without a suspend.
+- A wait the PC slept through ends without a suspend, because the screens
+  can stay off after a wake until the first input. The gate sees the sleep
+  when `/sys/power/suspend_stats/success` counted another suspend, or when
+  the boot clock in `/proc/uptime`, which keeps running while asleep, moved
+  more than 15 s past the wait. If `/proc/uptime` can't be read, the wall
+  clock stands in.
 - Every run prints one line with the decision and its reasons, for example
   `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending,
   checking again every 60 s for up to 120 min`, and one more when a wait
@@ -196,6 +202,8 @@ reads the file on each run and clamps the same way.
   ends the hold.
 - The first check of an idle period (the suspend listener firing) has no
   grace: an empty `keep_awake` at that moment suspends at once.
+- After the PC slept during a wait, that idle period ends without an idle
+  suspend: the next one needs input and a new idle period.
 - A charger that shows up only as a USB supply (no `Mains` entry) is not seen
   as AC; the battery floor decides instead.
 - "full" is not in effect until the shell has finished starting: window
