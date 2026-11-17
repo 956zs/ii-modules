@@ -49,6 +49,8 @@ FileView {
         // Same ranges as idle-mode-gate.sh, which clamps on its own too.
         adapterItem.keepAwakeBatteryFloor = root.clamp(adapterItem.keepAwakeBatteryFloor, 0, 100, 20);
         adapterItem.keepAwakeMaxAgeSecs = root.clamp(adapterItem.keepAwakeMaxAgeSecs, 15, 3600, 90);
+        adapterItem.keepAwakeRecheckSecs = root.clamp(adapterItem.keepAwakeRecheckSecs, 15, 600, 60);
+        adapterItem.keepAwakeMaxHoldMins = root.clamp(adapterItem.keepAwakeMaxHoldMins, 1, 1440, 120);
         root.materializing = false;
         if (root.owner)
             writeAdapter();
@@ -82,5 +84,11 @@ FileView {
         // seconds (three of its 30 s heartbeats by default), or within three
         // of the heartbeat_s the file names, whichever is longer.
         property int keepAwakeMaxAgeSecs: 90
+        // While the idle suspend is held, the gate checks again this often
+        // and suspends once the hold no longer applies.
+        property int keepAwakeRecheckSecs: 60
+        // The gate holds the idle suspend for at most this many minutes per
+        // idle period, then suspends whatever androlink reports.
+        property int keepAwakeMaxHoldMins: 120
     }
 }

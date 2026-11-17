@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # hypridle suspend gate for the idle_modes IIMP module (ii sidebar three-state
-# "Keep awake" tile). hypridle.conf points $suspend_cmd here:
+# "Keep awake" tile). hypridle.conf points $suspend_cmd here and runs `resume`
+# from the same listener's on-resume:
 #   $suspend_cmd = ~/.config/hypr/custom/scripts/idle-mode-gate.sh suspend
+#   on-resume = ~/.config/hypr/custom/scripts/idle-mode-gate.sh resume
 # Suspends only in mode "off". "half" keeps lock and screen-off but never
 # suspends; "full" never reaches hypridle (the Wayland idle inhibitor is on).
 # A missing or unreadable mode counts as "off", the stock behaviour.
@@ -11,12 +13,19 @@
 # (version 1, running, written within keepAwakeMaxAgeSecs or three of the
 # file's own heartbeat_s, whichever is longer) with a non-empty keep_awake
 # list ("mic", "webcam", "transfer"), and the PC on AC power or its battery at
-# or above keepAwakeBatteryFloor percent. Anything missing or
-# invalid falls back to the plain mode check. Only this idle suspend is held:
-# locking, lid close, the ii Sleep menu and low-battery suspend are unchanged.
+# or above keepAwakeBatteryFloor percent. Anything missing or invalid falls
+# back to the plain mode check. Only this idle suspend is held: locking, lid
+# close, the ii Sleep menu and low-battery suspend are unchanged.
 #
-# Prints one line with the decision and its reasons.
-# Usage: idle-mode-gate.sh suspend [--dry-run]
+# A hold is not decided once: the gate waits and checks again every
+# keepAwakeRecheckSecs, and suspends as soon as the hold no longer applies or
+# after keepAwakeMaxHoldMins. The wait ends without a suspend when `resume`
+# runs (input), when the mode leaves "off", or when a screen is on again (the
+# sign of input when hypridle.conf lacks the on-resume line). The waiting
+# gate's PID is in $XDG_RUNTIME_DIR/idle-mode-gate.pid (0600, locked).
+#
+# Prints one line with the decision and its reasons, and one more when a wait
+# ends. Usage: idle-mode-gate.sh suspend [--dry-run] | idle-mode-gate.sh resume
 set -u
 
 config_file="${XDG_CONFIG_HOME:-$HOME/.config}/illogical-impulse/modules/idle_modes.json"
@@ -27,11 +36,17 @@ power_dir="${IDLE_MODES_POWER_SUPPLY_DIR:-/sys/class/power_supply}"
 # ranges; the script clamps on its own because it can run before the shell).
 floor_default=20 floor_min=0 floor_max=100
 max_age_default=90 max_age_min=15 max_age_max=3600
+recheck_default=60 recheck_min=15 recheck_max=600
+max_hold_default=120 max_hold_min=1 max_hold_max=1440
 # androlink's own heartbeat range (status.heartbeat_s); outside it the
 # file's value is ignored.
 heartbeat_min=1 heartbeat_max=3600
 # Larger status files are not androlink's; don't parse them.
 status_max_bytes=65536
+
+hold_file=""
+[[ "${XDG_RUNTIME_DIR:-}" == /* ]] && hold_file="$XDG_RUNTIME_DIR/idle-mode-gate.pid"
+sleeper=""
 
 # Prints the number option `key` from the config, rounded and clamped like
 # the ConfigLoader does, or the default when it is missing or not a number.
@@ -42,6 +57,15 @@ read_option() { # key default min max
         "$config_file" 2>/dev/null) || value=""
     [[ "$value" =~ ^-?[0-9]{1,9}$ ]] || value=$2
     printf '%s' "$value"
+}
+
+read_mode() {
+    local mode
+    mode=$(jq -r '.mode // "off"' "$config_file" 2>/dev/null) || mode=off
+    case "$mode" in
+        off | half | full) printf '%s' "$mode" ;;
+        *) printf off ;;
+    esac
 }
 
 # First line of a small sysfs-style file, or empty.
@@ -153,69 +177,203 @@ androlink_state() { # max_age_secs now_secs
     echo "fresh ${reasons:-}"
 }
 
-mode=$(jq -r '.mode // "off"' "$config_file" 2>/dev/null) || mode=off
-case "$mode" in
-    off | half | full) ;;
-    *) mode=off ;;
-esac
+# Whether androlink holds the idle suspend right now: sets hold (1 or 0) and
+# why (the reasons, for the log line). Reads the options on every call.
+decide() {
+    local floor max_age now state reasons power level
+    floor=$(read_option keepAwakeBatteryFloor "$floor_default" "$floor_min" "$floor_max")
+    max_age=$(read_option keepAwakeMaxAgeSecs "$max_age_default" "$max_age_min" "$max_age_max")
+    now=${EPOCHSECONDS:-$(date +%s)}
+    hold=0
+    read -r state reasons <<<"$(androlink_state "$max_age" "$now")"
+    if [ "$state" != fresh ]; then
+        why="androlink status $state"
+    elif [ -z "${reasons:-}" ]; then
+        why="androlink keep_awake none"
+    else
+        power=$(power_state)
+        case "$power" in
+            ac)
+                hold=1
+                why="androlink keep_awake $reasons, on AC"
+                ;;
+            no-battery)
+                hold=1
+                why="androlink keep_awake $reasons, no battery"
+                ;;
+            "battery "*)
+                level=${power#battery }
+                if ((level >= floor)); then
+                    hold=1
+                    why="androlink keep_awake $reasons, battery $level% (floor $floor%)"
+                else
+                    why="androlink keep_awake $reasons, battery $level% below floor $floor%"
+                fi
+                ;;
+            *)
+                why="androlink keep_awake $reasons, battery level unknown"
+                ;;
+        esac
+    fi
+}
+
+# True while every screen is off: hypridle's screen-off listener ran and
+# there has been no input since. No answer, or no screen, counts as on.
+screens_off() {
+    local monitors
+    monitors=$(timeout 5 hyprctl monitors -j 2>/dev/null) || return 1
+    [ "$(jq -r 'if type == "array" and length > 0 and all(.[]; .dpmsStatus == false)
+        then "off" else "on" end' <<<"$monitors" 2>/dev/null)" = off ]
+}
+
+# True when XDG_RUNTIME_DIR is this user's directory and nobody else can
+# write to it, so the hold file in it can be trusted.
+runtime_private() {
+    local dir="${XDG_RUNTIME_DIR:-}" perms
+    [[ "$dir" == /* ]] && [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ] || return 1
+    perms=$(stat -c %a -- "$dir" 2>/dev/null) || return 1
+    [[ "$perms" =~ ^[0-7]{3,4}$ ]] && (((8#$perms & 8#022) == 0))
+}
+
+# True when PID is this user's idle-mode-gate.sh running `suspend`.
+is_waiting_gate() { # pid
+    local arg prev=""
+    [ -O "/proc/$1" ] || return 1
+    while IFS= read -r -d '' arg; do
+        if [[ "$prev" == idle-mode-gate.sh || "$prev" == */idle-mode-gate.sh ]] && [ "$arg" = suspend ]; then
+            return 0
+        fi
+        prev=$arg
+    done 2>/dev/null <"/proc/$1/cmdline"
+    return 1
+}
+
+# Stops the gate that waits in `suspend`: the one holding the lock on the
+# hold file, which wrote its PID there. A hold file nobody locks is a
+# leftover and is removed. Returns 0 when a waiting gate was stopped.
+cancel_holder() {
+    local fd pid
+    [ -n "$hold_file" ] && [ -f "$hold_file" ] && [ ! -L "$hold_file" ] && [ -O "$hold_file" ] || return 1
+    exec {fd}<"$hold_file" || return 1
+    if flock -n "$fd"; then
+        exec {fd}<&-
+        rm -f -- "$hold_file"
+        return 1
+    fi
+    IFS= read -r pid <&"$fd" || pid=""
+    exec {fd}<&-
+    [[ "$pid" =~ ^[1-9][0-9]{0,9}$ ]] && is_waiting_gate "$pid" || return 1
+    # Without the file the wait also ends at its next check, should the
+    # signal be lost.
+    rm -f -- "$hold_file"
+    kill -TERM "$pid" 2>/dev/null
+    return 0
+}
+
+# Removes the hold file while it still names this gate.
+release_hold() {
+    [ -n "$sleeper" ] && kill "$sleeper" 2>/dev/null
+    sleeper=""
+    [ "$(read_line "$hold_file")" = "$$" ] && rm -f -- "$hold_file"
+}
+
+# Waits while androlink holds the idle suspend and returns when the PC should
+# suspend now ($why says why). Exits without suspending when the wait can't
+# be kept safely or is cancelled, the mode leaves "off" or a screen is on.
+wait_while_held() {
+    local fd recheck max_hold held=0
+    recheck=$(read_option keepAwakeRecheckSecs "$recheck_default" "$recheck_min" "$recheck_max")
+    max_hold=$(read_option keepAwakeMaxHoldMins "$max_hold_default" "$max_hold_min" "$max_hold_max")
+    if ! runtime_private; then
+        echo "idle-mode-gate: mode off, $why, not suspending (no private XDG_RUNTIME_DIR to wait in)"
+        exit 0
+    fi
+    umask 077
+    if [ -L "$hold_file" ] || { [ -e "$hold_file" ] && ! { [ -f "$hold_file" ] && [ -O "$hold_file" ]; }; }; then
+        echo "idle-mode-gate: mode off, $why, not suspending (the hold file is not the gate's)"
+        exit 0
+    fi
+    if ! exec {fd}>>"$hold_file"; then
+        echo "idle-mode-gate: mode off, $why, not suspending (the hold file can't be written)"
+        exit 0
+    fi
+    if ! flock -n "$fd"; then
+        # A gate from an earlier idle period still waits (hypridle.conf
+        # without the on-resume line): this idle period replaces it.
+        cancel_holder
+        exec {fd}>&-
+        if ! { exec {fd}>>"$hold_file"; } 2>/dev/null || ! flock -w 5 "$fd"; then
+            echo "idle-mode-gate: mode off, $why, not suspending (another gate is waiting)"
+            exit 0
+        fi
+    fi
+    printf '%s\n' "$$" >"$hold_file"
+    chmod 600 -- "$hold_file" 2>/dev/null
+    trap release_hold EXIT
+    trap 'release_hold; echo "idle-mode-gate: input, not suspending"; exit 0' TERM INT HUP
+    echo "idle-mode-gate: mode off, $why, not suspending, checking again every $recheck s for up to $max_hold min"
+    while :; do
+        sleep "$recheck" &
+        sleeper=$!
+        wait "$sleeper"
+        sleeper=""
+        held=$((held + recheck))
+        if [ "$(read_line "$hold_file")" != "$$" ]; then
+            echo "idle-mode-gate: wait cancelled, not suspending"
+            exit 0
+        fi
+        mode=$(read_mode)
+        if [ "$mode" != off ]; then
+            echo "idle-mode-gate: mode $mode, not suspending"
+            exit 0
+        fi
+        if ! screens_off; then
+            echo "idle-mode-gate: a screen is on, not suspending"
+            exit 0
+        fi
+        decide
+        ((hold)) || break
+        if ((held >= max_hold * 60)); then
+            why="$why, held $max_hold min (the limit)"
+            break
+        fi
+    done
+    release_hold
+}
 
 case "${1:-}" in
     suspend)
         dry_run=0
         [ "${2:-}" = --dry-run ] && dry_run=1
+        mode=$(read_mode)
         if [ "$mode" != off ]; then
             echo "idle-mode-gate: mode $mode, not suspending"
             exit 0
         fi
 
-        floor=$(read_option keepAwakeBatteryFloor "$floor_default" "$floor_min" "$floor_max")
-        max_age=$(read_option keepAwakeMaxAgeSecs "$max_age_default" "$max_age_min" "$max_age_max")
-        now=${EPOCHSECONDS:-$(date +%s)}
-        hold=0
-        read -r state reasons <<<"$(androlink_state "$max_age" "$now")"
-        if [ "$state" != fresh ]; then
-            why="androlink status $state"
-        elif [ -z "${reasons:-}" ]; then
-            why="androlink keep_awake none"
-        else
-            power=$(power_state)
-            case "$power" in
-                ac)
-                    hold=1
-                    why="androlink keep_awake $reasons, on AC"
-                    ;;
-                no-battery)
-                    hold=1
-                    why="androlink keep_awake $reasons, no battery"
-                    ;;
-                "battery "*)
-                    level=${power#battery }
-                    if ((level >= floor)); then
-                        hold=1
-                        why="androlink keep_awake $reasons, battery $level% (floor $floor%)"
-                    else
-                        why="androlink keep_awake $reasons, battery $level% below floor $floor%"
-                    fi
-                    ;;
-                *)
-                    why="androlink keep_awake $reasons, battery level unknown"
-                    ;;
-            esac
-        fi
-
+        decide
         if ((hold)); then
-            echo "idle-mode-gate: mode off, $why, not suspending"
-            exit 0
-        fi
-        if ((dry_run)); then
+            if ((dry_run)); then
+                echo "idle-mode-gate: mode off, $why, not suspending"
+                exit 0
+            fi
+            wait_while_held
+        elif ((dry_run)); then
             echo "idle-mode-gate: mode off, $why, would suspend"
             exit 0
         fi
         echo "idle-mode-gate: mode off, $why, suspending"
         systemctl suspend || loginctl suspend
         ;;
+    resume)
+        if cancel_holder; then
+            echo "idle-mode-gate: resume, stopped the waiting gate"
+        else
+            echo "idle-mode-gate: resume, nothing waiting"
+        fi
+        ;;
     *)
-        echo "usage: idle-mode-gate.sh suspend [--dry-run]" >&2
+        echo "usage: idle-mode-gate.sh suspend [--dry-run] | idle-mode-gate.sh resume" >&2
         exit 2
         ;;
 esac

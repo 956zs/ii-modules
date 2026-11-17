@@ -7,8 +7,9 @@ enforced by a small hypridle gate script outside the shell tree.
 
 > [!IMPORTANT]
 > Suspend gating lives in `~/.config/hypr/hypridle.conf`, which dots-hyprland
-> updates overwrite. Re-apply the one-line `$suspend_cmd` change after every
-> dots update (see Installation), or "half" mode will suspend again.
+> updates overwrite. Re-apply the `$suspend_cmd` change and the gate's
+> `on-resume` line after every dots update (see Installation), or "half" mode
+> will suspend again.
 
 ## Interaction
 
@@ -37,6 +38,15 @@ happen on time.
 | fresh, `keep_awake` lists reasons | battery below the floor, or its level unreadable | runs |
 | fresh with an empty `keep_awake`, stale, stopped, missing or invalid | any | runs |
 
+A hold is not a one-time decision. While the PC stays idle, the gate checks
+again every `keepAwakeRecheckSecs` and suspends as soon as a row above says
+"runs", for example when a transfer ends or the battery drops below the floor.
+After `keepAwakeMaxHoldMins` it suspends whatever androlink reports.
+
+The wait ends without a suspend when there is input (hypridle runs the gate's
+`resume`), when the mode changes to half or full, or when a screen is on
+again.
+
 Lid close, the ii Sleep menu and the low-battery suspend never pass through
 the gate, so they are unchanged.
 
@@ -44,8 +54,9 @@ the gate, so they are unchanged.
 
 | Dependency | Use |
 | --- | --- |
-| hypridle | idle timers; its suspend listener calls the gate script |
+| hypridle | idle timers; its suspend listener calls the gate script, and its `on-resume` stops a waiting gate |
 | jq | the gate script reads the mode, its options and androlink's status file |
+| hyprctl, flock | while it holds the suspend, the gate checks that the screens are still off and keeps one waiting copy |
 | androlink (optional) | writes `$XDG_RUNTIME_DIR/androlink/status.json` with `keep_awake`; without it the gate only checks the mode |
 | Android-style quick panel | the tile model patch; the classic-style button still cycles but only highlights in full mode |
 
@@ -60,13 +71,29 @@ iimod install modules/idle_modes --allow-patches
 ```
 
 Install the gate script and point hypridle at it (once, and again after each
-dots-hyprland update for the `hypridle.conf` line):
+dots-hyprland update for the two `hypridle.conf` edits):
 
 ```bash
 install -Dm755 modules/idle_modes/idle-mode-gate.sh ~/.config/hypr/custom/scripts/idle-mode-gate.sh
 sed -i 's|^\$suspend_cmd = .*|$suspend_cmd = ~/.config/hypr/custom/scripts/idle-mode-gate.sh suspend|' ~/.config/hypr/hypridle.conf
+grep -q 'idle-mode-gate.sh resume' ~/.config/hypr/hypridle.conf ||
+    sed -i 's|^\([[:space:]]*\)on-timeout = \$suspend_cmd[[:space:]]*$|&\n\1on-resume = ~/.config/hypr/custom/scripts/idle-mode-gate.sh resume|' ~/.config/hypr/hypridle.conf
 pkill -x hypridle; hyprctl dispatch 'hl.dsp.exec_cmd("hypridle")'
 ```
+
+The second `sed` adds one line to the suspend listener, so input stops a
+gate that is waiting:
+
+```ini
+listener {
+    timeout = 900 # 15mins
+    on-timeout = $suspend_cmd
+    on-resume = ~/.config/hypr/custom/scripts/idle-mode-gate.sh resume
+}
+```
+
+If that listener already has an `on-resume`, don't add a second one: put the
+gate's `resume` call into the existing command by hand.
 
 Restart hypridle through Hyprland as shown, so it does not run inside a
 terminal's process group.
@@ -83,6 +110,8 @@ Settings path: `~/.config/illogical-impulse/modules/idle_modes.json`.
 | `mode` | `"off"` | `"off"`, `"half"` or `"full"`; invalid values heal to `"off"` |
 | `keepAwakeBatteryFloor` | `20` | Battery percent at or above which androlink's keep-awake reasons hold the idle suspend (0–100) |
 | `keepAwakeMaxAgeSecs` | `90` | androlink's status file counts only when written within this many seconds, or within three of the `heartbeat_s` it names, whichever is longer (15–3600) |
+| `keepAwakeRecheckSecs` | `60` | While the idle suspend is held, check again this often (15–600) |
+| `keepAwakeMaxHoldMins` | `120` | Hold the idle suspend for at most this many minutes per idle period, then suspend (1–1440) |
 
 The tile writes this file on every change, and hand edits apply live. The
 shell heals out-of-range numbers to the nearest valid value; the gate script
@@ -119,18 +148,40 @@ reads the file on each run and clamps the same way.
   A class that can't be read, a battery whose level can't be read, or an
   offline `Mains` supply with no battery in sight means the level is
   unknown, and the suspend runs.
+- While it holds the suspend, the gate waits in the background. Its PID is in
+  `$XDG_RUNTIME_DIR/idle-mode-gate.pid` (mode 0600, locked with `flock`), and
+  it waits only when `XDG_RUNTIME_DIR` is the user's own directory that no
+  one else can write. `idle-mode-gate.sh resume` stops only the process that
+  holds that lock and runs the gate's `suspend`; a leftover file is removed.
+  A new idle period replaces a gate that still waits.
+- Each check reads the mode, the floor and freshness options, the status
+  file and the power supply again; the check interval and the hold limit are
+  read when the wait starts.
+- Before a suspend from a check, every screen must still be off
+  (`hyprctl monitors` reports `dpmsStatus` false). A screen that is on, or
+  no answer, ends the wait without a suspend.
 - Every run prints one line with the decision and its reasons, for example
-  `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending`.
-- `idle-mode-gate.sh suspend --dry-run` prints the decision without suspending.
+  `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending,
+  checking again every 60 s for up to 120 min`, and one more when a wait
+  ends, such as `idle-mode-gate: mode off, androlink keep_awake none,
+  suspending`.
+- `idle-mode-gate.sh suspend --dry-run` prints the decision without suspending
+  or waiting.
 
 ## Limitations
 
 - The classic-style quick toggle button is not patched: it cycles the mode
   but only shows the highlighted state for full.
 - Changing the lock or screen-off timeouts still means editing `hypridle.conf`.
-- hypridle runs the suspend command once per idle period. If androlink's
-  reasons end while the PC stays idle, it does not suspend until there has
-  been input and a new idle period.
+- The checks need the screens to be off by the time of the suspend listener,
+  as in the stock timeline (screen off at 10 min, suspend at 15). Without a
+  screen-off listener before it, or without `hyprctl`, a hold ends at the
+  first check without a suspend, and the PC suspends only after input and a
+  new idle period.
+- Without the `on-resume` line, input is noticed only through the screens
+  turning on, at the next check. Install the line.
+- At `keepAwakeMaxHoldMins` the PC suspends even on AC and in the middle of a
+  call or transfer. Raise the limit for longer unattended transfers.
 - A charger that shows up only as a USB supply (no `Mains` entry) is not seen
   as AC; the battery floor decides instead.
 - "full" is not in effect until the shell has finished starting: window
@@ -159,6 +210,7 @@ Toggling `enabled` re-emits `windowChanged`, so the timer must not bind
 ```bash
 node --test modules/idle_modes/tests/*.test.mjs
 bash modules/idle_modes/idle-mode-gate.sh suspend --dry-run
+bash modules/idle_modes/idle-mode-gate.sh resume
 iimod validate modules/idle_modes
 iimod check modules/idle_modes
 ```
