@@ -1,3 +1,20 @@
+## 2026-11-17 androlink batch 2: idle_modes 1.1.0 + androlink_status 1.1.0 (N39/N38)
+
+Branch `feat/androlink-keep-awake` (from `feat/androlink-modules`), not
+pushed, not installed live. Report: `plans/reports/batch2-ii.md`.
+
+- ✅ idle_modes: `idle-mode-gate.sh suspend` holds the idle suspend in mode
+  off while androlink's status file is fresh with a non-empty `keep_awake`,
+  on AC or battery ≥ `keepAwakeBatteryFloor` (20); `keepAwakeMaxAgeSecs`
+  (90). One log line; `--dry-run` shows it.
+- ✅ androlink_status: 「省電中」 from `calls_back` in the capsule and panel;
+  「重新連線」 runs `androlink --refresh` (fixed argv) with a
+  `refreshMinIntervalSecs` (10) cool-down.
+- ✅ node 247/247, harness 80/80 (copy in `~/.cache/ii-modules-scratch-b2ii`,
+  read-only sandbox, no iimod), validate/check, i18n exact, drift, release
+  contracts 15/15 and 13/13.
+- ⏳ Owner installs both modules and re-copies the gate script.
+
 ## 2026-11-14 inline_reply / androlink_status security review fixes
 
 Review of `feat/androlink-modules`: 0 Critical/High, 2 Medium, 7 Low, INFO.
