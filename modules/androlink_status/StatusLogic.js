@@ -18,7 +18,12 @@ var MAX_ID_LENGTH = 64;
 var MAX_NAME_LENGTH = 64;
 // CLI flags the panel may run; anything else is refused.
 var DEVICE_FLAGS = ["--ring", "--ring-stop", "--send-clipboard", "--dex"];
-var GLOBAL_FLAGS = ["--webcam-stop"];
+// Global flags never name a phone; --refresh reconnects every phone.
+var GLOBAL_FLAGS = ["--webcam-stop", "--refresh"];
+// Least time between two Reconnect runs from the panel (seconds): default
+// and upper bound, the same as androlink's connection.refresh_min_interval_s.
+var REFRESH_MIN_INTERVAL_DEFAULT = 10;
+var REFRESH_MIN_INTERVAL_MAX = 300;
 
 var CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
 // Invisible or reordering characters dropped from display names: zero-width
@@ -86,7 +91,10 @@ function cleanPhone(raw) {
         helper: HELPERS.indexOf(raw.helper) !== -1 ? raw.helper : null,
         unread: clampInt(raw.unread, 0, 9999, 0),
         ringing: raw.ringing === true,
-        webcam: raw.webcam === true
+        webcam: raw.webcam === true,
+        // This PC waits for the phone to call back (androlink's 「省電中」):
+        // the phone hung up an idle connection to save battery. Missing = false.
+        callsBack: raw.calls_back === true
     };
 }
 
@@ -171,7 +179,8 @@ function barModel(record, opts) {
         helperStopped: false,
         unread: 0,
         ringing: false,
-        webcam: false
+        webcam: false,
+        savingBattery: false
     };
     if (!appRunning(record)) {
         model.shown = o.showWhenNotRunning === true;
@@ -198,6 +207,8 @@ function barModel(record, opts) {
     model.helperStopped = phone.helper === "stopped";
     model.unread = o.showUnread === false ? 0 : phone.unread;
     model.ringing = phone.ringing && !stale;
+    // Only while the file is current: a stale one can't say it still waits.
+    model.savingBattery = phone.callsBack && !phone.connected && !stale;
     return model;
 }
 
@@ -243,10 +254,12 @@ function indexOfKey(record, key) {
     return -1;
 }
 
-// Outcome of a finished CLI run: "" ok, "notRunning" (exit 1), "noPhone"
-// (exit 2: none or ambiguous), "failed" (anything else), "missingCli" when
-// the process never started.
-function exitKind(exitCode, started) {
+// Outcome of a finished CLI run of `flag`: "" ok, "notRunning" (exit 1),
+// "noPhone" (exit 2 for a device action: none or ambiguous), "failed"
+// (anything else, including exit 2 for a global action, which names no
+// phone: an androlink without that option), "missingCli" when the process
+// never started.
+function exitKind(exitCode, started, flag) {
     if (started === false)
         return "missingCli";
     if (exitCode === 0)
@@ -254,8 +267,21 @@ function exitKind(exitCode, started) {
     if (exitCode === 1)
         return "notRunning";
     if (exitCode === 2)
-        return "noPhone";
+        return GLOBAL_FLAGS.indexOf(flag) !== -1 ? "failed" : "noPhone";
     return "failed";
+}
+
+// Seconds until the panel may run Reconnect again; 0 when it may now. The
+// first run, a clock that stepped back and a 0 interval never wait.
+// `minIntervalSecs` is clamped to 0-300 (default 10).
+function refreshWaitSecs(lastSecs, nowSecs, minIntervalSecs) {
+    var last = finite(lastSecs, 0);
+    var now = finite(nowSecs, 0);
+    var interval = clampInt(minIntervalSecs, 0, REFRESH_MIN_INTERVAL_MAX, REFRESH_MIN_INTERVAL_DEFAULT);
+    if (last <= 0 || interval === 0 || now < last)
+        return 0;
+    var left = Math.ceil(last + interval - now);
+    return left > 0 ? left : 0;
 }
 
 // Reminder state kept in the module config: { armed: {key: bool},

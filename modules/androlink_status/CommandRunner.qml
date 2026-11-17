@@ -72,7 +72,7 @@ Item {
         onExited: (exitCode, exitStatus) => {
             startFailure.stop();
             if (root.awaitingExit)
-                root.settle(Logic.exitKind(exitCode, true), exitCode);
+                root.settle(Logic.exitKind(exitCode, true, root.lastFlag), exitCode);
         }
     }
 
