@@ -6,7 +6,8 @@ Tier A bar 模組，在 bar 上用一個膠囊顯示 androlink 連結的手機�
 
 > [!IMPORTANT]
 > 需要支援狀態檔（`$XDG_RUNTIME_DIR/androlink/status.json`，version 1）與
-> `--ring`、`--ring-stop`、`--send-clipboard`、`--dex`、`--webcam-stop` 的 androlink。
+> `--ring`、`--ring-stop`、`--send-clipboard`、`--dex`、`--webcam-stop` 的 androlink；
+> 「重新連線」需要支援 `--refresh` 的版本，「省電中」需要狀態檔帶 `calls_back`。
 > 沒有狀態檔時，模組視為 androlink 未執行。
 
 ## 功能
@@ -15,6 +16,7 @@ Tier A bar 模組，在 bar 上用一個膠囊顯示 androlink 連結的手機�
 |---|---|
 | 連線中 | 手機圖示、電量百分比；充電時加閃電、電量偏低時百分比變紅 |
 | 未連線，或 androlink 超過 3 次心跳沒有更新狀態檔 | 同上但整個變淡 |
+| 手機為了省電暫時斷線，androlink 等它連回（`calls_back`） | 變淡，圖示旁顯示「省電中」 |
 | 背景助手已停止 | 手機圖示右上角紅點 |
 | 有未讀通知 | 百分比旁的數字徽章（可關） |
 | 手機正在當攝影機 | 攝影機標記（隱私提示，不會變淡） |
@@ -23,10 +25,12 @@ Tier A bar 模組，在 bar 上用一個膠囊顯示 androlink 連結的手機�
 
 點一下膠囊會在 bar 旁打開面板：
 
-- 標題列：手機名稱與連線狀態（例如「透過區網連線」、「未連線」、「androlink 沒有回應」）。
+- 標題列：手機名稱與連線狀態（例如「透過區網連線」、「省電中」、「未連線」、「androlink 沒有回應」）。
 - 攝影機使用中時，最上方有一列紅色提示和「停止」按鈕。
 - 詳細資料：電量、連線方式（區網 / Tailscale / 其他）、背景助手、未讀通知。
-- 動作：讓手機響（響鈴中變成停止響鈴）、傳送剪貼簿、開啟 DeX、打開 androlink。
+- 動作：讓手機響（響鈴中變成停止響鈴）、傳送剪貼簿、開啟 DeX、重新連線、打開 androlink。
+- 「重新連線」執行 `androlink --refresh`：結束 androlink 對所有「省電中」手機的等待並重新同步。
+  按一次後，`refreshMinIntervalSecs` 秒內按鈕停用；androlink 自己也有頻率限制。
 - 有多支手機時，上方的晶片可切換要看哪一支；動作會帶上該手機的 id。選擇跟著手機走，
   面板開著時有手機連線或離線也不會跳到別支。id 無法安全傳給 CLI 的手機，動作按鈕會停用。
 - 動作失敗時，下方顯示原因（androlink 未執行、找不到手機、逾時等）。
@@ -68,6 +72,7 @@ iimod install modules/androlink_status/
 | `pollSecs` | `10` | 狀態檔的備援重讀間隔（2–300） |
 | `actionTimeoutSecs` | `15` | 面板動作超過這個秒數就停止並回報逾時（3–120） |
 | `reminderMinIntervalMins` | `30` | 同一支手機兩次提醒的最短間隔，分鐘（0–1440，0 為不限制） |
+| `refreshMinIntervalSecs` | `10` | 面板「重新連線」兩次執行的最短間隔，秒（0–300，0 為面板不限制） |
 | `reminderState` | `""` | 由 window slot 寫入的提醒狀態（JSON 字串），不需要手動修改 |
 
 超出範圍的值會在讀取時修正為最近的合法值。狀態檔自己帶有 `heartbeat_s` 時以檔案為準。
@@ -80,9 +85,12 @@ iimod install modules/androlink_status/
   一律視為 androlink 未執行；`running` 不是 `true` 也一樣。`updated` 比現在早超過
   3 次心跳、或晚超過 1 次心跳（時鐘倒退）時視為沒有回應，和 androlink 自己的判斷相同。
   `XDG_RUNTIME_DIR` 不是絕對路徑時不讀任何檔案。
-- 手機欄位逐項檢查，不合約定的值改為未知。手機名稱會去掉控制字元、零寬與雙向控制字元，
+- 手機欄位逐項檢查，不合約定的值改為未知。`calls_back` 只有值是 `true` 才算省電中，缺少時視為
+  `false`；狀態檔過期時不顯示「省電中」。手機名稱會去掉控制字元、零寬與雙向控制字元，
   `<` `>` 換成 `‹` `›`，並以字元（code point）為單位截到 64 個字。
-- 動作一律用固定 argv，不經過 shell。只有在列出多支手機時才把手機 id 當成最後一個參數；
+- 動作一律用固定 argv，不經過 shell。`--refresh` 與 `--webcam-stop` 從不帶手機參數，它們的
+  結束代碼 2 代表 androlink 不認得這個選項（版本太舊），面板顯示代碼。只有在列出多支手機時
+  才把手機 id 當成最後一個參數；
   id 超過 64 字元（CLI 的上限）、以 `-` 開頭或含控制字元時，不執行該手機的動作。
 - 「打開 androlink」以 detached 方式執行，可能直接啟動 App；其他動作只轉送給執行中的
   androlink，結束代碼決定面板顯示的訊息。
@@ -98,7 +106,9 @@ iimod install modules/androlink_status/
 - 設定頁與 window slot 共用同一個設定檔；在提醒狀態剛寫入的同時改設定，最壞情況是
   多提醒或少提醒一次。
 - 面板固定在 bar 的右端（垂直 bar 時在側邊），和其他模組的面板相同，不會對齊膠囊位置。
-- 垂直 bar 不顯示「未執行」文字與充電閃電。
+- 垂直 bar 不顯示「未執行」、「省電中」文字與充電閃電。
+- 「重新連線」的間隔限制是每個 bar（每個螢幕）各自計算；同時在兩個螢幕按，仍由 androlink
+  自己的限制擋下。
 
 ## 實作說明
 
@@ -107,7 +117,7 @@ iimod install modules/androlink_status/
 | `bar.qml` | 膠囊與面板開關（每個螢幕各一份，只讀） |
 | `main.qml` | window slot：設定檔擁有者與低電量提醒 |
 | `PhoneStatus.qml` | 狀態檔讀取：檔案監看加備援重讀 |
-| `StatusLogic.js` | 純函式：解析、膠囊顯示規則、動作 argv、結束代碼、提醒狀態機 |
+| `StatusLogic.js` | 純函式：解析、膠囊顯示規則、動作 argv、結束代碼、重新連線間隔、提醒狀態機 |
 | `PhonePanel.qml` | 面板內容與動作 |
 | `CommandRunner.qml` | 一次執行一個動作，處理啟動失敗與逾時 |
 | `PanelShell.qml` | `modules/aula_keys/PanelShell.qml` 的副本（只改 namespace 與寬度） |
