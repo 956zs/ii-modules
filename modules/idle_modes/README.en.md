@@ -156,7 +156,8 @@ reads the file on each run and clamps the same way.
   A new idle period replaces a gate that still waits.
 - Each check reads the mode, the floor and freshness options, the status
   file and the power supply again; the check interval and the hold limit are
-  read when the wait starts.
+  read when the wait starts. The last wait is cut short to end at the hold
+  limit, so a hold never runs past it.
 - Before a suspend from a check, every screen must still be off
   (`hyprctl monitors` reports `dpmsStatus` false). A screen that is on, or
   no answer, ends the wait without a suspend.

@@ -696,15 +696,45 @@ gateTest('gate: a hold lasts at most keepAwakeMaxHoldMins, whatever the reasons'
     ])
     assert.equal(sleepLog(box), '15\n15\n15\n15\n', 'four 15 s checks make the minute')
     assert.equal(out.suspendLog, 'systemctl suspend\n')
-    // A check interval that does not divide the limit: the first check past it.
-    rmSync(join(box.root, 'sleep.log'))
-    rmSync(join(box.root, 'sleeps'))
-    setConfig(box, { keepAwakeRecheckSecs: 45, keepAwakeMaxHoldMins: 1 })
-    out = runGate(box, ['suspend'])
+    // A check interval that does not divide the limit: the last wait is cut
+    // short, so the hold ends at the limit and never past it (N-GATE-3).
+    const again = (options) => {
+      rmSync(join(box.root, 'sleep.log'), { force: true })
+      rmSync(join(box.root, 'sleeps'), { force: true })
+      setConfig(box, options)
+      return runGate(box, ['suspend'])
+    }
+    out = again({ keepAwakeRecheckSecs: 45, keepAwakeMaxHoldMins: 1 })
     assert.match(lines(out)[1], /held 1 min \(the limit\), suspending$/)
-    assert.equal(sleepLog(box), '45\n45\n')
+    assert.equal(sleepLog(box), '45\n15\n')
+    // A check interval longer than the limit: one wait of exactly the limit.
+    out = again({ keepAwakeRecheckSecs: 600, keepAwakeMaxHoldMins: 1 })
+    assert.match(lines(out)[1], /held 1 min \(the limit\), suspending$/)
+    assert.equal(sleepLog(box), '60\n')
+    assert.equal(readSuspendLog(box), 'systemctl suspend\n'.repeat(3), 'one suspend per run')
   } finally {
     cleanup(box)
+  }
+})
+
+gateTest('gate: the waits add up to the hold limit exactly, whatever the interval', () => {
+  for (const [recheck, maxHold] of [[15, 1], [45, 1], [59, 1], [60, 1], [61, 1], [600, 1], [600, 2], [600, 11], [17, 3], [600, 120]]) {
+    const box = sandbox()
+    try {
+      setPower(box, onAc)
+      setStatus(box, status({ heartbeat_s: 3600 }))
+      // Keep the status file fresh at the long holds (the fake sleep is instant).
+      setConfig(box, { mode: 'off', keepAwakeRecheckSecs: recheck, keepAwakeMaxHoldMins: maxHold })
+      const out = runGate(box, ['suspend'])
+      const label = `${recheck} s, ${maxHold} min`
+      assert.match(lines(out)[1], new RegExp(`held ${maxHold} min \\(the limit\\), suspending$`), label)
+      const waits = sleepLog(box).split('\n').filter(Boolean).map(Number)
+      assert.equal(waits.reduce((a, b) => a + b, 0), maxHold * 60, label)
+      assert.ok(waits.every((w) => w >= 1 && w <= recheck), label)
+      assert.ok(waits.slice(0, -1).every((w) => w === recheck), `${label}: only the last wait is shorter`)
+    } finally {
+      cleanup(box)
+    }
   }
 })
 

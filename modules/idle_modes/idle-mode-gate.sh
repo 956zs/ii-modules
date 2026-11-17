@@ -281,7 +281,7 @@ release_hold() {
 # suspend now ($why says why). Exits without suspending when the wait can't
 # be kept safely or is cancelled, the mode leaves "off" or a screen is on.
 wait_while_held() {
-    local fd recheck max_hold held=0
+    local fd recheck max_hold held=0 wait_secs
     recheck=$(read_option keepAwakeRecheckSecs "$recheck_default" "$recheck_min" "$recheck_max")
     max_hold=$(read_option keepAwakeMaxHoldMins "$max_hold_default" "$max_hold_min" "$max_hold_max")
     if ! runtime_private; then
@@ -313,13 +313,17 @@ wait_while_held() {
     trap 'release_hold; echo "idle-mode-gate: input, not suspending"; exit 0' TERM INT HUP
     echo "idle-mode-gate: mode off, $why, not suspending, checking again every $recheck s for up to $max_hold min"
     while :; do
+        # The next check comes after recheck seconds, or at the hold limit
+        # when that is sooner, so a hold never runs past the limit.
+        wait_secs=$recheck
+        ((max_hold * 60 - held < wait_secs)) && wait_secs=$((max_hold * 60 - held))
         # The sleep gets no copy of the locked hold file, so it can't keep
         # the lock after the gate is killed outright (SIGKILL, OOM).
-        sleep "$recheck" {fd}>&- &
+        sleep "$wait_secs" {fd}>&- &
         sleeper=$!
         wait "$sleeper"
         sleeper=""
-        held=$((held + recheck))
+        held=$((held + wait_secs))
         if [ "$(read_line "$hold_file")" != "$$" ]; then
             echo "idle-mode-gate: wait cancelled, not suspending"
             exit 0
