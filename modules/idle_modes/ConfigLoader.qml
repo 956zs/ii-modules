@@ -28,6 +28,11 @@ FileView {
     blockWrites: true
     atomicWrites: true
 
+    function clamp(value, low, high, fallback) {
+        const n = Math.round(Number(value));
+        return Number.isFinite(n) ? Math.min(high, Math.max(low, n)) : fallback;
+    }
+
     onFileChanged: {
         root.materializing = true;
         reload();
@@ -41,6 +46,9 @@ FileView {
         // before clearing materializing, so invalid stored values are healed.
         if (!["off", "half", "full"].includes(adapterItem.mode))
             adapterItem.mode = "off";
+        // Same ranges as idle-mode-gate.sh, which clamps on its own too.
+        adapterItem.keepAwakeBatteryFloor = root.clamp(adapterItem.keepAwakeBatteryFloor, 0, 100, 20);
+        adapterItem.keepAwakeMaxAgeSecs = root.clamp(adapterItem.keepAwakeMaxAgeSecs, 15, 3600, 90);
         root.materializing = false;
         if (root.owner)
             writeAdapter();
@@ -66,5 +74,12 @@ FileView {
         // "off": lock, screen off and suspend on idle; "half": lock and screen
         // off but never suspend; "full": no idle action at all.
         property string mode: "off"
+        // While androlink reports a call, camera or transfer (keep_awake in
+        // its status file), the gate script skips the idle suspend on AC, or
+        // on battery at or above this percent.
+        property int keepAwakeBatteryFloor: 20
+        // androlink's status file counts only when written within this many
+        // seconds (three of its 30 s heartbeats by default).
+        property int keepAwakeMaxAgeSecs: 90
     }
 }
