@@ -22,12 +22,27 @@ Tier B 模塊，把側欄「Keep awake」磁貼改成三段式閒置模式，並
 從鎖屏畫面以「解鎖後保持喚醒」的方式解鎖時會切到 full。電量過低時的自動休眠不受
 任何模式影響。
 
+### androlink 使用中不休眠
+
+off 模式下，androlink 正在做休眠會打斷的事時，gate 也會跳過這次閒置休眠：手機的
+麥克風或攝影機正串流到這台電腦，或檔案正在傳輸。鎖屏和關螢幕照常進行。
+
+| androlink 狀態檔 | 電源 | 閒置休眠 |
+| --- | --- | --- |
+| 最新，`keep_awake` 有原因 | 插著電，或沒有電池 | 跳過 |
+| 最新，`keep_awake` 有原因 | 電量不低於 `keepAwakeBatteryFloor` | 跳過 |
+| 最新，`keep_awake` 有原因 | 電量低於下限，或讀不到電量 | 照常 |
+| 最新但 `keep_awake` 是空的、過期、已結束、不存在或無效 | 不限 | 照常 |
+
+闔上螢幕、ii 選單的「睡眠」和低電量自動休眠都不經過 gate，行為不變。
+
 ## 需求
 
 | 依賴 | 用途 |
 | --- | --- |
 | hypridle | 閒置計時；休眠監聽會呼叫 gate script |
-| jq | gate script 從模塊設定讀取模式 |
+| jq | gate script 讀取模式、選項與 androlink 的狀態檔 |
+| androlink（選用） | 寫入帶 `keep_awake` 的 `$XDG_RUNTIME_DIR/androlink/status.json`；沒有它時 gate 只看模式 |
 | Android 風格快捷面板 | 磁貼 model patch；classic 風格按鈕仍會切換，但只有 full 會高亮 |
 
 ## 安裝
@@ -51,6 +66,9 @@ pkill -x hypridle; hyprctl dispatch 'hl.dsp.exec_cmd("hypridle")'
 
 請照上面的方式透過 Hyprland 重啟 hypridle，避免它跑在終端機的 process group 裡。
 
+裝好的 gate script 是複本：更新模塊後要再執行一次上面的 `install` 那一行，hypridle
+才會用到新版。
+
 ## 設定
 
 設定檔位於 `~/.config/illogical-impulse/modules/idle_modes.json`。
@@ -58,8 +76,11 @@ pkill -x hypridle; hyprctl dispatch 'hl.dsp.exec_cmd("hypridle")'
 | Key | 預設 | 說明 |
 | --- | --- | --- |
 | `mode` | `"off"` | `"off"`、`"half"` 或 `"full"`；無效值會修正為 `"off"` |
+| `keepAwakeBatteryFloor` | `20` | 電量（百分比）不低於這個值時，androlink 的使用中原因才會擋下閒置休眠（0–100） |
+| `keepAwakeMaxAgeSecs` | `90` | androlink 的狀態檔要在這麼多秒內寫過才算數（15–3600） |
 
-磁貼每次切換都會寫入這個檔案，手動修改也會即時套用。
+磁貼每次切換都會寫入這個檔案，手動修改也會即時套用。超出範圍的數值會由 shell 修正為
+最近的合法值；gate script 每次執行都會讀取這個檔案，並用同樣的範圍修正。
 
 ## 資料與行為
 
@@ -70,12 +91,27 @@ pkill -x hypridle; hyprctl dispatch 'hl.dsp.exec_cmd("hypridle")'
   map 之前就建立的 inhibitor（見實作說明）。
 - half 與 off 讓 hypridle 照常運作；只有檔案寫 `"off"` 時 gate script 才會休眠
   （檔案缺少、無法讀取或值無效時也視為 `"off"`）。
+- gate 只在 `XDG_RUNTIME_DIR` 是絕對路徑、檔案不超過 64 KiB 時讀取
+  `$XDG_RUNTIME_DIR/androlink/status.json`。檔案必須是單一 JSON 物件，`version` 為
+  1、`running` 為 true，`updated` 不早於 `keepAwakeMaxAgeSecs` 秒前（也不晚於它的
+  三分之一）。`keep_awake` 缺少或為 `null` 時視為沒有原因。
+- 原因代碼只記錄符合代碼格式的項目（小寫字母、數字與 `_`，最多 32 字元；最多 8 個，
+  排序並去除重複），清單裡的其他內容一律忽略。
+- 電源資訊來自 `/sys/class/power_supply`：任何 `online` 為 1 的 `Mains` 視為插電；
+  電量是系統電池 `capacity` 的平均值。周邊裝置電池（`scope` 為 `Device`）與 USB-C
+  對端電源不列入。沒有 `type` 的項目，名稱是 `AC*`、`ADP*` 或 `ACAD*` 時視為電源
+  供應器，`BAT*` 視為電池。
+- 每次執行印出一行判斷結果與原因，例如
+  `idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending`。
 - `idle-mode-gate.sh suspend --dry-run` 只印出判斷結果，不會休眠。
 
 ## 限制
 
 - classic 風格快捷按鈕沒有 patch：會切換模式，但只有 full 會顯示高亮。
 - 調整鎖屏或關螢幕時間仍需編輯 `hypridle.conf`。
+- hypridle 每段閒置只呼叫一次休眠指令。androlink 的原因在電腦仍閒置時結束，要等到
+  有輸入、再閒置滿一段時間才會休眠。
+- 只以 USB 電源出現（沒有 `Mains` 項目）的充電器不會被當成插電，改由電量下限決定。
 - shell 啟動完成前 full 不會生效：window 模塊可能要數十秒才載入完成，之後還有
   3 秒的重建延遲。
 
@@ -100,6 +136,7 @@ Patches（insert-only）：`services/Idle.qml` 加入 `idleMode`、`idleModesAct
 
 ```bash
 node --test modules/idle_modes/tests/*.test.mjs
+bash modules/idle_modes/idle-mode-gate.sh suspend --dry-run
 iimod validate modules/idle_modes
 iimod check modules/idle_modes
 ```
