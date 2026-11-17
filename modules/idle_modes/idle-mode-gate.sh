@@ -313,7 +313,9 @@ wait_while_held() {
     trap 'release_hold; echo "idle-mode-gate: input, not suspending"; exit 0' TERM INT HUP
     echo "idle-mode-gate: mode off, $why, not suspending, checking again every $recheck s for up to $max_hold min"
     while :; do
-        sleep "$recheck" &
+        # The sleep gets no copy of the locked hold file, so it can't keep
+        # the lock after the gate is killed outright (SIGKILL, OOM).
+        sleep "$recheck" {fd}>&- &
         sleeper=$!
         wait "$sleeper"
         sleeper=""

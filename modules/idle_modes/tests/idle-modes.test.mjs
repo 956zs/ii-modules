@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -92,6 +92,7 @@ function sandbox() {
     `n=$(( $(cat "${root}/sleeps" 2>/dev/null || echo 0) + 1 ))`,
     `echo "$n" > "${root}/sleeps"`,
     `printf '%s\\n' "$1" >> "${root}/sleep.log"`,
+    `echo "$$" >> "${root}/sleep.pids"`,
     `[ -x "${root}/on-sleep-$n" ] && "${root}/on-sleep-$n"`,
     `[ -f "${root}/sleep.block" ] && exec "${realSleep}" 20`,
     'exit 0',
@@ -825,6 +826,67 @@ gateTest('gate: a new idle period replaces a gate that still waits', { timeout: 
     assert.equal(lines(out2).at(-1), 'idle-mode-gate: input, not suspending')
     assert.equal(readSuspendLog(box), '')
   } finally {
+    cleanup(box)
+  }
+})
+
+// ---- N-GATE-4: the background sleep never holds the lock ----
+
+gateTest('gate: a killed gate leaves no lock behind, so the next idle period can wait', { timeout: 20000 }, async () => {
+  const box = sandbox()
+  const sleepPids = () => {
+    try {
+      return readFileSync(join(box.root, 'sleep.pids'), 'utf8').split('\n').filter(Boolean).map(Number)
+    } catch {
+      return []
+    }
+  }
+  const cmdline = (pid) => {
+    try {
+      return readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0')
+    } catch {
+      return []
+    }
+  }
+  const openFiles = (pid) => readdirSync(`/proc/${pid}/fd`).map((fd) => {
+    try {
+      return readlinkSync(`/proc/${pid}/fd/${fd}`)
+    } catch {
+      return ''
+    }
+  })
+  try {
+    setPower(box, onAc)
+    setStatus(box, status())
+    writeFileSync(join(box.root, 'sleep.block'), '')
+    const first = startGate(box)
+    await waitFor('the first hold', () => readHold(box) === String(first.child.pid))
+    await waitFor('the real sleep', () => sleepPids().length === 1 && cmdline(sleepPids()[0])[0] === realSleep)
+    const [sleeper] = sleepPids()
+    assert.ok(openFiles(first.child.pid).includes(holdFile(box)), 'the gate holds the hold file open')
+    assert.ok(!openFiles(sleeper).includes(holdFile(box)), 'its sleep does not')
+    // Killed outright: no trap runs, the hold file stays and the sleep lives on.
+    first.child.kill('SIGKILL')
+    await waitFor('the killed gate', () => first.child.signalCode === 'SIGKILL')
+    assert.equal(cmdline(sleeper)[0], realSleep, 'the orphaned sleep still runs')
+    assert.equal(readHold(box), String(first.child.pid))
+    assert.equal(spawnSync(which('flock'), ['-n', holdFile(box), 'true']).status, 0, 'nobody holds the lock')
+    // The next idle period's gate takes the lock at once and waits.
+    const second = startGate(box)
+    await waitFor('the second hold', () => readHold(box) === String(second.child.pid), 3000)
+    assert.equal(runGate(box, ['resume']).stdout, 'idle-mode-gate: resume, stopped the waiting gate\n')
+    const out = await within(5000, second.done, 'the second gate')
+    assert.deepEqual(lines(out), [
+      'idle-mode-gate: mode off, androlink keep_awake mic, on AC, not suspending, checking again every 60 s for up to 120 min',
+      'idle-mode-gate: input, not suspending',
+    ])
+    assert.equal(readSuspendLog(box), '')
+  } finally {
+    for (const pid of sleepPids()) {
+      try {
+        process.kill(pid)
+      } catch {}
+    }
     cleanup(box)
   }
 })
